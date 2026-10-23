@@ -21,21 +21,31 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await step('tracks open');
   await page.click('#win-tracks-new'); await wait(300);
   await shot('tracks-window');
-  /* draw a loop on the right half of the screen */
-  const cx = 158, cz = 212, rx = 50, rz = 38;
-  await ev(([x, z]) => { MX.App.renderer.cam.targetZoom = MX.App.renderer.cam.zoom = 3.0; __q.focus(x, z, 820, 400); }, [cx, cz]);
-  await wait(400);
-  const N = 10, pts = [];
-  for (let k = 0; k < N; k++) { const a = k / N * Math.PI * 2; const r = (k === 3 || k === 8) ? 0.7 : 1; pts.push([cx + Math.cos(a) * rx * r, cz + Math.sin(a) * rz * (k === 3 || k === 8 ? 0.85 : 1)]); }
-  for (const [x, z] of pts) await clickWorld(page, ev, x, z);
-  await shot('track-drawn-open');
-  await clickWorld(page, ev, pts[0][0], pts[0][1]);
-  await wait(600);
+  /* place the start gate by clicking the terrain */
+  await ev(() => { const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 3.2; __q.focus(152, 224, 830, 390); });
+  await wait(300);
+  const sp = await ev(() => __q.w2s(146, 176, 0));
+  await page.mouse.move(sp.x, sp.y, { steps: 3 }); await wait(300);
+  await page.mouse.down(); await page.mouse.up(); await wait(600);
+  await step('start placed');
+  /* build piece by piece with the constructor */
+  const dir = async (label) => { await page.locator('.bld-dirs .bld-btn[aria-label="' + label + '"]').click(); await wait(200); };
+  const len = async (label) => { await clickText(page, '.builder .btn.small', label); };
+  const buildP = async (n) => { for (let i = 0; i < (n || 1); i++) { await page.click("#bld-build"); await wait(350); } };
+  const special = async (name) => { await page.locator('.bld-specials .feat', { hasText: name }).first().click(); await wait(200); };
+  await dir('Recta'); await len('Media'); await buildP();
+  await dir('Curva media a la derecha'); await clickText(page, '.builder .btn.small', 'Peralte', true); await buildP(2);
+  await special('Tabletop mediano'); await buildP();
+  await dir('Recta'); await len('Larga'); await buildP();
+  await dir('Curva media a la derecha'); await buildP(2);
+  await special('Línea de meta'); await buildP();
+  await shot('track-under-construction');
+  await page.click('#bld-auto'); await wait(1500);
   await shot('track-closed');
   await step('closed');
-  const tinfo = await ev(() => { const t = MX.App.game.tracks[0]; return { n: t.nodes.length, closed: t.closed, len: Math.round(t.length), issues: (t.issues || []).map(i => i.msg) }; });
+  const tinfo = await ev(() => { const t = MX.App.game.tracks[0]; return { pieces: t.pieces.length, closed: t.closed, len: Math.round(t.length), feats: t.features.map(f => f.type).join(','), issues: (t.issues || []).map(i => i.msg) }; });
   logs.push('track ' + JSON.stringify(tinfo));
-  /* start + finish + jumps through the feature palette */
+  /* more elements on the closed circuit through the feature palette */
   const featName = async (k) => ev((k) => MX.Catalog.features[k].name, k);
   const placeFeature = async (type, from) => {
     const name = await featName(type);
@@ -58,14 +68,8 @@ export default async ({ page, shot, wait, ev, logs }) => {
     const has = await ev((type) => MX.App.game.tracks[0].features.filter(f => f.type === type).length, type);
     logs.push('placed ' + type + ' at s=' + s.s + ' -> count ' + has);
   };
-  await placeFeature('start', 0);
-  await placeFeature('finish', 40);
-  await step('start/finish');
-  await placeFeature('tabletop_m', 10);
-  await placeFeature('tabletop_s', 90);
   await placeFeature('rollers', 120);
-  await placeFeature('berm', 60);
-  await placeFeature('whoops', 150);
+  await placeFeature('whoops', 200);
   await shot('features');
   await step('jumps');
   /* paddock touching the road */

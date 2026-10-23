@@ -11,11 +11,14 @@ export async function install(ev) {
           cam.compute();
           const p0 = this.w2s(x, z);
           const save = [cam.tx, cam.tz];
-          cam.tx += 1; cam.compute(); const px = this.w2s(x, z);
-          cam.tx = save[0]; cam.tz += 1; cam.compute(); const pz = this.w2s(x, z);
+          /* a 10 m probe keeps the estimate clear of the camera's pixel snapping */
+          const K = 10;
+          cam.tx += K; cam.compute(); const px = this.w2s(x, z);
+          cam.tx = save[0]; cam.tz += K; cam.compute(); const pz = this.w2s(x, z);
           cam.tx = save[0]; cam.tz = save[1];
-          const a = px.x - p0.x, b = pz.x - p0.x, c = px.y - p0.y, d = pz.y - p0.y;
+          const a = (px.x - p0.x) / K, b = (pz.x - p0.x) / K, c = (px.y - p0.y) / K, d = (pz.y - p0.y) / K;
           const ex = sx - p0.x, ey = sy - p0.y, det = a * d - b * c;
+          if (Math.abs(det) < 1e-6) break;
           cam.tx += (ex * d - b * ey) / det; cam.tz += (a * ey - c * ex) / det;
         }
         cam.compute();
@@ -46,8 +49,9 @@ export async function dragWorld(page, ev, pts, opts = {}) {
   await page.mouse.up();
   await page.waitForTimeout(200);
 }
-export async function clickText(page, sel, text) {
-  const loc = page.locator(sel, { hasText: text }).first();
+export async function clickText(page, sel, text, exact) {
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const loc = page.locator(sel, { hasText: exact ? new RegExp('^\\s*' + esc(text) + '\\s*$') : text }).first();
   await loc.click();
   await page.waitForTimeout(250);
 }

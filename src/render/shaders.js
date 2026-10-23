@@ -64,6 +64,7 @@ void main() {
 uniform sampler2DArray uMats;
 uniform sampler2D uAtlas;
 uniform vec4 uGhost;
+uniform float uGhostDither;
 in vec3 vWp; in vec3 vN; in vec2 vUv; flat in float vMat; in vec4 vCol;
 out vec4 o;
 void main() {
@@ -74,7 +75,7 @@ void main() {
   if (base.a < 0.5) discard;
   vec3 c = shade(base.rgb * vCol.rgb, normalize(vN), vWp);
   if (uGhost.a > 0.0) {
-    if (bayer4(gl_FragCoord.xy) > 0.72) discard;
+    if (bayer4(gl_FragCoord.xy) > uGhostDither) discard;
     c = mix(c, uGhost.rgb, uGhost.a);
   }
   o = vec4(c, 1.0);

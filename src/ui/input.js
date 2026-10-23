@@ -83,7 +83,7 @@
       const wp = this.pick(p.x, p.y);
       if (tool && tool.up) tool.up(wp, { button: d.button }, p);
       if (!d.moved && !d.pan) {
-        if (d.button === 0 && tool && tool.click) tool.click(wp, { button: 0, shift: e.shiftKey }, p);
+        if (d.button === 0 && tool && tool.click) tool.click(wp, { button: 0, shift: e.shiftKey, touch: d.touch }, p);
         else if (d.button === 2) {
           if (tool && tool.rightClick) tool.rightClick(wp, p);
           else if (tool && tool.name !== 'select') MX.Tools.select();
@@ -147,12 +147,14 @@
     onKey(e, down) {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      /* a focused button already reacts to Enter and Space by itself */
+      if ((tag === 'BUTTON' || tag === 'LABEL') && (e.key === 'Enter' || e.key === ' ')) return;
       const k = e.key;
       if (!down) { this.keys.delete(k.toLowerCase()); return; }
-      this.keys.add(k.toLowerCase());
-      if (!this.enabled || !this.app.game) return;
+      if (!this.enabled || !this.app.game) { this.keys.add(k.toLowerCase()); return; }
       const tool = this.tool();
-      if (tool && tool.key && tool.key(e)) { e.preventDefault(); return; }
+      if (tool && tool.key && !(this.app.modalOpen && this.app.modalOpen()) && tool.key(e)) { e.preventDefault(); return; }
+      this.keys.add(k.toLowerCase());
       const app = this.app;
       if (k === 'Escape') {
         if (app.modalOpen && app.modalOpen()) return;

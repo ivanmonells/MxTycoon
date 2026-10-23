@@ -109,7 +109,184 @@
     exit() { app().hoverAgent = null; }
   };
 
-  /* -------- Track drawing -------- */
+  /* -------- Piece-by-piece track construction -------- */
+  function joinMeshes(list) {
+    const St = MX.GL.STRIDE;
+    let n = 0;
+    for (const m of list) if (m) n += m.count;
+    const out = new Float32Array(Math.max(1, n) * St);
+    let o = 0;
+    for (const m of list) if (m) { out.set(m.data.subarray(0, m.count * St), o * St); o += m.count; }
+    return { data: out, count: n };
+  }
+  function probeMesh(tmp) {
+    if (!tmp || !tmp.S) return null;
+    const w = game().world;
+    return joinMeshes([MX.Geom.track(tmp, w, { ghost: true }), tmp.pieces[0].t === 'start' ? MX.Geom.startGate(tmp, w, false) : null]);
+  }
+  const GHOST_OK = [0.35, 1, 0.45, 0.42], GHOST_CLOSE = [1, 0.85, 0.2, 0.45], GHOST_BAD = [1, 0.22, 0.15, 0.55], GHOST_DITHER = 0.56;
+
+  /* Place the start straight: the cursor marks the gate, R turns it in 45 degree steps. */
+  const TrackStart = {
+    name: 'trackstart', h: 0,
+    get hint() { return 'Clic: colocar la parrilla de salida · R o clic derecho: girar · Esc: salir'; },
+    get tr() { return game().selectedTrack; },
+    enter() { this.lat = null; this.probe = null; },
+    exit() { R().setGhostMesh(null); this.probe = null; },
+    hover(p) {
+      if (!p) return;
+      this.center = { x: p.x, z: p.z };
+      this.place();
+    },
+    /* the start straight is centred on the cursor */
+    place() {
+      const c = this.center;
+      if (!c) return;
+      const Tr = MX.Track, n = Tr.pieceUnits({ t: 'start' }, this.h), v = Tr.DIRV[this.h];
+      const lx = Math.round(c.x / T - v[0] * n / 2), lz = Math.round(c.z / T - v[1] * n / 2);
+      if (this.lat && this.lat.x === lx && this.lat.z === lz && this.lat.h === this.h) return;
+      this.lat = { x: lx, z: lz, h: this.h };
+      this.refresh();
+    },
+    refresh() {
+      const l = this.lat, tr = this.tr;
+      if (!l || !tr || !tr.pieces) return;
+      const ui = app().trackUI;
+      this.probe = tr.probeStart(game().world, l.x, l.z, l.h, ui.width, ui.surface);
+      const m = probeMesh(this.probe.tmp);
+      if (m) R().setGhostMesh(m.data, m.count, this.probe.ok ? (this.probe.warn ? GHOST_CLOSE : GHOST_OK) : GHOST_BAD, GHOST_DITHER);
+    },
+    click(p, e) {
+      /* touch has no hover: the first tap moves the preview, a tap on it places the gate */
+      if (e && e.touch && p) {
+        const pr = this.probe, S = pr && pr.tmp && pr.tmp.S;
+        const hit = S && pr.tmp.nearestS(p.x, p.z);
+        if (!hit || hit.dist > S.w[hit.i] * 0.5 + 3) { this.hover(p); return; }
+      }
+      const l = this.lat, tr = this.tr;
+      if (!l || !tr) return;
+      const ui = app().trackUI;
+      if (result(game().placeStart(tr, l.x, l.z, l.h, ui.width, ui.surface))) {
+        sfx('build');
+        app().fx.burst((l.x + MX.Track.DIRV[l.h][0] * 4) * T, null, (l.z + MX.Track.DIRV[l.h][1] * 4) * T, 'dirt');
+        Tools.set(TrackBuild);
+        app().panels.tracks(tr);
+        toast('Ahora elige dirección y pendiente y construye pieza a pieza', 'info');
+      }
+    },
+    rotate() { this.h = (this.h + 1) % 8; this.place(); sfx('click'); },
+    rightClick() { this.rotate(); },
+    key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; },
+    labels() {
+      const pr = this.probe;
+      if (!pr || !pr.tmp || !pr.tmp.S) return [];
+      const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.START_GATE / C.TRACK_DS));
+      return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
+    }
+  };
+
+  /* Build the next piece from the end of the circuit, like a ride construction window. */
+  const BUILD_ORDER = ['L1', 'L2', 'L3', 'S', 'R3', 'R2', 'R1'];
+  const TrackBuild = {
+    name: 'trackbuild',
+    hint: 'Elige dirección y pendiente · Intro o clic en la pieza fantasma: construir · Retroceso: quitar la última · Flechas: dirección y pendiente · Esc: salir',
+    get tr() { return game().selectedTrack; },
+    enter() { this.refresh(); },
+    exit() { R().setGhostMesh(null); R().setOverlayMesh(null); this.probe = null; },
+    piece() { return MX.Panels1.currentPiece(); },
+    refresh() {
+      const tr = this.tr;
+      this.probe = null;
+      if (!tr || !tr.pieces || !tr.pieces.length || tr.closed) { R().setGhostMesh(null); R().setOverlayMesh(null); return; }
+      const pr = tr.probePiece(game().world, this.piece());
+      this.probe = pr;
+      const m = probeMesh(pr.tmp);
+      if (m) R().setGhostMesh(m.data, m.count, pr.ok ? (pr.closes ? GHOST_CLOSE : GHOST_OK) : GHOST_BAD, GHOST_DITHER);
+      else R().setGhostMesh(null);
+      /* target ring at the start, joints between pieces and an arrow at the construction point */
+      const mb = new MB(8192), w = game().world, o = tr.origin, e = tr.endPose;
+      if (tr.S) for (let i = 1; i < tr.pieces.length; i++) { const s0 = tr.pieces[i]._s0; if (s0 != null) trackRegionMesh(mb, tr, s0 - 0.5, 1, MB.rgba('#fff2c4')); }
+      if (o && e) {
+        const ox = o.x * T, oz = o.z * T, ex = e.x * T, ez = e.z * T;
+        if (Math.hypot(ex - ox, ez - oz) > 2) ringMesh(mb, ox, w.heightAt(ox, oz) + 0.35, oz, 3.2, MB.rgba('#ffd22e'));
+        const ey = (tr.S ? tr.S.y[tr.S.n - 1] : w.heightAt(ex, ez)) + 0.4;
+        marker(mb, ex, ey, ez, 0.35, 2.2, pr.ok ? MB.rgba('#ffffff') : MB.rgba('#ff6b5b'));
+      }
+      const ov = mb.build();
+      R().setOverlayMesh(ov.data, ov.count);
+    },
+    hover(p) { this.cursor = p; },
+    click(p) {
+      const pr = this.probe;
+      if (!pr || !pr.tmp || !pr.tmp.S || !p) return;
+      const r = pr.tmp.nearestS(p.x, p.z);
+      if (r && r.dist < pr.tmp.S.w[r.i] * 0.5 + 2) this.build();
+    },
+    build() {
+      const tr = this.tr;
+      if (!tr) return;
+      const r = game().buildPiece(tr, this.piece());
+      if (result(r)) {
+        sfx('build');
+        if (r.closes) this.closed(tr);
+      }
+      this.refresh();
+      app().panels.tracks();
+    },
+    closed(tr) {
+      sfx('success');
+      toast('¡Circuito cerrado! Revisa los elementos, valida y ábrelo al público.', 'good');
+      app().trackUI.section = 'features';
+      Tools.set(TrackFeature);
+      MX.WM.rebuild('tracks');
+    },
+    undo() {
+      const tr = this.tr;
+      if (!tr) return;
+      if (result(game().removeLastPiece(tr))) sfx('demolish');
+      this.refresh();
+      app().panels.tracks();
+    },
+    auto() {
+      const tr = this.tr, ui = app().trackUI;
+      if (!tr) return;
+      const r = game().autoComplete(tr, ui.width, ui.surface);
+      if (result(r)) { toast('Circuito cerrado con ' + r.added + ' piezas', 'good'); this.closed(tr); }
+      this.refresh();
+    },
+    key(e) {
+      const b = MX.Panels1.buildState();
+      if (e.key === 'Enter') { this.build(); return true; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { this.undo(); return true; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const i = BUILD_ORDER.indexOf(b.special ? 'S' : b.dir);
+        b.special = null;
+        b.dir = BUILD_ORDER[U.clamp(i + (e.key === 'ArrowLeft' ? -1 : 1), 0, BUILD_ORDER.length - 1)];
+        this.changed(); return true;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        b.special = null;
+        b.slope = U.clamp((b.slope || 0) + (e.key === 'ArrowUp' ? 1 : -1), -2, 2);
+        this.changed(); return true;
+      }
+      return false;
+    },
+    changed() { sfx('click'); MX.WM.rebuild('tracks'); this.refresh(); },
+    labels() {
+      const tr = this.tr, pr = this.probe, out = [];
+      if (pr && pr.tmp && pr.tmp.S) {
+        const S = pr.tmp.S, i = Math.floor(S.n / 2);
+        out.push({ x: S.x[i], y: S.y[i] + 4, z: S.z[i], text: pr.ok ? (pr.closes ? 'Cerrar circuito · ' : '') + U.fmtMoney(pr.cost) : pr.reason, bad: !pr.ok, warn: pr.ok && pr.closes });
+      }
+      if (tr && tr.origin && tr.endPose && tr.length > 60) {
+        const x = tr.origin.x * T, z = tr.origin.z * T;
+        out.push({ x, y: game().world.heightAt(x, z) + 3, z, text: 'Salida' });
+      }
+      return out;
+    }
+  };
+
+  /* -------- Track drawing (free-node circuits from old saves) -------- */
   const TrackDraw = {
     name: 'trackdraw',
     hint: 'Clic: añadir punto · Mantén y arrastra para dibujar · Clic en el primer punto: cerrar · Clic derecho o Retroceso: deshacer · Esc: salir',
@@ -409,9 +586,10 @@
       const tr = this.tr, seg = this.seg;
       if (!tr || seg < 0) return;
       if (!game().isUnlocked(Cat.surfaces[this.surface])) { toast('Superficie bloqueada: investígala', 'bad'); return; }
-      if (tr.nodes[seg].surf === this.surface) return;
+      const parts = tr.pieces || tr.nodes;
+      if (!parts[seg] || parts[seg].surf === this.surface) return;
       if (tr.state === 'open') { toast('Cierra el circuito para modificarlo', 'info'); return; }
-      if (result(game().editTrack(tr, (t) => { t.nodes[seg].surf = this.surface; }))) sfx('paint');
+      if (result(game().editTrack(tr, (t) => { (t.pieces || t.nodes)[seg].surf = this.surface; }))) sfx('paint');
     }
   };
   const TrackWidth = {
@@ -425,6 +603,7 @@
       const tr = this.tr, seg = this.seg;
       if (!tr || seg < 0) return;
       if (tr.state === 'open') { toast('Cierra el circuito para modificarlo', 'info'); return; }
+      if (tr.pieces) { if (result(game().editTrack(tr, (t) => { t.pieces[seg].w = this.width; }))) sfx('paint'); return; }
       const nxt = tr.closed ? (seg + 1) % tr.nodes.length : Math.min(tr.nodes.length - 1, seg + 1);
       if (result(game().editTrack(tr, (t) => { t.nodes[seg].w = this.width; t.nodes[nxt].w = this.width; }))) sfx('paint');
     }
@@ -745,7 +924,7 @@
     }
   };
 
-  Tools.list = { SelectTool, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
+  Tools.list = { SelectTool, TrackStart, TrackBuild, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
   Tools.helpers = { tileQuad, marker, ringMesh, trackRegionMesh, translated };
   MX.Tools = Tools;
 })(window.MX);

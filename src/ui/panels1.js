@@ -46,13 +46,13 @@
         const list = h('div', { class: 'track-list' });
         const head = h('div', { class: 'row gap' },
           h('button', { id: 'win-tracks-new', class: 'btn primary', onclick: () => newTrack() }, icon('track'), 'Nuevo circuito'),
-          h('button', { class: 'btn', title: 'Genera un trazado cerrado con salida y meta en tu terreno libre', onclick: () => suggested() }, icon('jump'), 'Trazado sugerido'));
+          h('button', { class: 'btn', title: 'Genera un circuito cerrado con salida, meta y algunos saltos en tu terreno libre', onclick: () => suggested() }, icon('jump'), 'Trazado sugerido'));
         const detail = h('div', { class: 'track-detail' });
         body.append(head, list, detail);
         return () => {
           const g = game();
           keyed(list, g.tracks.map(t => t.id + t.state + t.name + (g.selectedTrack === t)).join('|'), (el) => {
-            if (!g.tracks.length) el.append(h('p', { class: 'muted' }, 'Aún no tienes circuitos. Pulsa «Nuevo circuito» y dibuja el trazado con el ratón sobre tu terreno.'));
+            if (!g.tracks.length) el.append(h('p', { class: 'muted' }, 'Aún no tienes circuitos. Pulsa «Nuevo circuito», coloca la parrilla de salida y construye el trazado pieza a pieza.'));
             for (const t of g.tracks) {
               const st = STATE[t.state];
               el.append(h('button', { class: 'track-chip' + (g.selectedTrack === t ? ' on' : ''), onclick: () => { g.selectedTrack = t; t.ver++; } },
@@ -60,7 +60,7 @@
             }
           });
           const tr = g.selectedTrack;
-          keyed(detail, tr ? tr.id + ':' + tr.state + ':' + (tr.closed ? 1 : 0) + ':' + (app().trackUI.section) : 'none', (el) => buildTrackDetail(el, tr));
+          keyed(detail, tr ? tr.id + ':' + tr.state + ':' + (tr.closed ? 1 : 0) + ':' + (tr.origin ? 1 : 0) + ':' + (app().trackUI.section) : 'none', (el) => buildTrackDetail(el, tr));
           if (tr && detail._upd) detail._upd();
         };
       }
@@ -70,8 +70,8 @@
     const g = game();
     const tr = g.newTrack();
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
-    MX.Tools.set(TL().TrackDraw);
-    app().hud.toast('Haz clic sobre el terreno para dibujar el trazado', 'info');
+    MX.Tools.set(TL().TrackStart);
+    app().hud.toast('Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
   }
   function buildTrackDetail(el, tr) {
     if (!tr) return;
@@ -85,6 +85,16 @@
       const b = h('button', { class: 'btn tool' + (MX.Tools.current === tool ? ' on' : ''), disabled: !editable, onclick: () => { if (extra) extra(); MX.Tools.set(tool); app().panels.tracks(); } }, icon(ic), label);
       return b;
     };
+    if (tr.pieces && !tr.origin) {
+      el.append(h('div', { class: 'callout' }, icon('info'), h('span', null, 'Haz clic en tu terreno para colocar la parrilla de salida. Pulsa R para girarla. En pantallas táctiles, toca para verla y vuelve a tocar encima para colocarla. Después irás construyendo el circuito pieza a pieza.')),
+        h('div', { class: 'row gap wrap' },
+          toolBtn('track', 'Colocar la salida', TL().TrackStart),
+          h('button', { class: 'btn', title: 'Girar la parrilla 45 grados (R)', onclick: () => { if (MX.Tools.current !== TL().TrackStart) MX.Tools.set(TL().TrackStart); TL().TrackStart.rotate(); } }, icon('rotate'), 'Girar'),
+          h('button', { class: 'btn danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar')));
+      widthSurface(el, tr, true);
+      return;
+    }
+    if (tr.pieces && !tr.closed) { constructorUI(el, tr); return; }
     if (!tr.closed) {
       el.append(h('div', { class: 'callout' }, icon('info'), h('span', null, 'Dibuja el trazado haciendo clic sobre tu terreno. Cierra el circuito volviendo al primer punto. Coste: ', h('b', null, U.fmtMoney(tr.geometryCost())))));
       el.append(h('div', { class: 'row gap wrap' },
@@ -125,6 +135,12 @@
       });
     } else if (ui.section === 'surface') {
       widthSurface(sec, tr, false);
+    } else if (ui.section === 'shape' && tr.pieces) {
+      const curves = tr.pieces.filter(p => p.t === 'curve').length;
+      sec.append(statRow('Piezas', tr.pieces.length + ' (' + curves + ' curvas)'), statRow('Longitud', U.fmtMeters(tr.length)),
+        h('p', { class: 'muted small' }, 'Para cambiar el trazado, quita piezas desde el final y vuelve a construir. La primera pieza que quites abre el circuito.'),
+        h('div', { class: 'row gap wrap' },
+          h('button', { class: 'btn', disabled: !editable, onclick: () => { const r = g.removeLastPiece(tr); if (r.ok) { MX.Audio.sfx('demolish'); MX.Tools.set(TL().TrackBuild); WM.rebuild('tracks'); } else app().hud.toast(r.reason, 'bad'); } }, icon('demolish'), 'Quitar la última pieza')));
     } else if (ui.section === 'shape') {
       sec.append(h('div', { class: 'row gap wrap' },
         toolBtn('track', 'Editar puntos', TL().TrackEdit),
@@ -173,6 +189,155 @@
     ctx.lineTo(34, 15); ctx.closePath(); ctx.fill();
     return c;
   }
+  /* ================= Piece-by-piece constructor ================= */
+  const BUILD_DIRS = [
+    { id: 'L1', kind: 'curve', k: 1, dir: -1, name: 'Curva cerrada a la izquierda' },
+    { id: 'L2', kind: 'curve', k: 2, dir: -1, name: 'Curva media a la izquierda' },
+    { id: 'L3', kind: 'curve', k: 3, dir: -1, name: 'Curva abierta a la izquierda' },
+    { id: 'S', kind: 'straight', name: 'Recta' },
+    { id: 'R3', kind: 'curve', k: 3, dir: 1, name: 'Curva abierta a la derecha' },
+    { id: 'R2', kind: 'curve', k: 2, dir: 1, name: 'Curva media a la derecha' },
+    { id: 'R1', kind: 'curve', k: 1, dir: 1, name: 'Curva cerrada a la derecha' }
+  ];
+  const BUILD_SLOPES = [[-2, 'Bajada fuerte'], [-1, 'Bajada'], [0, 'Llano'], [1, 'Subida'], [2, 'Subida fuerte']];
+  const BUILD_LENS = [[1, 'Corta'], [3, 'Media'], [6, 'Larga']];
+  const BUILD_BANKS = [[0, 'Sin peralte'], [1, 'Peralte'], [2, 'Peralte grande']];
+  const SPECIALS = ['finish', 'tabletop_s', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'plateau', 'whoops', 'rollers', 'dubbies', 'rhythm'];
+  function buildState() {
+    const ui = app().trackUI;
+    if (!ui.build) ui.build = { dir: 'S', n: 3, slope: 0, bank: 0, special: null };
+    return ui.build;
+  }
+  function currentPiece() {
+    const b = buildState(), ui = app().trackUI;
+    const base = { w: ui.width, surf: ui.surface, slope: 0, bank: 0 };
+    if (b.special) return Object.assign(base, { t: 'special', f: b.special });
+    const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
+    if (d.kind === 'curve') return Object.assign(base, { t: 'curve', k: d.k, dir: d.dir, slope: b.slope, bank: b.bank });
+    return Object.assign(base, { t: 'straight', n: b.n, slope: b.slope });
+  }
+  function pieceName(p) {
+    if (p.t === 'special') return Cat.features[p.f].name;
+    const sl = ({ '-2': ' en bajada fuerte', '-1': ' en bajada', '1': ' en subida', '2': ' en subida fuerte' })[p.slope] || '';
+    if (p.t === 'curve') {
+      const d = BUILD_DIRS.find(x => x.kind === 'curve' && x.k === p.k && x.dir === p.dir);
+      return d.name + sl + (p.bank === 2 ? ' con peralte grande' : p.bank ? ' con peralte' : '');
+    }
+    return 'Recta ' + ({ 1: 'corta', 3: 'media', 6: 'larga' }[p.n] || '') + sl;
+  }
+  /* top view of a piece: brown band with an arrow */
+  function dirGlyph(d) {
+    const c = h('canvas', { width: 44, height: 34, class: 'glyph-dir' });
+    const x = c.getContext('2d');
+    x.lineCap = 'round';
+    let ex = 22, ey = 6, ang = -Math.PI / 2;
+    const path = () => {
+      x.beginPath(); x.moveTo(22, 32);
+      if (d.kind === 'straight') { x.lineTo(22, 8); ex = 22; ey = 8; ang = -Math.PI / 2; return; }
+      const R = [0, 9, 14, 21][d.k], th = 1.15, s = d.dir;
+      x.lineTo(22, 28);
+      if (s > 0) { x.arc(22 + R, 28, R, Math.PI, Math.PI + th, false); ex = 22 + R + R * Math.cos(Math.PI + th); ey = 28 + R * Math.sin(Math.PI + th); ang = -Math.PI / 2 + th; }
+      else { x.arc(22 - R, 28, R, 0, -th, true); ex = 22 - R + R * Math.cos(-th); ey = 28 + R * Math.sin(-th); ang = -Math.PI / 2 - th; }
+    };
+    x.strokeStyle = '#1a1410'; x.lineWidth = 9; path(); x.stroke();
+    x.strokeStyle = '#b07a45'; x.lineWidth = 6; path(); x.stroke();
+    x.fillStyle = '#ffd22e'; x.strokeStyle = '#1a1410'; x.lineWidth = 1.5;
+    x.beginPath();
+    x.moveTo(ex + Math.cos(ang) * 6, ey + Math.sin(ang) * 6);
+    x.lineTo(ex + Math.cos(ang + 2.4) * 6, ey + Math.sin(ang + 2.4) * 6);
+    x.lineTo(ex + Math.cos(ang - 2.4) * 6, ey + Math.sin(ang - 2.4) * 6);
+    x.closePath(); x.fill(); x.stroke();
+    return c;
+  }
+  /* side view of a slope */
+  function slopeGlyph(sl) {
+    const c = h('canvas', { width: 44, height: 24, class: 'glyph-slope' });
+    const x = c.getContext('2d');
+    const y0 = 16 + (sl > 0 ? 3 : sl < 0 ? -5 : 0), y1 = y0 - sl * 5.5;
+    x.fillStyle = '#6b4a2b';
+    x.beginPath(); x.moveTo(3, 23); x.lineTo(3, y0); x.lineTo(41, y1); x.lineTo(41, 23); x.closePath(); x.fill();
+    x.strokeStyle = '#1a1410'; x.lineWidth = 5; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    x.strokeStyle = '#b07a45'; x.lineWidth = 3; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    return c;
+  }
+  function constructorUI(el, tr) {
+    const g = game(), ui = app().trackUI, b = buildState();
+    const status = h('div', { class: 'bld-status' });
+    const preview = h('div', { class: 'bld-preview' });
+    const box = h('div', { class: 'builder' });
+    el.append(box);
+    const cur = MX.Tools.current;
+    if (cur !== TL().TrackBuild && (!cur || cur.name === 'select' || cur.name.startsWith('track'))) MX.Tools.set(TL().TrackBuild);
+    const changed = () => { MX.Audio.sfx('click'); WM.rebuild('tracks'); TL().TrackBuild.refresh(); };
+    /* mouse clicks don't take focus here, so Enter keeps meaning "build" */
+    const noFocus = (e) => e.preventDefault();
+    const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
+    const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
+    box.append(status);
+    /* direction */
+    const dirs = h('div', { class: 'bld-dirs' });
+    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', !b.special && b.dir === dd.id, dd.name, () => { b.dir = dd.id; b.special = null; changed(); }, dirGlyph(dd)));
+    box.append(h('h4', null, 'Dirección'), dirs);
+    if (!b.special && d.kind === 'straight') {
+      const lens = h('div', { class: 'row gap wrap' });
+      for (const [n, label] of BUILD_LENS) lens.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label + ' · ' + n * C.TILE + ' m'));
+      box.append(lens);
+    }
+    if (!b.special && d.kind === 'curve') {
+      const banks = h('div', { class: 'row gap wrap' });
+      for (const [v, label] of BUILD_BANKS) {
+        const locked = v === 2 && !g.isUnlocked(Cat.features.berm_big);
+        banks.append(opt('btn small' + (locked ? ' locked' : ''), b.bank === v, locked ? lockReason(Cat.features.berm_big) : label, () => { if (locked) { app().hud.toast(lockReason(Cat.features.berm_big), 'bad'); return; } b.bank = v; changed(); }, label, locked ? icon('lock') : null));
+      }
+      box.append(banks);
+    }
+    /* slope */
+    if (!b.special) {
+      const slopes = h('div', { class: 'bld-slopes' });
+      for (const [v, label] of BUILD_SLOPES) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v), h('small', null, label)));
+      box.append(h('h4', null, 'Pendiente'), slopes);
+    }
+    /* special pieces */
+    const sp = h('div', { class: 'bld-specials' });
+    sp.append(opt('feat', !b.special, 'Pieza normal', () => { b.special = null; changed(); }, h('span', { class: 'feat-ic' }, dirGlyph(BUILD_DIRS[3])), h('b', null, 'Normal'), h('small', null, 'Tramo de pista')));
+    for (const k of SPECIALS) {
+      const fd = Cat.features[k];
+      const locked = !g.isUnlocked(fd);
+      sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.desc, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
+        h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
+    }
+    box.append(h('h4', null, 'Pieza especial'), sp);
+    widthSurface(box, tr, true);
+    box.append(preview,
+      h('div', { class: 'row gap wrap bld-actions' },
+        h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir pieza'),
+        h('button', { id: 'bld-undo', class: 'btn', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar la última'),
+        h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino más corto hasta la salida y lo construye', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
+      h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'),
+      h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
+    el._upd = () => {
+      const e = tr.endPose, o = tr.origin;
+      clear(status);
+      if (e && o) {
+        const dist = Math.hypot(e.x - o.x, e.z - o.z) * C.TILE;
+        status.append(h('span', null, h('b', null, tr.pieces.length), tr.pieces.length === 1 ? ' pieza' : ' piezas'), h('span', null, h('b', null, U.fmtMeters(tr.length))),
+          h('span', null, 'Altura ', h('b', null, (e.e > 0 ? '+' : '') + U.fmt1(e.e) + ' m')), h('span', null, 'Salida a ', h('b', null, U.fmtMeters(dist))),
+          h('span', null, 'Invertido ', h('b', null, U.fmtMoney(tr.paid))));
+      }
+      const pr = TL().TrackBuild.probe;
+      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + JSON.stringify(currentPiece()) : 'none';
+      if (preview._k === key) return;
+      preview._k = key;
+      clear(preview);
+      if (!pr) return;
+      const p = currentPiece();
+      preview.className = 'bld-preview ' + (pr.ok ? (pr.closes ? 'closes' : 'ok') : 'bad');
+      preview.append(icon(pr.ok ? (pr.closes ? 'trophy' : 'check') : 'cross'),
+        h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
+          !pr.ok ? h('em', null, pr.reason) : null));
+    };
+  }
+
   function widthSurface(el, tr, beforeClose) {
     const g = game(), ui = app().trackUI;
     const editable = tr.state !== 'open';
@@ -181,21 +346,22 @@
       const d = Cat.surfaces[k];
       const locked = !g.isUnlocked(d);
       const on = beforeClose ? ui.surface === k : (MX.Tools.current === TL().TrackSurface && TL().TrackSurface.surface === k);
-      srow.append(h('button', { class: 'btn swatch' + (on ? ' on' : '') + (locked ? ' locked' : ''), disabled: !editable, title: locked ? lockReason(d) : d.name + ' · ' + U.fmtMoney(d.cost) + '/m',
+      srow.append(h('button', { class: 'btn swatch' + (on ? ' on' : '') + (locked ? ' locked' : ''), disabled: !editable, title: locked ? lockReason(d) : d.name + ' · ' + U.fmtMoney(d.cost) + '/m', onmousedown: (e) => e.preventDefault(),
         onclick: () => {
           if (locked) { app().hud.toast(lockReason(d), 'bad'); return; }
           ui.surface = k;
           if (!beforeClose) { TL().TrackSurface.surface = k; MX.Tools.set(TL().TrackSurface); }
           WM.rebuild('tracks');
+          if (MX.Tools.current === TL().TrackBuild || MX.Tools.current === TL().TrackStart) MX.Tools.current.refresh();
         } }, h('i', { style: { background: d.color } }), d.name, locked ? icon('lock') : null));
     }
     const wrow = h('div', { class: 'row gap wrap' });
     for (const wv of [6, 7, 8, 10, 12]) {
       const on = beforeClose ? ui.width === wv : (MX.Tools.current === TL().TrackWidth && TL().TrackWidth.width === wv);
-      wrow.append(h('button', { class: 'btn small' + (on ? ' on' : ''), disabled: !editable, onclick: () => { ui.width = wv; if (!beforeClose) { TL().TrackWidth.width = wv; MX.Tools.set(TL().TrackWidth); } WM.rebuild('tracks'); } }, wv + ' m'));
+      wrow.append(h('button', { class: 'btn small' + (on ? ' on' : ''), disabled: !editable, onmousedown: (e) => e.preventDefault(), onclick: () => { ui.width = wv; if (!beforeClose) { TL().TrackWidth.width = wv; MX.Tools.set(TL().TrackWidth); } WM.rebuild('tracks'); if (MX.Tools.current === TL().TrackBuild || MX.Tools.current === TL().TrackStart) MX.Tools.current.refresh(); } }, wv + ' m'));
     }
-    el.append(h('h4', null, beforeClose ? 'Superficie de los nuevos tramos' : 'Superficie (clic o arrastra sobre un tramo)'), srow,
-      h('h4', null, beforeClose ? 'Anchura de los nuevos tramos' : 'Anchura (clic sobre un tramo)'), wrow);
+    el.append(h('h4', null, beforeClose ? 'Superficie de las nuevas piezas' : 'Superficie (clic o arrastra sobre un tramo)'), srow,
+      h('h4', null, beforeClose ? 'Anchura de las nuevas piezas' : 'Anchura (clic sobre un tramo)'), wrow);
     const info = h('div', { class: 'surf-info' });
     const d = Cat.surfaces[ui.surface];
     info.append(h('small', { class: 'muted' }, d.name + ': agarre ' + Math.round(d.grip * 100) + '%, ' + (d.drag > 1.1 ? 'frena las motos' : d.drag < 1 ? 'rápida' : 'velocidad normal') + ', desgaste ×' + d.wear + ', dificultad ' + (d.diff >= 0 ? '+' : '') + d.diff + '.'));
@@ -257,31 +423,23 @@
       }
     }
     if (!best) { app().hud.toast('No hay un terreno libre suficientemente grande (mínimo 14 x 11 casillas)', 'bad'); return; }
-    let tr = g.selectedTrack;
-    if (!tr || tr.nodes.length) tr = g.newTrack();
-    if (!tr) return;
+    let tr = g.selectedTrack, fresh = false;
+    if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length) { tr = g.newTrack(); fresh = true; }
+    if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
+    const res = g.suggestLoop(tr, { x0: best.x0, z0: best.z0, w: best.w, h: best.h }, app().trackUI.width, app().trackUI.surface);
+    if (!res.ok) {
+      if (fresh) { g.deleteTrack(tr); g.selectedTrack = g.tracks[0] || null; WM.rebuild('tracks'); }
+      app().hud.toast(res.reason, 'bad');
+      return;
+    }
+    g.selectedTrack = tr;
     const cx = (best.x0 + best.w / 2) * T, cz = (best.z0 + best.h / 2) * T;
-    const rx = (best.w / 2 - 2.6) * T, rz = (best.h / 2 - 2.6) * T;
-    const n = 12;
-    const pts = [];
-    for (let k = 0; k < n; k++) {
-      const a = k / n * Math.PI * 2;
-      let r = 1;
-      if (k === 3 || k === 9) r = 0.62;      /* two inward bends make a kidney shape */
-      if (k === 6) r = 0.85;
-      pts.push([cx + Math.cos(a) * rx * r, cz + Math.sin(a) * rz * (k === 3 || k === 9 ? 0.92 : r)]);
-    }
-    const res = g.editTrack(tr, (t) => { t.nodes = []; for (const p of pts) t.addNode(p[0], p[1], app().trackUI.width, app().trackUI.surface); t.closed = true; });
-    if (!res.ok) { app().hud.toast(res.reason, 'bad'); return; }
-    /* start gate and finish on the longest straight */
-    for (const type of ['start', 'finish']) {
-      for (let s = 0; s < tr.length; s += 2) { const c = tr.checkFeature(type, s + (type === 'finish' ? 30 : 0)); if (c.ok) { g.addFeature(tr, type, s + (type === 'finish' ? 30 : 0)); break; } }
-    }
     MX.Tools.set(TL().TrackFeature);
     app().trackUI.section = 'features';
     WM.rebuild('tracks');
-    app().lookAt(cx, cz);
-    app().hud.toast('Trazado sugerido creado. Añade saltos y peraltes.', 'good');
+    const cam = app().renderer.cam;
+    cam.follow = null; cam.tx = cx; cam.tz = cz; cam.ty = w.heightAt(cx, cz); cam.targetZoom = Math.min(cam.targetZoom, 5.5);
+    app().hud.toast('Trazado sugerido creado. Revisa los elementos, valida y ábrelo.', 'good');
     MX.Audio.sfx('build');
   }
 
@@ -392,5 +550,5 @@
     });
   }
 
-  MX.Panels1 = { tracksPanel, terrainPanel, buildPanel, pathsPanel, decorPanel, thumb, suggested, STATE, statRow, lockReason };
+  MX.Panels1 = { tracksPanel, terrainPanel, buildPanel, pathsPanel, decorPanel, thumb, suggested, STATE, statRow, lockReason, currentPiece, buildState, pieceName };
 })(window.MX);

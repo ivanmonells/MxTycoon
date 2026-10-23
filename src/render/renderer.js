@@ -447,10 +447,10 @@
     }
 
     /* ---------- overlays (ghosts, markers) ---------- */
-    setGhostMesh(data, count, tint) {
+    setGhostMesh(data, count, tint, dither) {
       if (!data || !count) { this.ghost = null; return; }
       this.ghostMesh = GLU.makeMeshVAO(this.gl, data, count, this.ghostMesh);
-      this.ghost = { tint };
+      this.ghost = { tint, dither: dither || 0.72 };
     }
     setOverlayMesh(data, count) {
       if (!data || !count) { this.overlayCount = 0; return; }
@@ -650,6 +650,7 @@
         gl.uniformMatrix4fv(p.u.uViewProj, false, cam.viewProj);
         this._setLightUniforms(p, L); this._bindMats(p);
         gl.uniform4fv(p.u.uGhost, this.ghost.tint);
+        gl.uniform1f(p.u.uGhostDither, this.ghost.dither);
         this._drawMesh(this.ghostMesh);
         gl.uniform4f(p.u.uGhost, 0, 0, 0, 0);
       }

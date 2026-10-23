@@ -1,16 +1,17 @@
 # MX Tycoon: Motocross Empire
 
-Juego de gestión y construcción de complejos de motocross para el navegador, en la línea de los tycoon clásicos: vista isométrica 2.5D con estética retro, editor libre de circuitos con el ratón, pilotos y público autónomos, economía, competiciones y progresión.
+Juego de gestión y construcción de complejos de motocross para el navegador, en la línea de los tycoon clásicos: vista isométrica 2.5D con estética retro, constructor de circuitos pieza a pieza, pilotos y público autónomos, economía, competiciones y progresión.
 
 No necesita instalación ni servidor: abre `dist/mx-tycoon.html` en un navegador moderno con WebGL2 (Chrome, Edge, Firefox o Safari recientes).
 
 ## Cómo se juega
 
-1. **Circuitos > Nuevo circuito**: haz clic sobre tu terreno para ir colocando puntos (o mantén pulsado y arrastra). Vuelve al primer punto para cerrar el trazado.
-2. En **Elementos** coloca la parrilla de salida, la línea de meta, saltos (tabletops, dobles, triples, mesetas), secciones rítmicas (whoops, rollers, dubbies) y peraltes. En **Superficie** cambias tierra, arena, barro o tierra compacta y la anchura de cada tramo. En **Trazado** editas los puntos y las subidas y bajadas.
-3. Construye un **paddock** y un **aparcamiento** tocando la carretera, una **taquilla**, **baños** y comida, y únelos con **caminos**.
-4. **Valida**, **prueba** con pilotos de test y **abre al público**. Llegan furgonetas con pilotos y coches con espectadores.
-5. Contrata personal, ajusta precios, lanza marketing, investiga mejoras, organiza carreras (de la jornada de entrenamiento al Gran Premio) y cumple los objetivos del modo carrera.
+1. **Circuitos > Nuevo circuito**: haz clic en tu terreno para colocar la parrilla de salida (R la gira en pasos de 45 grados).
+2. Construye el circuito **pieza a pieza**, como en los tycoon clásicos: elige la dirección (recta corta, media o larga, o curva cerrada, media o abierta a cada lado), la pendiente (bajada fuerte, bajada, llano, subida, subida fuerte), el peralte de las curvas y, si quieres, una **pieza especial** (meta, tabletops, dobles, triples, escalones, mesetas, whoops, rollers, dubbies, secciones rítmicas). La pieza fantasma enseña dónde irá y cuánto cuesta. Vuelve hasta la salida para cerrar el circuito o pulsa **Cerrar automáticamente**. Teclado: Intro construye, Retroceso quita la última pieza y las flechas cambian dirección y pendiente.
+3. Con el circuito cerrado, en **Elementos** añades más saltos sobre las rectas y en **Superficie** cambias tierra, arena, barro o tierra compacta y la anchura de cada pieza.
+4. Construye un **paddock** y un **aparcamiento** tocando la carretera, una **taquilla**, **baños** y comida, y únelos con **caminos**.
+5. **Valida**, **prueba** con pilotos de test y **abre al público**. Llegan furgonetas con pilotos y coches con espectadores.
+6. Contrata personal, ajusta precios, lanza marketing, investiga mejoras, organiza carreras (de la jornada de entrenamiento al Gran Premio) y cumple los objetivos del modo carrera.
 
 Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Continuar** (última partida guardada) y **Modo sandbox** (dinero y desbloqueos sin límite).
 
@@ -19,6 +20,7 @@ Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Conti
 | Acción | Ratón y teclado | Táctil |
 | --- | --- | --- |
 | Mover la cámara | Arrastrar con botón derecho, WASD o flechas | Arrastrar con un dedo |
+| Construir circuitos | Intro construye la pieza, Retroceso quita la última, flechas cambian dirección y pendiente | Botones del constructor |
 | Zoom | Rueda, + y − | Pellizcar |
 | Girar la vista | Q y E | Botón de girar |
 | Pausa y velocidad | Espacio, 1 a 4 | Botones de velocidad |
@@ -50,6 +52,7 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `index.html` carga los módulos por separado (útil para depurar).
 - `node build.mjs` genera `dist/mx-tycoon.html`, un único archivo autocontenido.
 - `node tools/sim-test.cjs` simula un complejo durante varios meses en Node y muestra la economía.
+- `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
 
 Todos los gráficos, sonidos y logotipos de patrocinadores se generan por código; las marcas y nombres son ficticios.

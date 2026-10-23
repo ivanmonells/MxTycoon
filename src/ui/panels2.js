@@ -625,11 +625,12 @@
       title: 'Controles y ayuda', icon: 'info', width: 420,
       build: (body) => {
         const rows = [['Mover la cámara', 'Arrastrar con botón derecho · WASD o flechas · en táctil, arrastrar con un dedo'], ['Zoom', 'Rueda del ratón · + / − · pellizcar'], ['Girar la vista', 'Q / E'],
+          ['Construir circuitos', 'Intro: construir la pieza · Retroceso: quitar la última · flechas: dirección y pendiente'],
           ['Pausa y velocidad', 'Espacio · teclas 1 a 4'], ['Girar edificio', 'R o clic derecho'], ['Cancelar herramienta', 'Esc o clic derecho'], ['Cuadrícula', 'G'], ['Guardado rápido', 'Ctrl+S']];
         for (const [a, b] of rows) body.append(statRow(a, b));
         body.append(h('h4', null, 'Cómo empezar'), h('ol', { class: 'steps' },
-          h('li', null, 'Dibuja un circuito cerrado en tu terreno (Circuitos → Nuevo circuito).'),
-          h('li', null, 'Añade la parrilla de salida, la línea de meta y algunos saltos.'),
+          h('li', null, 'Pulsa Circuitos → Nuevo circuito y coloca la parrilla de salida en tu terreno.'),
+          h('li', null, 'Construye pieza a pieza eligiendo dirección y pendiente, mete saltos y la meta desde «Pieza especial» y vuelve hasta la salida para cerrar el circuito.'),
           h('li', null, 'Construye un paddock y un aparcamiento tocando la carretera, una taquilla, baños y caminos.'),
           h('li', null, 'Valida, prueba y abre el circuito. Llegarán pilotos y espectadores.'),
           h('li', null, 'Contrata personal, ajusta precios, organiza eventos y cumple objetivos.')));

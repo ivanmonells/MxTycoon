@@ -130,7 +130,7 @@
       if (this._snd !== sn) { this._snd = sn; sic.style.backgroundImage = 'url(' + MX.DOM.iconURL(sn, 3) + ')'; }
       /* toolbar highlight */
       const tname = MX.Tools.current ? MX.Tools.current.name : '';
-      const map = { trackdraw: 'tracks', trackedit: 'tracks', trackfeature: 'tracks', tracksurface: 'tracks', trackwidth: 'tracks', trackelev: 'tracks', build: 'build', path: 'paths', addon: 'paths', decor: 'decor', demolish: 'demolish', terrain: 'terrain', paint: 'terrain', land: 'terrain' };
+      const map = { trackstart: 'tracks', trackbuild: 'tracks', trackdraw: 'tracks', trackedit: 'tracks', trackfeature: 'tracks', tracksurface: 'tracks', trackwidth: 'tracks', trackelev: 'tracks', build: 'build', path: 'paths', addon: 'paths', decor: 'decor', demolish: 'demolish', terrain: 'terrain', paint: 'terrain', land: 'terrain' };
       for (const id in this.toolBtns) this.toolBtns[id].classList.toggle('on', map[tname] === id || MX.WM.isOpen(id));
       this.updateObjective();
       this.updateRaceBar();

@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const MX = root.MX = root.MX || {};
-  MX.VERSION = '1.0.0';
+  MX.VERSION = '1.1.0';
 
   const U = {};
 

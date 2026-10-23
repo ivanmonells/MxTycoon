@@ -27,19 +27,27 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await shot('m-tracks');
   await shot('m-tracks-b');
   await page.locator('#win-tracks-new').tap(); await wait(300);
-  /* draw by tapping */
   await install(ev);
-  await ev(() => { MX.WM.closeAll(); const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 2.2; __q.focus(158, 212, 195, 470); });
-  await wait(500);
-  const pts = []; const N = 10;
-  for (let k = 0; k < N; k++) { const a = k / N * Math.PI * 2; pts.push([158 + Math.cos(a) * 50, 212 + Math.sin(a) * 38]); }
-  pts.push(pts[0]);
-  for (const [x, z] of pts) {
-    const p = await ev(([x, z]) => __q.w2s(x, z, 0), [x, z]);
-    await touch('touchStart', [[p.x, p.y]]); await wait(60); await touch('touchEnd', []); await wait(220);
-  }
-  await wait(600);
-  logs.push('track ' + await ev(() => { const t = MX.App.game.tracks[0]; return t ? t.nodes.length + ' nodes closed=' + t.closed + ' len=' + Math.round(t.length) : 'none'; }));
+  logs.push('cam state ' + await ev(() => { const c = MX.App.renderer.cam; return JSON.stringify({ tx: c.tx, tz: c.tz, ty: c.ty, zoom: c.zoom, tz2: c.targetZoom, yaw: c.yaw, w: c.w, h: c.h }); }));
+  await ev(() => { const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 2.4; __q.focus(146, 176, 195, 520); });
+  logs.push('cam after ' + await ev(() => { const c = MX.App.renderer.cam; return JSON.stringify({ tx: c.tx, tz: c.tz, ty: c.ty, zoom: c.zoom }); }));
+  await wait(400);
+  const tapAt = async (x, z) => { const p = await ev(([x, z]) => __q.w2s(x, z, 0), [x, z]); logs.push('tap ' + JSON.stringify(p)); await touch('touchStart', [[p.x, p.y]]); await wait(60); await touch('touchEnd', []); await wait(400); return p; };
+  await page.locator('.win .win-x').first().tap(); await wait(300);
+  logs.push('free at tap point: ' + await ev(() => { const p = __q.w2s(146, 176, 0); return __q.freeAt(p.x, p.y); }));
+  await tapAt(146, 176);
+  logs.push('after first tap: pieces ' + await ev(() => MX.App.game.selectedTrack.pieces.length) + ' ghost ' + await ev(() => !!MX.App.renderer.ghost));
+  await shot('m-start-preview');
+  await tapAt(146, 176);
+  logs.push('after second tap: pieces ' + await ev(() => MX.App.game.selectedTrack.pieces.length) + ' tool ' + await ev(() => MX.Tools.current.name));
+  await shot('m-start-placed');
+  await page.locator('[data-id="tracks"]').tap(); await wait(500);
+  for (let k = 0; k < 3; k++) { await page.locator('#bld-build').tap(); await wait(400); }
+  await page.locator('.bld-dirs .bld-btn[aria-label="Curva media a la derecha"]').tap(); await wait(300);
+  await page.locator('#bld-build').tap(); await wait(400);
+  await page.locator('#bld-build').tap(); await wait(400);
+  await page.locator('#bld-auto').tap(); await wait(1500);
+  logs.push('track ' + await ev(() => { const t = MX.App.game.tracks[0]; return t ? t.pieces.length + ' pieces closed=' + t.closed + ' len=' + Math.round(t.length) : 'none'; }));
   await shot('m-track');
   await page.locator('.tb-right .tb-btn').last().tap(); await wait(400);
   await shot('m-menu');

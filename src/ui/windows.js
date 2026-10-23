@@ -51,6 +51,8 @@
       return w;
     },
     _build(w, o) {
+      /* rebuilding the same tab keeps the scroll position (option buttons rebuild the panel) */
+      const keepScroll = w.builtTab === (w.tab || null) ? w.body.scrollTop : 0;
       clear(w.body); clear(w.tabsEl);
       w.o = o;
       if (o.tabs) {
@@ -68,6 +70,8 @@
         w.update = o.build ? (o.build(w.body, w) || null) : null;
       }
       if (w.update) try { w.update(); } catch (e) { console.error(e); }
+      w.builtTab = w.tab || null;
+      if (keepScroll) w.body.scrollTop = keepScroll;
     },
     setTab(id, tab) { const w = this.wins.get(id); if (w) { w.tab = tab; this._build(w, w.o); } },
     rebuild(id) { const w = this.wins.get(id); if (w) this._build(w, w.o); },

@@ -465,6 +465,7 @@
       if (used.has(slot)) return null;
       const tr = new MX.Track(null, 'Circuito ' + (this.tracks.length + 1));
       tr.slot = slot;
+      tr.pieces = [];
       this.tracks.push(tr);
       this.selectedTrack = tr;
       MX.Bus.emit('track:list');
@@ -475,7 +476,11 @@
     /* Apply a geometry edit atomically: fn mutates the track; cost delta charged or refunded. */
     editTrack(tr, fn, reanchor) {
       if (tr.state === 'open') return { ok: false, reason: 'Cierra el circuito para modificarlo' };
-      const snap = { nodes: tr.nodes.map(n => Object.assign({}, n)), features: tr.features.map(f => Object.assign({}, f)), closed: tr.closed };
+      if (tr.state === 'testing') this.endTest(tr);
+      const snap = {
+        nodes: tr.nodes.map(n => Object.assign({}, n)), features: tr.features.map(f => Object.assign({}, f)), closed: tr.closed,
+        pieces: tr.pieces ? tr.pieces.map(p => Object.assign({}, p)) : null, origin: tr.origin ? Object.assign({}, tr.origin) : null
+      };
       const oldLen = tr.length;
       const oldCost = tr.geometryCost() + tr.featureCost();
       const r = fn(tr);
@@ -488,13 +493,14 @@
       for (const t of tr.tiles) if (this.world.scen[t] >= 0 && this.world.owned[t]) { const o = this.world.scenery.get(this.world.scen[t]); if (this.world.isTree(o)) trees++; }
       const delta = newCost - oldCost + trees * C.TREE_CLEAR_COST;
       if (delta > 0 && !this.canAfford(delta)) {
-        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed;
+        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed; tr.pieces = snap.pieces; tr.origin = snap.origin;
         tr.rebuild(this.world); tr.computeFootprint(this.world);
         return { ok: false, reason: 'No tienes suficiente dinero', cost: delta };
       }
       this.trackGeometryChanged(tr, true);
       if (delta > 0) this.spend('construccion', delta);
-      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * C.REFUND_RATE));
+      /* undoing work on a circuit that never opened gives the money back in full */
+      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * (tr.state === 'building' ? 1 : C.REFUND_RATE)));
       tr.paid = Math.max(0, tr.paid + delta);
       return { ok: true, cost: delta };
     }
@@ -522,7 +528,113 @@
       return this.editTrack(tr, (t) => { t.addFeature(type, chk.s0, chk.len, chk.side); });
     }
     removeFeature(tr, uid) {
-      return this.editTrack(tr, (t) => { if (!t.removeFeature(uid)) return { ok: false, reason: 'No encontrado' }; });
+      const f = tr.features.find(x => x.uid === uid);
+      if (f && f.type === 'start' && tr.pieces) return { ok: false, reason: 'La parrilla forma parte del circuito: no se puede quitar' };
+      return this.editTrack(tr, (t) => {
+        const ff = t.features.find(x => x.uid === uid);
+        if (!ff) return { ok: false, reason: 'No encontrado' };
+        /* a jump piece becomes a plain straight; a banked curve loses its banking */
+        if (ff.auto === 'bank') { for (let i = ff.pin; i < t.pieces.length && t.pieces[i].t === 'curve' && t.pieces[i].bank; i++) t.pieces[i].bank = 0; }
+        else if (ff.pin != null && t.pieces && t.pieces[ff.pin] && t.pieces[ff.pin].t === 'special') {
+          const pc = t.pieces[ff.pin];
+          pc.n = pc._g ? pc._g.n : MX.Track.pieceUnits(pc, 0); pc.t = 'straight'; delete pc.f;
+        }
+        t.removeFeature(uid);
+      });
+    }
+
+    /* ---------------- piece-by-piece construction ---------------- */
+    placeStart(tr, x, z, h, w, surf) {
+      if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
+      if (tr.pieces.length) return { ok: false, reason: 'La parrilla de salida ya está colocada' };
+      const pr = tr.probeStart(this.world, x, z, h, w, surf);
+      if (!pr.ok) return pr;
+      if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
+      return this.editTrack(tr, (t) => {
+        t.origin = { x, z, h }; t.e0 = 0; t.closed = false;
+        t.pieces = [{ t: 'start', slope: 0, bank: 0, w, surf }];
+        t.features = [];
+        t.pinFeature('start', 0, MX.Track.START_GATE);
+      });
+    }
+    buildPiece(tr, p) {
+      if (p.t === 'special' && !this.isUnlocked(Cat.features[p.f])) return { ok: false, reason: 'Bloqueado: necesitas investigarlo' };
+      if (p.t === 'curve' && p.bank === 2 && !this.isUnlocked(Cat.features.berm_big)) return { ok: false, reason: 'El peralte grande necesita investigación' };
+      if (!this.isUnlocked(Cat.surfaces[p.surf])) return { ok: false, reason: 'Superficie bloqueada: investígala' };
+      const pr = tr.probePiece(this.world, p);
+      if (!pr.ok) return pr;
+      if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero', cost: pr.cost };
+      const r = this.editTrack(tr, (t) => {
+        t.pieces.push(Object.assign({}, p));
+        if (p.t === 'special') t.pinFeature(p.f, t.pieces.length - 1, MX.Track.SPECIAL_OFF);
+        if (pr.closes) t.closed = true;
+      });
+      if (r.ok && pr.closes) { r.closes = true; MX.Bus.emit('track:closed-loop', { track: tr }); }
+      return r;
+    }
+    removeLastPiece(tr) {
+      if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
+      if (tr.pieces.length <= 1) return { ok: false, reason: 'La parrilla de salida no se quita: borra el circuito para empezar de nuevo' };
+      return this.editTrack(tr, (t) => {
+        const i = t.pieces.length - 1;
+        const cut = t.pieces[i]._s0 != null ? t.pieces[i]._s0 : t.length;
+        t.pieces.pop(); t.closed = false;
+        t.features = t.features.filter(f => f.pin != null ? f.pin < i : (f.s >= 0 && f.s + (f.len || 0) <= cut - 0.5));
+      });
+    }
+    /* Finish the loop automatically with the shortest free chain of pieces. */
+    autoComplete(tr, w, surf) {
+      if (!tr.pieces || !tr.pieces.length) return { ok: false, reason: 'Coloca primero la parrilla de salida' };
+      if (tr.closed) return { ok: false, reason: 'El circuito ya está cerrado' };
+      if (!tr.endPose) tr.rebuild(this.world);
+      const plan = MX.Track.planClosure(this.world, tr, w, surf);
+      if (!plan.ok) return plan;
+      /* check the whole loop on a copy before touching the real one */
+      const copy = MX.Track.deserialize(tr.serialize(), this.world);
+      copy.pieces.push(...plan.pieces.map(p => Object.assign({}, p)));
+      copy.closed = true;
+      copy.rebuild(this.world);
+      const geomErr = copy.validate(this.world).find(i => i.level === 'error' && /cruza|terreno|edificios|agua|otro circuito|Pendiente|imposible|largo/.test(i.msg));
+      if (geomErr) return { ok: false, reason: 'No encuentro un cierre limpio: ' + geomErr.msg.toLowerCase() };
+      const r = this.editTrack(tr, (t) => { for (const p of plan.pieces) t.pieces.push(Object.assign({}, p)); t.closed = true; });
+      if (r.ok) { r.closes = true; r.added = plan.pieces.length; MX.Bus.emit('track:closed-loop', { track: tr }); }
+      return r;
+    }
+    /* Rounded-rectangle loop with a few elements inside rect {x0, z0, w, h} (tiles). */
+    suggestLoop(tr, rect, w, surf) {
+      if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
+      const m = Math.ceil((w * 0.5 + 2.5) / C.TILE);
+      const startU = MX.Track.pieceUnits({ t: 'start' }, 0);
+      let k = 2, a = rect.w - 2 * m - 6 * k - startU, b = rect.h - 2 * m - 6 * k;
+      if (a < 0 || b < 2) { k = 1; a = rect.w - 2 * m - 6 * k - startU; b = rect.h - 2 * m - 6 * k; }
+      if (a < 0 || b < 2) return { ok: false, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      const P = (o) => Object.assign({ slope: 0, bank: 0, w, surf }, o);
+      const unlocked = (f) => this.isUnlocked(Cat.features[f]);
+      const leg = (units, specials) => {
+        const out = [];
+        for (const f of specials) {
+          if (!unlocked(f)) continue;
+          const u = MX.Track.pieceUnits({ t: 'special', f }, 0);
+          if (u <= units) { out.push(P({ t: 'special', f })); units -= u; }
+        }
+        while (units > 0) { const n = Math.min(6, units); out.push(P({ t: 'straight', n })); units -= n; }
+        return out;
+      };
+      const turn = (bank) => [P({ t: 'curve', k, dir: 1, bank }), P({ t: 'curve', k, dir: 1, bank })];
+      const pieces = [P({ t: 'start' })]
+        .concat(leg(a, ['tabletop_m']), turn(1), leg(b, ['rollers', 'tabletop_s']), turn(0), leg(startU + a, ['finish', 'tabletop_s', 'whoops']), turn(1), leg(b, ['whoops']), turn(0));
+      const ox = rect.x0 + m + 3 * k, oz = rect.z0 + m;
+      let x = ox, z = oz, h = 0;
+      for (const p of pieces) { const g = MX.Track.pieceGeom(p, x, z, h, 0); x = g.x1; z = g.z1; h = g.h1; }
+      if (x !== ox || z !== oz || h !== 0) return { ok: false, reason: 'No se pudo cerrar el trazado sugerido' };
+      return this.editTrack(tr, (t) => {
+        t.origin = { x: ox, z: oz, h: 0 }; t.e0 = 0; t.closed = true;
+        t.pieces = pieces; t.features = [];
+        pieces.forEach((p, i) => {
+          if (p.t === 'start') t.pinFeature('start', i, MX.Track.START_GATE);
+          else if (p.t === 'special') t.pinFeature(p.f, i, MX.Track.SPECIAL_OFF);
+        });
+      });
     }
     validateTrack(tr) {
       const issues = tr.validate(this.world).slice();
@@ -595,7 +707,9 @@
       if (this.race && this.race.trackId === tr.id) return { ok: false, reason: 'Hay una carrera en curso' };
       this.closeTrack(tr);
       tr.clearOccupancy(this.world);
-      const back = Math.round((tr.geometryCost() + tr.featureCost()) * 0.35);
+      /* a circuit that never opened is simply dismantled: everything paid comes back */
+      const worth = tr.geometryCost() + tr.featureCost();
+      const back = Math.round(tr.state === 'building' ? Math.min(tr.paid, worth) : worth * 0.35);
       this.econ.refund('construccion', back);
       this.tracks = this.tracks.filter(t => t !== tr);
       if (this.selectedTrack === tr) this.selectedTrack = null;
