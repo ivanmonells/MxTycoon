@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2b231d">
+<title>MX Tycoon: Motocross Empire</title>
+<!-- @fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Racing+Sans+One&family=Saira+Condensed:wght@500;600;700;800&display=swap">
+<!-- /@fonts -->
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<!-- @body -->
+<div id="app">
+  <div id="view"><canvas id="gl" aria-label="Vista del complejo de motocross"></canvas></div>
+  <div id="ui" class="hud-hidden"></div>
+  <div id="title" hidden></div>
+  <div id="modal" hidden></div>
+  <div id="loading">
+    <div class="logo"><span class="logo-mx">MX</span><span class="logo-tycoon">TYCOON</span></div>
+    <div class="load-bar"><div class="load-fill"></div></div>
+    <div class="load-label">Cargando…</div>
+  </div>
+  <noscript>MX Tycoon necesita JavaScript para funcionar.</noscript>
+</div>
+<!-- /@body -->
+<script src="src/core/util.js"></script>
+<script src="src/data/constants.js"></script>
+<script src="src/data/catalog.js"></script>
+<script src="src/sim/world.js"></script>
+<script src="src/sim/track.js"></script>
+<script src="src/sim/physics.js"></script>
+<script src="src/sim/pathing.js"></script>
+<script src="src/sim/economy.js"></script>
+<script src="src/sim/agents.js"></script>
+<script src="src/sim/progression.js"></script>
+<script src="src/sim/ambient.js"></script>
+<script src="src/sim/competition.js"></script>
+<script src="src/sim/game.js"></script>
+<script src="src/render/glutil.js"></script>
+<script src="src/render/meshbuilder.js"></script>
+<script src="src/render/textures.js"></script>
+<script src="src/render/voxel.js"></script>
+<script src="src/render/models.js"></script>
+<script src="src/render/geometry.js"></script>
+<script src="src/render/shaders.js"></script>
+<script src="src/render/buildmodels.js"></script>
+<script src="src/render/renderer.js"></script>
+<script src="src/render/fx.js"></script>
+<script src="src/ui/dom.js"></script>
+<script src="src/ui/windows.js"></script>
+<script src="src/ui/tools.js"></script>
+<script src="src/ui/input.js"></script>
+<script src="src/ui/hud.js"></script>
+<script src="src/ui/panels1.js"></script>
+<script src="src/ui/panels2.js"></script>
+<script src="src/ui/tutorial.js"></script>
+<script src="src/audio/audio.js"></script>
+<script src="src/storage/save.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>

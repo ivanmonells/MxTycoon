@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script src="../src/core/util.js"></script>
+<script src="../src/data/constants.js"></script>
+<script src="../src/data/catalog.js"></script>
+<script src="../src/sim/world.js"></script>
+<script src="../src/sim/track.js"></script>
+<script src="../src/sim/physics.js"></script>
+<script src="../src/render/glutil.js"></script>
+<script src="../src/render/meshbuilder.js"></script>
+<script src="../src/render/textures.js"></script>
+<script src="../src/render/voxel.js"></script>
+<script src="../src/render/models.js"></script>
+<script src="../src/render/geometry.js"></script>
+<script src="../src/render/shaders.js"></script>
+<script src="../src/render/renderer.js"></script>
+<script>
+window.onerror = (m, s, l, c, e) => { window.__err = (window.__err || '') + m + ' @' + l + '\n'; };
+const w = new MX.World(80); w.generate(5, 'valle'); w.setupOwnership('sandbox');
+for (let i = 0; i < w.heights.length; i++) w.heights[i] = 6;
+w.scenery.clear(); w.scen.fill(-1); w.markTerrainDirty(0,0,79,79);
+const game = { world: w, tracks: [], buildings: new Map(), bldVer: 0, bldDirtyChunks: new Set(), selectedTrack: null,
+  weatherDef: () => MX.Catalog.weather.sunny, cloudCover: () => 0, wetness: () => 0, seasonTint: () => 0, screenTint: () => [1,1,1] };
+const r = new MX.Renderer(document.getElementById('c'));
+r.init(); r.resize(innerWidth, innerHeight, 1); r.setGame(game);
+const q = new URLSearchParams(location.search);
+r.cam.tx = 160; r.cam.tz = 160; r.cam.ty = 6; r.cam.zoom = r.cam.targetZoom = +(q.get('zoom') || 40);
+const models = (q.get('m') || 'rider_sit,rider_stand,bike,person_0,person_sit,person_cheer').split(',');
+const cols = [[255,106,19],[30,136,229],[253,216,53],[229,57,53]];
+r.beginInstances();
+models.forEach((m, i) => {
+  for (let k = 0; k < 4; k++) {
+    const x = 156 + i * 3.2, z = 156 + k * 3;
+    r.pushInst(m, x, 6, z, k * Math.PI / 2 + 0.3, 0, 0, 1, cols[k], [40,40,40], cols[(k+1)%4], cols[(k+2)%4]);
+  }
+});
+r.render(1/60);
+window.__done = true;
+</script></body></html>

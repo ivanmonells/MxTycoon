@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script src="../src/core/util.js"></script>
+<script src="../src/data/constants.js"></script>
+<script src="../src/data/catalog.js"></script>
+<script src="../src/sim/world.js"></script>
+<script src="../src/sim/track.js"></script>
+<script src="../src/sim/physics.js"></script>
+<script src="../src/render/glutil.js"></script>
+<script src="../src/render/meshbuilder.js"></script>
+<script src="../src/render/textures.js"></script>
+<script src="../src/render/voxel.js"></script>
+<script src="../src/render/models.js"></script>
+<script src="../src/render/geometry.js"></script>
+<script src="../src/render/shaders.js"></script>
+<script src="../src/render/renderer.js"></script>
+<script>
+window.onerror = (m, s, l, c, e) => { window.__err = (window.__err || '') + m + ' @' + l + '\n'; };
+const w = new MX.World(80); w.generate(12345, 'valle'); w.setupOwnership('sandbox');
+const tr = new MX.Track(1, 'Test');
+const cx = 160, cz = 230;
+for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; tr.addNode(cx + Math.cos(a) * 70, cz + Math.sin(a) * 35, 8, 'dirt'); }
+tr.closed = true; tr.rebuild(w);
+function place(type) { for (let s = 0; s < tr.length; s += 3) { const r = tr.checkFeature(type, s); if (r.ok) { tr.addFeature(type, r.s0, r.len, r.side); tr.rebuild(w); return true; } } return false; }
+['start','finish','tabletop_m','double_s','rollers','tabletop_l','whoops','double_l'].forEach(place);
+tr.validate(w); tr.computeFootprint(w); tr.applyOccupancy(w);
+const game = { world: w, tracks: [tr], buildings: new Map(), bldVer: 0, bldDirtyChunks: new Set(), selectedTrack: null,
+  weatherDef: () => MX.Catalog.weather.sunny, cloudCover: () => 0.35, wetness: () => 0, seasonTint: () => 0, screenTint: () => [1,1,1] };
+const r = new MX.Renderer(document.getElementById('c'));
+r.init(); r.resize(innerWidth, innerHeight, 1); r.setGame(game);
+const q = new URLSearchParams(location.search);
+r.cam.tx = +(q.get("x") || cx); r.cam.tz = +(q.get("z") || cz); r.cam.ty = 6; r.cam.zoom = r.cam.targetZoom = +(q.get('zoom') || 6);
+if (q.get('rider')) { const pp = tr.poseAt((+q.get('rider') * 27) % tr.length, 0, {}); r.cam.tx = pp.x; r.cam.tz = pp.z; r.cam.ty = pp.y; }
+r.cam.yawIndex = +(q.get('yaw') || 0); r.cam.yaw = Math.PI/4 + r.cam.yawIndex*Math.PI/2;
+const cols = [[255,106,19],[30,136,229],[253,216,53],[229,57,53],[67,160,71],[255,255,255]];
+function frame() {
+  r.beginInstances();
+  for (let k = 0; k < 12; k++) {
+    const s = (k * 27) % tr.length;
+    const p = tr.poseAt(s, (k % 3 - 1) * 2, {});
+    const air = k % 4 === 0;
+    r.pushInst(air ? 'rider_stand' : 'rider_sit', p.x, p.y + (air ? 2.5 : 0), p.z, p.hdg, air ? 0.3 : 0, 0, 1, cols[k%6], [40,40,40], cols[(k+2)%6], cols[(k+4)%6]);
+  }
+  for (let k = 0; k < 30; k++) {
+    const x = cx - 60 + (k % 10) * 3, z = cz + 50 + Math.floor(k / 10) * 3;
+    r.pushInst('person_' + (k % 4), x, w.heightAt(x, z), z, k, 0, 0, 1, cols[k % 6], [60, 70, 120], [90, 60, 30], [240, 200, 170]);
+  }
+  r.pushInst('car', cx + 40, w.heightAt(cx+40, cz+60), cz + 60, 0.3, 0, 0, 1, [200, 30, 30]);
+  r.pushInst('van', cx + 50, w.heightAt(cx+50, cz+60), cz + 60, 0.3, 0, 0, 1, [240, 240, 240]);
+  r.pushInst('tractor', cx + 30, w.heightAt(cx+30, cz+70), cz + 70, 1.0, 0, 0, 1, [46, 125, 50]);
+  r.render(1/60);
+}
+frame(); frame();
+window.__done = true;
+</script></body></html>
