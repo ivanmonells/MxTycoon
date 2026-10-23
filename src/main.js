@@ -62,14 +62,17 @@
       window.addEventListener('resize', () => this.resize());
       this.resize();
       await step(90, 'Regando la pista…');
+      /* live updates of the published page keep the running game */
       const hot = window.claude && window.claude.hot;
       if (hot && hot.snapshot) hot.snapshot(() => (this.game && !this.demo ? { save: this.game.serialize() } : null));
-      const hotData = hot && hot.data;
       this.setLoading(100, '¡Listo!');
       this.loading.classList.add('done');
       setTimeout(() => { this.loading.hidden = true; }, 400);
-      if (hotData && hotData.save) { try { this.startGame(MX.Game.deserialize(hotData.save)); } catch (e) { console.error(e); this.showTitle(); } }
-      else this.showTitle();
+      const start = (data) => {
+        if (data && data.save) { try { this.startGame(MX.Game.deserialize(data.save)); return; } catch (e) { console.error(e); } }
+        this.showTitle();
+      };
+      if (hot && hot.ready) hot.ready(start); else start(hot && hot.data);
       this.last = performance.now();
       requestAnimationFrame((t) => this.loop(t));
     },
@@ -102,6 +105,11 @@
         if (w && d.day % (7 * w) === 0) this.autosave();
       });
       MX.Bus.on('track:changed', () => { if (MX.WM.isOpen('tracks')) MX.WM.get('tracks').t = 0; });
+      MX.Bus.on('gl:lost', () => this.toastAny('Se ha perdido el contexto gráfico. Intentando recuperarlo…', 'bad'));
+      MX.Bus.on('gl:restored', () => {
+        if (this.game && !this.demo) MX.Tex.redrawParkName(this.renderer.gl, this.renderer.atlasTex, this.game.parkName);
+        this.toastAny('Gráficos recuperados', 'good');
+      });
     },
     resize() {
       const r = this.view.getBoundingClientRect();

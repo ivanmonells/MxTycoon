@@ -228,7 +228,7 @@
       statRow('Mantenimiento', U.fmtMoney(st.maint) + ' al mes'),
       statRow('Estado de la pista', Math.round((1 - tr.avgWear()) * 100) + '%', bar(1 - tr.avgWear(), 1, tr.avgWear() > 0.5 ? 'bad' : 'good')),
       statRow('Vueltas · caídas · lesiones', U.fmtInt(tr.totals.laps) + ' · ' + tr.totals.crashes + ' · ' + tr.totals.injuries),
-      statRow('Récord', tr.records.best ? U.fmtLap(tr.records.best) + ' · ' + tr.records.holder : '—')
+      statRow('Récord', tr.records.best ? U.fmtLap(tr.records.best) + ' · ' + tr.records.holder : '-')
     );
   }
   function delTrack(tr) {

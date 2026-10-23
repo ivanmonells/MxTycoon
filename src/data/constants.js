@@ -5,7 +5,7 @@
     TILE: 4,              // metres per tile
     MAP: 80,              // tiles per side (320 m x 320 m)
     PARCEL: 8,            // tiles per land parcel side
-    DAY_SEC: 20,          // real seconds per in-game day at x1
+    DAY_SEC: 30,          // real seconds per in-game day at x1
     MONTH_DAYS: 28,       // four weeks per month keeps weekdays aligned
     START_MONTH: 2,       // March, like the classics
     START_MONEY: 150000,

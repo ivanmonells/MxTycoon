@@ -379,7 +379,7 @@
       this.happy = rng.range(60, 80); this.fun = 40;
       this.thoughts = []; this.bubble = null;
       this.m = null; this.trackId = null;
-      this.lapsPlan = rng.int(3, 7); this.sessions = 0; this.maxSessions = rng.int(1, 2);
+      this.lapsPlan = rng.int(3, 7); this.sessions = 0; this.maxSessions = rng.int(1, 3); this.feeOk = 40;
       this.bikeCond = rng.range(0.7, 1);
       this.vanId = opts.vanId || null;
       this.paddockId = opts.paddockId || null;
@@ -543,6 +543,12 @@
       if (rng.chance(0.25) && g.fieldReach('r_food', this.tx, this.tz)) return this.walkTo(g, 'r_food', 'food');
       if (this.cat === 'principiante' && !this.schooled && g.fieldReach('r_school', this.tx, this.tz) && g.schoolOpen() && rng.chance(0.6)) return this.walkTo(g, 'r_school', 'school');
       if (this.sessions < this.maxSessions && this.happy > 40 && g.openTracks().length && this.bikeCond > 0.2) {
+        /* every extra track session is paid like a new ticket (season pass holders ride free) */
+        if (!this.passHolder && !this.race) {
+          const fee = g.econ.prices.riderFee;
+          if (fee > this.feeOk * 1.15 && rng.chance(0.6)) { this.think(g, 'expensive_fee', true); return this.goLeave(g); }
+          if (fee > 0) g.earn('tarifas', fee, this.x, this.z);
+        }
         this.lapsDone = 0; this.lapsPlan = rng.int(3, 8);
         this.state = 'prep'; this.timer = rng.range(2, 6);
         if (this.m) this.m.stam = Math.min(1, this.m.stam + 0.5);

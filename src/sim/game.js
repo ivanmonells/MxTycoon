@@ -63,6 +63,7 @@
       g.world = new MX.World(C.MAP);
       g.world.generate(g.seed, opts.preset || 'valle');
       g.world.setupOwnership(g.mode);
+      if (g.mode !== 'sandbox') g.world.setExpansionLevel(1);
       g.econ = new MX.Economy(g.mode === 'sandbox' ? C.SANDBOX_MONEY : C.START_MONEY);
       g.econ.maxLoan = g.mode === 'sandbox' ? 0 : 100000;
       if (g.mode === 'sandbox') g.rep = 300;
@@ -1086,7 +1087,7 @@
       const m = this.date().month;
       const fair = 7 + this.rep / 80;
       const priceF = U.clamp(1.25 - 0.07 * (this.econ.prices.ticket - fair), 0.12, 1.4);
-      let rate = 0.15 * (0.35 + this.rep / 170) * attraction * Cat.seasonVisitors[m] * this.weekdayFactor() * this.weatherDef().visitors * (1 + this.marketingBoost('visitors')) * priceF;
+      let rate = 0.21 * (0.35 + this.rep / 170) * attraction * Cat.seasonVisitors[m] * this.weekdayFactor() * this.weatherDef().visitors * (1 + this.marketingBoost('visitors')) * priceF;
       rate *= 1 + (this.flags.visitorBoost || 0);
       const cap = this.parkingCapacity() * 4.5 + 25;
       const present = this.visitors.filter(v => !v.event).length;
@@ -1206,6 +1207,7 @@
           /* fee */
           if (!r.passHolder) {
             const val = { principiante: 24, amateur: 30, experto: 38, pro: 48 }[r.cat] * (0.75 + g.bestRating() / 20);
+            r.feeOk = val;
             if (g.econ.prices.riderFee > val * 1.25) { r.think(g, 'expensive_fee', true); g.stats.refusedFee++; r.goLeave(g); g.riders.push(r); continue; }
             g.earn('tarifas', g.econ.prices.riderFee, r.x, r.z);
           }

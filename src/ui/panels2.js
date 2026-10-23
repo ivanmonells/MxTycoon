@@ -91,7 +91,7 @@
         section('Ingresos', MX.Economy.INCOME, 'income');
         section('Gastos', MX.Economy.EXPENSE, 'expense');
         const p = E.profit(cur), pp = prev ? E.profit(prev) : 0;
-        el.append(h('div', { class: 'fin-row total' }, h('span', null, 'Beneficio'), h('b', { class: p >= 0 ? 'pos' : 'neg' }, U.fmtMoneySigned(p)), h('small', null, prev ? U.fmtMoneySigned(pp) : '—')));
+        el.append(h('div', { class: 'fin-row total' }, h('span', null, 'Beneficio'), h('b', { class: p >= 0 ? 'pos' : 'neg' }, U.fmtMoneySigned(p)), h('small', null, prev ? U.fmtMoneySigned(pp) : '-')));
         el.append(h('div', { class: 'fin-row' }, h('span', null, 'Dinero en caja'), h('b', { class: E.money >= 0 ? '' : 'neg' }, U.fmtMoney(E.money)), h('small', null, 'Préstamo: ' + U.fmtMoney(E.loan))));
         if (E.money < 0) el.append(h('div', { class: 'callout warn' }, icon('warn'), 'Números rojos durante ' + E.negDays + ' días. A los ' + C.BANKRUPT_DAYS + ' días, o por debajo de ' + U.fmtMoney(C.BANKRUPT_LIMIT) + ', el banco cierra el complejo.'));
       });
@@ -269,7 +269,7 @@
         detail.append(slider('ev-ticket', 'Precio de la entrada', 0, d.ticket * 3, 1, st.ticket, (v) => U.fmtMoney(v), (v) => { st.ticket = v; upd(); }));
         detail.append(h('div', { class: 'kv' }, h('span', null, 'Asistencia prevista'), att));
         upd();
-        detail.append(statRow('Pilotos inscritos', d.riders + ' · ' + U.fmtMoney(d.entryFee) + ' de inscripción'), statRow('Vueltas', tr ? g.comp.lapsFor(st.type, tr) : '—'),
+        detail.append(statRow('Pilotos inscritos', d.riders + ' · ' + U.fmtMoney(d.entryFee) + ' de inscripción'), statRow('Vueltas', tr ? g.comp.lapsFor(st.type, tr) : '-'),
           statRow('Patrocinio del evento', U.fmtMoney(d.sponsor) + (d.tv ? ' · TV hasta ' + U.fmtMoney(Math.round(d.tv * 1.5)) : '')), statRow('Premios', U.fmtMoney(d.prize)));
       }
       detail.append(statRow('Coste de organización', U.fmtMoney(d.cost)));
@@ -356,7 +356,7 @@
           h('div', null, h('small', null, 'Prestigio'), h('b', null, '+' + res.repGain), h('em', null, 'puntos'))));
         body.append(statRow('Ingresos del evento', U.fmtMoney(res.revenue)), statRow('Coste y premios', U.fmtMoney(res.cost)),
           statRow('Adelantamientos · caídas · lesiones', res.overtakes + ' · ' + res.crashes + ' · ' + res.injuries),
-          statRow('Vuelta rápida', res.fastest ? U.fmtLap(res.fastest.t) + ' · ' + res.fastest.name : '—'));
+          statRow('Vuelta rápida', res.fastest ? U.fmtLap(res.fastest.t) + ' · ' + res.fastest.name : '-'));
         const tbl = h('div', { class: 'race-table' });
         for (const r of res.standings) tbl.append(h('div', { class: 'race-row' }, h('span', { class: 'pos' }, r.pos + 'º'), h('span', { class: 'num' }, '#' + r.num), h('span', { class: 'nm' }, r.name), h('small', null, r.done ? U.fmtLap(r.time) : 'No terminó'), h('small', null, r.best ? U.fmtLap(r.best) : '')));
         body.append(h('h4', null, 'Clasificación'), tbl);
@@ -524,7 +524,7 @@
               el.append(statRow('Categoría', MX.Agents.CAT_NAMES[a.cat] + ' · dorsal #' + a.num + (a.passHolder ? ' · abonado' : '')),
                 a2('Técnica', at.skill), a2('Velocidad', at.speed), a2('Resistencia', at.stamina), a2('Salto', at.jump), a2('Agresividad', at.aggr * 100), a2('Experiencia', at.exp), a2('Popularidad', at.pop),
                 statRow('Moto', a.bike.name + ' · estado ' + Math.round(a.bikeCond * 100) + '%'),
-                statRow('Vueltas · mejor vuelta', a.stats.laps + ' · ' + (a.stats.best ? U.fmtLap(a.stats.best) : '—')),
+                statRow('Vueltas · mejor vuelta', a.stats.laps + ' · ' + (a.stats.best ? U.fmtLap(a.stats.best) : '-')),
                 statRow('Saltos limpios · caídas', a.stats.clean + ' · ' + a.stats.crashes),
                 a.m ? statRow('Velocidad', U.fmtKmh(a.m.v) + (a.m.air ? ' · en el aire' : '')) : null,
                 h('div', { class: 'kv' }, h('span', null, 'Satisfacción'), bar(a.satisfaction(), 100, a.satisfaction() > 60 ? 'good' : 'bad')));

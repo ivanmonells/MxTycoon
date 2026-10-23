@@ -10,6 +10,7 @@
       this.root = root;
       try { this.pos = JSON.parse(localStorage.getItem('mxtycoon.winpos') || '{}'); } catch (e) { this.pos = {}; }
     },
+    topLimit() { const tb = document.getElementById('topbar'); return tb && tb.offsetHeight ? tb.getBoundingClientRect().bottom + 4 : 48; },
     isOpen(id) { return this.wins.has(id); },
     get(id) { return this.wins.get(id); },
     open(id, o) {
@@ -37,8 +38,9 @@
       el.style.width = width + 'px';
       const saved = this.pos[id];
       let x = saved ? saved.x : (o.x != null ? o.x : Math.max(8, Math.min(vw - width - 8, 70 + (this.wins.size % 5) * 28)));
-      let y = saved ? saved.y : (o.y != null ? o.y : 64 + (this.wins.size % 5) * 24);
-      x = Math.max(4, Math.min(x, vw - 80)); y = Math.max(48, Math.min(y, vh - 60));
+      let y = saved ? saved.y : (o.y != null ? o.y : this.topLimit() + 16 + (this.wins.size % 5) * 24);
+      const top = this.topLimit();
+      x = Math.max(4, Math.min(x, vw - 80)); y = Math.max(top, Math.min(y, vh - 60));
       if (vw < 640) { x = 8; el.style.width = (vw - 16) + 'px'; }
       el.style.left = x + 'px'; el.style.top = y + 'px';
       this._drag(w, title);
@@ -112,7 +114,7 @@
         if (!dragging) return;
         const vw = this.root.clientWidth, vh = this.root.clientHeight;
         const x = Math.max(-w.el.offsetWidth + 80, Math.min(vw - 80, ox + e.clientX - sx));
-        const y = Math.max(44, Math.min(vh - 40, oy + e.clientY - sy));
+        const y = Math.max(this.topLimit(), Math.min(vh - 40, oy + e.clientY - sy));
         w.el.style.left = x + 'px'; w.el.style.top = y + 'px';
       });
       const end = () => {

@@ -165,11 +165,17 @@
       /* race riders appear on the start pad */
       const rng = g.rng;
       const tier = def.tier;
+      const usedNum = new Set(), usedName = new Set();
       for (let i = 0; i < def.riders; i++) {
         const sk = rng.range(def.skill[0], def.skill[1]);
         const bike = sk < 40 ? Cat.bikes[1] : rng.pick([Cat.bikes[2], Cat.bikes[3], Cat.bikes[4]]);
-        const r = new A.Rider(g, rng, { skill: sk, bike, intl: tier >= 4 && rng.chance(0.7), race: this });
-        r.race = this; r.num = rng.int(1, 99); r.state = 'grid';
+        let r = null;
+        for (let k = 0; k < 8; k++) { r = new A.Rider(g, rng, { skill: sk, bike, intl: tier >= 4 && rng.chance(0.7), race: this }); if (!usedName.has(r.name)) break; }
+        usedName.add(r.name);
+        let num = rng.int(1, 99);
+        while (usedNum.has(num)) num = num % 99 + 1;
+        usedNum.add(num);
+        r.race = this; r.num = num; r.state = 'grid';
         r.attr.aggr = U.clamp(r.attr.aggr + 0.15, 0, 1);
         this.riders.push(r);
         g.riders.push(r);

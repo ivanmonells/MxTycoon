@@ -102,7 +102,11 @@
       const gl = this.canvas.getContext('webgl2', { antialias: false, alpha: false, depth: true, stencil: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
       if (!gl) throw new Error('WEBGL2');
       this.gl = gl;
-      this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; MX.Bus.emit('gl:lost'); }, false);
+      if (!this._ctxBound) {
+        this._ctxBound = true;
+        this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; MX.Bus.emit('gl:lost'); }, false);
+        this.canvas.addEventListener('webglcontextrestored', () => this._restore(), false);
+      }
       this.progs = {
         mesh: GLU.program(gl, SH.MESH_VS, SH.MESH_FS, 'mesh'),
         terrain: GLU.program(gl, SH.MESH_VS, SH.TERRAIN_FS, 'terrain'),
@@ -192,7 +196,21 @@
       this.spriteCount = 0;
     }
 
+    /* every GPU resource is derived from game state, so a lost context is rebuilt from scratch */
+    _restore() {
+      this.chunks = []; this.trackMeshes = new Map(); this.bldChunks = new Map(); this.instPools = {};
+      this.mainTarget = null; this.ghost = null; this.overlayCount = 0; this.spriteCount = 0;
+      this.skirtMesh = null; this.pathMesh = null; this.decorMesh = null; this.waterVao = null; this.waterBuf = null;
+      try {
+        this.init();
+        this.lost = false;
+        if (this._css) this.resize(this._css[0], this._css[1], this.dpr);
+        if (this.game) this.setGame(this.game);
+        MX.Bus.emit('gl:restored');
+      } catch (e) { console.error('context restore failed', e); }
+    }
     resize(cssW, cssH, dpr) {
+      this._css = [cssW, cssH];
       const ps = Math.max(1, Math.round(this.pixelScale * dpr));
       const w = Math.max(64, Math.ceil(cssW * dpr / ps));
       const h = Math.max(64, Math.ceil(cssH * dpr / ps));

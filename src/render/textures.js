@@ -33,7 +33,7 @@
   function paint(fn, size) {
     size = size || SIZE;
     const c = makeCanvas(size, size);
-    const ctx = c.getContext('2d');
+    const ctx = c.getContext('2d', { willReadFrequently: true });
     const img = ctx.createImageData(size, size);
     const d = img.data;
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {

@@ -22,8 +22,8 @@
         { title: 'La cámara', text: 'Arrastra con el botón derecho del ratón (o usa WASD) para moverte y la rueda para acercarte. Q y E giran la vista. En pantallas táctiles, arrastra con un dedo y pellizca.', init: () => { const c = app.renderer.cam; this.c0 = [c.tx, c.tz, c.targetZoom]; },
           check: () => { const c = app.renderer.cam; return Math.hypot(c.tx - this.c0[0], c.tz - this.c0[1]) > 12 || Math.abs(c.targetZoom - this.c0[2]) > 1.5; } },
         { title: 'Tu primer circuito', text: 'Abre el menú Circuitos en la barra inferior.', target: '[data-id="tracks"]', check: () => MX.WM.isOpen('tracks') },
-        { title: 'Dibuja el trazado', text: 'Pulsa «Nuevo circuito» y haz clic sobre tu terreno (la zona clara) para ir colocando puntos. Vuelve al primer punto para cerrar el circuito. ¿Prisa? Prueba «Trazado sugerido».', target: '#win-tracks-new', check: () => g().tracks.some(t => t.closed) },
-        { title: 'Salida y meta', text: 'En la pestaña Elementos, coloca la «Parrilla de salida» en una recta larga y la «Línea de meta». Haz clic sobre la pista para colocarlas.', check: () => hasFeat(tr(), f => f.type === 'start') && hasFeat(tr(), f => f.type === 'finish') },
+        { title: 'Dibuja el trazado', text: 'Pulsa «Nuevo circuito» y haz clic (o toca) sobre tu terreno, la zona clara, para ir colocando puntos. Vuelve al primer punto para cerrar el circuito. ¿Prisa? Prueba «Trazado sugerido».', target: '#win-tracks-new', check: () => g().tracks.some(t => t.closed) },
+        { title: 'Salida y meta', text: 'En la pestaña Elementos, coloca la «Parrilla de salida» en una recta larga y la «Línea de meta». Haz clic o toca sobre la pista para colocarlas.', check: () => hasFeat(tr(), f => f.type === 'start') && hasFeat(tr(), f => f.type === 'finish') },
         { title: 'Hora de volar', text: 'Añade al menos un salto: un tabletop en una recta es perfecto para empezar. Los saltos atraen pilotos y público.', check: () => hasFeat(tr(), f => MX.Catalog.features[f.type].group === 'jump') },
         { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
         { title: 'Servicios para el público', text: 'En Construir → Público: pon una Taquilla y acceso, un Aparcamiento tocando la carretera y unos Baños.', target: '[data-id="build"]', check: () => g().count('entrance') && g().count('parking') && g().count('toilets') },
@@ -38,10 +38,12 @@
       if (!force && MX.Save.flag('tutorialDone') === '1') return;
       this.active = true; this.i = -1;
       this.el.hidden = false;
+      this.root.classList.add('tut-on');
       this.next();
     }
     stop(done) {
       this.active = false; this.el.hidden = true; this.highlight(null);
+      this.root.classList.remove('tut-on');
       if (done) MX.Save.flag('tutorialDone', '1');
     }
     next() {
@@ -49,6 +51,7 @@
       if (this.i >= this.steps.length) { this.stop(true); this.app.game && this.app.game.notify('Tutorial completado. ¡Ahora el complejo es tuyo!', 'success'); return; }
       const s = this.steps[this.i];
       if (s.init) s.init();
+      this.el.classList.remove('min'); this.root.classList.remove('tut-min');
       this.render();
       MX.Audio && MX.Audio.sfx('notify');
     }
@@ -56,7 +59,7 @@
       const s = this.steps[this.i];
       clear(this.el);
       this.el.append(
-        h('div', { class: 'tut-h' }, icon('objectives'), h('b', null, s.title), h('small', null, 'Paso ' + (this.i + 1) + ' de ' + this.steps.length)),
+        h('div', { class: 'tut-h', title: 'Plegar o desplegar', onclick: () => { const m = this.el.classList.toggle('min'); this.root.classList.toggle('tut-min', m); } }, icon('objectives'), h('b', null, s.title), h('small', null, 'Paso ' + (this.i + 1) + ' de ' + this.steps.length)),
         h('p', null, s.text),
         h('div', { class: 'row gap' },
           s.check ? h('span', { class: 'tut-wait' }, 'Hazlo y seguimos…') : h('button', { class: 'btn primary', onclick: () => this.next() }, s.next || 'Siguiente'),
