@@ -191,9 +191,16 @@
     name: 'trackbuild',
     hint: 'Elige dirección y pendiente · Intro o clic en la pieza fantasma: construir · Retroceso: quitar la última · Flechas: dirección y pendiente · Esc: salir',
     get tr() { return game().selectedTrack; },
-    enter() { this.refresh(); },
+    enter() { this.refresh(); this.frame(); },
     exit() { R().setGhostMesh(null); R().setOverlayMesh(null); this.probe = null; },
     piece() { return MX.Panels1.currentPiece(); },
+    /* keep the construction point in sight, above the panel */
+    frame() {
+      const tr = this.tr, e = tr && tr.endPose;
+      if (!e || tr.closed) return;
+      const x = e.x * T, z = e.z * T;
+      setTimeout(() => app().frameWorld(x, (tr.S ? tr.S.y[tr.S.n - 1] : game().world.heightAt(x, z)), z), 60);
+    },
     refresh() {
       const tr = this.tr;
       this.probe = null;
@@ -232,6 +239,7 @@
       }
       this.refresh();
       app().panels.tracks();
+      this.frame();
     },
     closed(tr) {
       sfx('success');
@@ -239,6 +247,7 @@
       app().trackUI.section = 'features';
       Tools.set(TrackFeature);
       MX.WM.rebuild('tracks');
+      MX.WM.setSheet('tracks', 'half');
     },
     undo() {
       const tr = this.tr;
@@ -246,6 +255,7 @@
       if (result(game().removeLastPiece(tr))) sfx('demolish');
       this.refresh();
       app().panels.tracks();
+      this.frame();
     },
     auto() {
       const tr = this.tr, ui = app().trackUI;
@@ -779,7 +789,8 @@
       if (!this.t) return;
       if (result(game().placeDecor(this.type, this.t.tx, this.t.tz, this.rot * Math.PI / 2))) sfx('place');
     },
-    key(e) { if (e.key === 'r' || e.key === 'R') { this.rot = (this.rot + 1) % 4; return true; } return false; }
+    rotate() { this.rot = (this.rot + 1) % 4; if (this.lastP) this.hover(this.lastP); sfx('click'); },
+    key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; }
   };
 
   /* -------- Demolish -------- */

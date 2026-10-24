@@ -116,7 +116,37 @@
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
       this.renderer.resize(r.width, r.height, dpr);
       this.hud.resizeOverlay(r.width, r.height, dpr);
-      document.documentElement.classList.toggle('narrow', r.width < 760);
+      const root = document.documentElement;
+      root.classList.toggle('narrow', r.width < 760);
+      /* phones: bottom sheets in portrait, side sheet in landscape */
+      const phone = r.width < 600 || (r.height < 500 && r.width < 1000);
+      const land = phone && r.width > r.height;
+      if (phone !== root.classList.contains('phone') || land !== root.classList.contains('land')) {
+        root.classList.toggle('phone', phone);
+        root.classList.toggle('land', land);
+        MX.WM.relayout();
+      }
+    },
+    /* Pan so a world point sits inside the part of the map not covered by panels. */
+    frameWorld(x, y, z, force) {
+      const r = this.renderer, p = r.worldToCss(x, y, z);
+      const W = window.innerWidth, H = window.innerHeight;
+      const tb = document.getElementById('topbar');
+      let top = tb ? tb.getBoundingClientRect().bottom : 44;
+      const tut = document.getElementById('tutorial');
+      if (tut && !tut.hidden && document.documentElement.classList.contains('phone')) top = Math.max(top, tut.getBoundingClientRect().bottom);
+      let bottom = H, left = 0;
+      const bar = document.getElementById('toolbar');
+      if (bar && bar.offsetHeight) bottom = Math.min(bottom, bar.getBoundingClientRect().top);
+      for (const w of MX.WM.wins.values()) {
+        if (!w.el.classList.contains('sheet')) continue;
+        const b = w.el.getBoundingClientRect();
+        if (document.documentElement.classList.contains('land')) left = Math.max(left, b.right); else bottom = Math.min(bottom, b.top);
+      }
+      const m = 40;
+      if (!force && p[0] > left + m && p[0] < W - m && p[1] > top + m && p[1] < bottom - m) return;
+      const tx = (left + W) / 2, ty = top + (bottom - top) * 0.45;
+      this.panAnim = { dx: tx - p[0], dy: ty - p[1], t: 0, ax: 0, ay: 0 };
     },
     applyGraphics() {
       const s = this.settings, r = this.renderer;
@@ -336,6 +366,14 @@
           const cam = this.renderer.cam;
           cam.yaw += dt * 0.045;
           g.speed = 1;
+        }
+        if (this.panAnim) {
+          const pa = this.panAnim;
+          pa.t += dt;
+          const k = Math.min(1, pa.t / 0.35), e = 1 - Math.pow(1 - k, 3);
+          this.input.panBy(pa.dx * e - pa.ax, pa.dy * e - pa.ay);
+          pa.ax = pa.dx * e; pa.ay = pa.dy * e;
+          if (k >= 1) this.panAnim = null;
         }
         this.input.update(dt);
         if (MX.Tools.current && MX.Tools.current.tick) MX.Tools.current.tick(dt);

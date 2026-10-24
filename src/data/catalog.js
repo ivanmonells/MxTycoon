@@ -316,7 +316,7 @@
     thirsty: { t: ['Qué sed tengo', 'Necesito algo fresquito'], mood: -1 },
     toilet: { t: ['Necesito ir al baño ya', 'Me hago pis'], mood: -1 },
     no_toilet: { t: ['¿Es que aquí no hay baños?', 'No encuentro los baños'], mood: -3 },
-    tired: { t: ['Estoy cansado de estar de pie', 'Me duelen los pies'], mood: -1 },
+    tired: { t: ['Llevo demasiado rato de pie', 'Me duelen los pies'], mood: -1 },
     no_seats: { t: ['Faltan gradas para ver las motos', 'No hay dónde sentarse'], mood: -2 },
     great_jump: { t: ['¡Qué salto más bestia!', '¡Ese piloto vuela!', '¡Menudo whip!'], mood: 2 },
     crash_seen: { t: ['¡Uff, menuda caída!', '¡Ay! Eso ha tenido que doler'], mood: 1 },

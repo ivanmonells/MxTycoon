@@ -51,6 +51,10 @@
         body.append(head, list, detail);
         return () => {
           const g = game();
+          const sel = g.selectedTrack;
+          const building = !!(sel && sel.pieces && !sel.closed && document.documentElement.classList.contains('phone'));
+          body.classList.toggle('constructing', building);
+          WM.setTitle('tracks', building ? 'Construcción · ' + sel.name : 'Circuitos');
           keyed(list, g.tracks.map(t => t.id + t.state + t.name + (g.selectedTrack === t)).join('|'), (el) => {
             if (!g.tracks.length) el.append(h('p', { class: 'muted' }, 'Aún no tienes circuitos. Pulsa «Nuevo circuito», coloca la parrilla de salida y construye el trazado pieza a pieza.'));
             for (const t of g.tracks) {
@@ -71,14 +75,15 @@
     const tr = g.newTrack();
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     MX.Tools.set(TL().TrackStart);
-    app().hud.toast('Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
+    const phone = document.documentElement.classList.contains('phone');
+    app().hud.toast(phone ? 'Toca tu terreno para ver la parrilla y toca encima para colocarla' : 'Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
   }
   function buildTrackDetail(el, tr) {
     if (!tr) return;
     const g = game(), ui = app().trackUI;
     const nameIn = h('input', { id: 'track-name', class: 'inp', value: tr.name, maxlength: 28, 'aria-label': 'Nombre del circuito', onchange: (e) => { tr.name = e.target.value || tr.name; tr.ver++; } });
     const st = STATE[tr.state];
-    el.append(h('div', { class: 'row gap center' }, nameIn, chip(st[0], st[1])));
+    el.append(h('div', { class: 'row gap center name-row' }, nameIn, chip(st[0], st[1])));
     /* tools */
     const editable = tr.state !== 'open';
     const toolBtn = (ic, label, tool, extra) => {
@@ -273,6 +278,7 @@
     const noFocus = (e) => e.preventDefault();
     const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
     const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
+    if (document.documentElement.classList.contains('phone')) { compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el); return; }
     box.append(status);
     /* direction */
     const dirs = h('div', { class: 'bld-dirs' });
@@ -315,7 +321,10 @@
         h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino más corto hasta la salida y lo construye', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
       h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'),
       h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
-    el._upd = () => {
+    el._upd = constructorStatus(tr, status, preview);
+  }
+  function constructorStatus(tr, status, preview) {
+    return () => {
       const e = tr.endPose, o = tr.origin;
       clear(status);
       if (e && o) {
@@ -336,6 +345,53 @@
         h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
           !pr.ok ? h('em', null, pr.reason) : null));
     };
+  }
+  /* Phones: directions, slopes and the build buttons first; the rest folds away. */
+  function compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el) {
+    const g = game();
+    box.classList.add('compact');
+    box.append(status);
+    const dirs = h('div', { class: 'bld-dirs' });
+    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', !b.special && b.dir === dd.id, dd.name, () => { b.dir = dd.id; b.special = null; changed(); }, dirGlyph(dd)));
+    box.append(dirs);
+    const ctx = h('div', { class: 'row gap bld-ctx' });
+    if (b.special) {
+      ctx.append(h('span', { class: 'chip chip-info' }, Cat.features[b.special].name), opt('btn small', false, 'Volver a una pieza normal', () => { b.special = null; changed(); }, 'Pieza normal'));
+    } else if (d.kind === 'straight') {
+      for (const [n, label] of BUILD_LENS) ctx.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label));
+    } else {
+      for (const [v, label] of BUILD_BANKS) {
+        const locked = v === 2 && !g.isUnlocked(Cat.features.berm_big);
+        ctx.append(opt('btn small' + (locked ? ' locked' : ''), b.bank === v, label, () => { if (locked) { app().hud.toast(lockReason(Cat.features.berm_big), 'bad'); return; } b.bank = v; changed(); }, v === 0 ? 'Sin peralte' : v === 1 ? 'Peralte' : 'Grande', locked ? icon('lock') : null));
+      }
+    }
+    box.append(ctx);
+    if (!b.special) {
+      const slopes = h('div', { class: 'bld-slopes' });
+      for (const [v, label] of BUILD_SLOPES) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v)));
+      box.append(slopes);
+    }
+    box.append(preview,
+      h('div', { class: 'row gap bld-actions' },
+        h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir'),
+        h('button', { id: 'bld-undo', class: 'btn', title: 'Quitar la última pieza', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar'),
+        h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino más corto hasta la salida', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
+        opt('btn bld-dots', !!b.more, 'Más opciones: piezas especiales, anchura, superficie', () => { b.more = b.more ? null : 'menu'; changed(); }, h('span', { class: 'dots' }, '•••'))));
+    if (b.more) box.append(h('div', { class: 'row gap bld-more' },
+      opt('btn small', b.more === 'sp', 'Piezas especiales: meta y saltos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
+      opt('btn small', b.more === 'ws', 'Anchura y superficie', () => { b.more = b.more === 'ws' ? 'menu' : 'ws'; changed(); }, icon('paint'), 'Ancho y suelo'),
+      h('button', { class: 'btn small danger', title: 'Borrar circuito', 'aria-label': 'Borrar circuito', onmousedown: noFocus, onclick: () => delTrack(tr) }, icon('demolish'))));
+    if (b.more === 'sp') {
+      const sp = h('div', { class: 'bld-strip' });
+      for (const k of SPECIALS) {
+        const fd = Cat.features[k];
+        const locked = !g.isUnlocked(fd);
+        sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.name, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
+          h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
+      }
+      box.append(sp);
+    } else if (b.more === 'ws') widthSurface(box, tr, true);
+    el._upd = constructorStatus(tr, status, preview);
   }
 
   function widthSurface(el, tr, beforeClose) {

@@ -966,8 +966,8 @@
     }
     requestMedic(rider, tr) {
       this.medicJobs.push({ rider: rider.id, t: this.time, track: tr.id });
-      if (!this.staff.some(s => s.role === 'medic')) this.notify(rider.name + ' está herido y no tienes sanitarios.', 'danger', { agent: rider });
-      else this.notify('Piloto herido: ' + rider.name + '. El sanitario va en camino.', 'warn', { agent: rider });
+      if (!this.staff.some(s => s.role === 'medic')) this.notify('Lesión de ' + rider.name + ' y no tienes sanitarios.', 'danger', { agent: rider });
+      else this.notify('Lesión en pista: ' + rider.name + '. El sanitario va en camino.', 'warn', { agent: rider });
     }
     takeMedicJob(s) {
       void s;

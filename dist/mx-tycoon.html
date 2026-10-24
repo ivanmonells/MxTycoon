@@ -554,6 +554,10 @@ b.neg, .neg { color: #ff8a80; }
 #tutorial.min { padding-bottom: 10px; }
 .tut-h b { font: 700 17px/1.1 var(--f-num); color: var(--yellow); }
 .tut-h small { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.tut-skip { flex: none; padding: 2px 8px; background: transparent; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 12px; }
+.tut-skip:hover { color: var(--text); border-color: var(--muted); }
+.tut-fold { flex: none; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 7px solid var(--muted); }
+#tutorial.min .tut-fold { border-bottom: 0; border-top: 7px solid var(--muted); }
 #tutorial p { font-size: 14px; margin: 8px 0 10px; }
 .tut-wait { color: var(--yellow); font-style: italic; font-weight: 600; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .5; } }
@@ -663,33 +667,12 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
 .narrow .sp { width: 28px; }
 .narrow .tb-btn { width: 32px; }
 .narrow #objtracker { width: 210px; font-size: 11px; }
-.narrow #tutorial { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); width: auto; top: auto; bottom: calc(var(--tbb) + var(--sab)); }
-.narrow #ui.tut-on .win { max-height: calc(100% - var(--tbh) - var(--tbb) - 200px - var(--sab) - var(--sat)); }
-.narrow #ui.tut-on.tut-min .win { max-height: calc(100% - var(--tbh) - var(--tbb) - 70px); }
+.narrow:not(.phone) #tutorial { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); width: auto; top: auto; bottom: calc(var(--tbb) + var(--sab)); }
+.narrow:not(.phone) #ui.tut-on .win { max-height: calc(100% - var(--tbh) - var(--tbb) - 200px - var(--sab) - var(--sat)); }
+.narrow:not(.phone) #ui.tut-on.tut-min .win { max-height: calc(100% - var(--tbh) - var(--tbb) - 70px); }
 .narrow .logo-mx { font-size: 72px; }
 .narrow .logo-tycoon { font-size: 42px; }
 .narrow #title { justify-content: center; padding-left: 16px; padding-right: 16px; }
-/* phones in portrait: two-row top bar, two-row toolbar, no minimap */
-@media (max-width: 560px) {
-  :root { --tbh: 80px; --tbb: 112px; }
-  #topbar { flex-wrap: wrap; align-content: center; row-gap: 4px; padding-top: calc(4px + var(--sat)); padding-bottom: 4px; }
-  .tb-park { display: none; }
-  .tb-stats { order: 1; flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; }
-  .tb-stats::-webkit-scrollbar { display: none; }
-  .tb-speed { order: 2; }
-  .tb-right { order: 3; margin-left: auto; }
-  #toolbar { flex-direction: column; left: 50%; right: auto; transform: translateX(-50%); overflow: visible; }
-  .tsep { display: none; }
-  .tg { justify-content: center; }
-  .tbtn { width: 52px; height: 44px; }
-  #minimap-wrap { display: none; }
-  #objtracker { display: none !important; }
-  #notes { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); width: auto; top: calc(var(--tbh) + 6px + var(--sat)); bottom: auto; flex-direction: column; }
-  .race-row { grid-template-columns: 28px 34px 1fr 36px 50px; }
-  .race-row small:last-child { display: none; }
-  .big-stats b { font-size: 21px; }
-  .fin-row { grid-template-columns: 1fr 84px 72px; padding: 3px 6px; }
-}
 @media (max-height: 560px) {
   :root { --tbb: 66px; }
   #title { align-items: flex-start; padding-top: 12px; padding-bottom: 12px; }
@@ -705,6 +688,120 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
   #minimap-wrap { display: none; }
   #objtracker { display: none !important; }
 }
+/* ---------- phones: one-row top bar, one sheet at a time, compact constructor ---------- */
+html.phone { --tbh: 44px; --tbb: 66px; }
+.phone #topbar { flex-wrap: nowrap; gap: 4px; height: calc(var(--tbh) + var(--sat)); padding: var(--sat) calc(4px + var(--sar)) 0 calc(4px + var(--sal)); }
+.phone .tb-park, .phone .tb-wx, .phone .tb-rep small,
+.phone .tb-stat[title='Visitantes en el parque'], .phone .tb-stat[title='Pilotos en el complejo'] { display: none; }
+.phone .tb-stats { flex: 1 1 auto; min-width: 0; overflow: hidden; gap: 3px; }
+.phone .tb-stat { height: 32px; padding: 0 6px; font-size: 14px; }
+.phone .tb-stat .px-icon { width: 14px; height: 14px; }
+.phone .tb-money b { font-size: 15px; }
+.sp-cycle { display: none; gap: 3px; }
+.sp-x { font: 800 12px/1 var(--f-num); color: var(--text); }
+.phone .tb-speed .sp { display: none; width: 34px; height: 32px; }
+.phone .tb-speed .sp[data-v='0'] { display: flex; }
+.phone .tb-speed .sp-cycle { display: flex; width: auto; padding: 0 7px; }
+.phone .tb-right .tb-btn:not([title^='Menú']) { display: none; }
+.phone .tb-btn { width: 36px; height: 32px; }
+/* toolbar: one row with either the building or the management buttons */
+.tg-switch { display: none; }
+.phone #toolbar { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(6px + var(--sab)); padding: 3px; gap: 2px; overflow: visible; }
+.phone .tsep, .phone #toolbar .tg-mgmt, .phone #toolbar.mgmt .tg-build { display: none; }
+.phone #toolbar.mgmt .tg-mgmt { display: flex; }
+.phone .tg-switch { display: flex; border-color: var(--yellow); }
+.phone .tg { gap: 2px; }
+.phone .tbtn { width: 48px; height: 52px; padding: 2px 1px; gap: 2px; }
+.phone .tbtn > span:not(.px-icon) { display: block; max-width: 46px; overflow: hidden; font-size: 10px; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }
+.phone .tbtn .px-icon { width: 22px; height: 22px; }
+.phone #ui.sheet-open #toolbar { display: none; }
+/* HUD bits that don't fit */
+.phone #minimap-wrap, .phone #objtracker, .phone #toolhint { display: none !important; }
+#camctl { display: none; }
+.phone #camctl { position: absolute; right: calc(6px + var(--sar)); bottom: calc(var(--bottom-ui, var(--tbb)) + 10px); z-index: 18; display: flex; flex-direction: column; gap: 6px; }
+.phone #camctl button {
+  display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0;
+  background: rgba(43, 35, 29, .92); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 0 2px 0 rgba(0, 0, 0, .35);
+  font: 800 22px/1 var(--f-num); color: var(--text);
+}
+.phone #ui.sheet-full #camctl { display: none; }
+.phone #notes { left: calc(6px + var(--sal)); right: calc(54px + var(--sar)); width: auto; top: auto; bottom: calc(var(--bottom-ui, var(--tbb)) + 6px); }
+.phone #notes .note:nth-child(n+3) { display: none; }
+.phone .note { padding: 4px 6px 4px 8px; font-size: 12px; }
+.phone #toasts { top: calc(var(--top-ui, calc(var(--tbh) + var(--sat))) + 6px); }
+.phone .toast { padding: 6px 12px; font-size: 13px; }
+.phone #racebar { top: calc(var(--tbh) + var(--sat) + 6px); font-size: 13px; }
+/* tutorial: a slim banner under the top bar */
+.phone #tutorial { top: calc(var(--tbh) + var(--sat) + 4px); bottom: auto; left: calc(6px + var(--sal)); right: calc(6px + var(--sar)); width: auto; padding: 5px 8px 6px; z-index: 36; }
+.phone #tutorial p { display: -webkit-box; margin: 3px 0 2px; overflow: hidden; font-size: 12.5px; line-height: 1.3; -webkit-line-clamp: 3; -webkit-box-orient: vertical; cursor: pointer; }
+.phone #tutorial.more p { display: block; }
+.phone #tutorial.min p { display: none; }
+@media (max-height: 700px) { .phone:not(.land) #tutorial p { -webkit-line-clamp: 2; } }
+.phone #tutorial .tut-wait { display: none; }
+.phone #tutorial .row { margin-top: 4px; }
+.phone #tutorial .row .btn { min-height: 30px; padding: 2px 12px; }
+.phone #tutorial .tut-h b { font-size: 15px; }
+.phone #ui.sheet-full #tutorial { display: none; }
+/* panels become sheets */
+.win-exp, .win-acts { display: none; }
+.phone .win.sheet {
+  left: 0 !important; right: 0; top: auto !important; bottom: 0; width: auto !important;
+  max-height: min(48%, 420px); padding-bottom: var(--sab);
+  border-width: 2px 0 0; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 22px rgba(0, 0, 0, .45);
+  animation: sheet-in .18s ease-out;
+}
+.phone .win.sheet[data-sheet='full'] { max-height: calc(100% - var(--tbh) - var(--sat) - 4px); }
+.phone .win.sheet[data-sheet='min'] > .win-tabs, .phone .win.sheet[data-sheet='min'] > .win-body { display: none; }
+.phone .win.sheet .win-title { position: relative; height: 42px; padding-top: 4px; border-radius: 12px 12px 0 0; cursor: pointer; }
+.phone .win.sheet .win-title::before { content: ''; position: absolute; top: 4px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(26, 20, 16, .5); }
+.phone .win.sheet .win-acts { display: flex; gap: 4px; }
+.phone .win.sheet .win-exp { display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 28px; padding: 0; background: #2b231d; border: 2px solid var(--ink); border-radius: 4px; }
+.phone .win.sheet .win-exp i { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 8px solid var(--text); }
+.phone .win.sheet[data-sheet='full'] .win-exp i { border-bottom: 0; border-top: 8px solid var(--text); }
+.phone .win.sheet .win-x { width: 32px; height: 28px; }
+.win-rot { display: flex; align-items: center; justify-content: center; width: 32px; height: 28px; padding: 0; background: var(--yellow); border: 2px solid var(--ink); border-radius: 4px; }
+.phone .win-body { padding: 8px 10px 10px; }
+.phone .win-tabs { flex-wrap: nowrap; overflow-x: auto; padding-top: 4px; scrollbar-width: none; }
+.phone .win-tabs::-webkit-scrollbar { display: none; }
+.phone .tab { flex: none; padding: 4px 8px 5px; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+/* landscape phones: side sheet on the left */
+.phone.land .win.sheet { top: calc(var(--tbh) + var(--sat)) !important; bottom: 0; right: auto; width: min(380px, 50vw) !important; max-height: none; border-width: 0 2px 0 0; border-radius: 0 12px 0 0; animation: none; }
+.phone.land .win.sheet[data-sheet='min'] { bottom: auto; }
+.phone.land .win.sheet[data-sheet='full'] { width: min(560px, 75vw) !important; }
+.phone.land #camctl { bottom: calc(6px + var(--sab)); flex-direction: row; }
+.phone.land #notes { right: calc(6px + var(--sar)); }
+.phone.land #ui.sheet-open #notes { left: calc(min(380px, 50vw) + 6px); }
+.phone.land #tutorial { left: auto; width: min(360px, 46vw); }
+/* compact track constructor */
+.phone .win-body.constructing > .row:first-child, .phone .win-body.constructing > .track-list, .phone .win-body.constructing .name-row { display: none; }
+.phone .win-body.constructing > .track-detail { padding-top: 0; border-top: 0; }
+.builder.compact { gap: 6px; }
+.builder.compact .bld-status { flex-wrap: nowrap; gap: 2px 10px; padding: 3px 8px; overflow-x: auto; font-size: 12px; white-space: nowrap; scrollbar-width: none; }
+.builder.compact .bld-status b { font-size: 13px; }
+.builder.compact .bld-dirs, .builder.compact .bld-slopes { gap: 3px; }
+.builder.compact .bld-btn { min-height: 38px; padding: 2px 1px; }
+.builder.compact .glyph-dir { height: 30px; }
+.builder.compact .glyph-slope { height: 20px; }
+.builder.compact > .row { margin-top: 0; }
+.builder.compact .bld-ctx { flex-wrap: nowrap; }
+.builder.compact .bld-ctx .btn { flex: 1; }
+.builder.compact .bld-preview { min-height: 0; margin-top: 0; padding: 5px 8px; font-size: 12px; }
+.builder.compact .bld-actions { flex-wrap: nowrap; }
+.builder.compact .bld-actions .btn { min-height: 42px; padding: 4px 6px; }
+.builder.compact .bld-actions .bld-dots { flex: none; width: 42px; padding: 0; }
+.bld-dots .dots { font: 800 14px/1 var(--f-num); letter-spacing: 1px; }
+.builder.compact .bld-more .btn { flex: 1; }
+.builder.compact .bld-more .btn.danger { flex: none; width: 42px; }
+.bld-strip { display: flex; gap: 4px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: thin; }
+.bld-strip .feat { flex: 0 0 92px; padding: 4px 3px; }
+/* denser content */
+.phone .race-row { grid-template-columns: 28px 34px 1fr 36px 50px; }
+.phone .race-row small:last-child { display: none; }
+.phone .big-stats b { font-size: 21px; }
+.phone .fin-row { grid-template-columns: 1fr 84px 72px; padding: 3px 6px; }
+.phone .card-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.phone .card img { width: 56px; height: 56px; }
 @media (pointer: coarse) {
   .btn { min-height: 36px; }
   .mini { width: 32px; height: 32px; }
@@ -1259,7 +1356,7 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
     thirsty: { t: ['Qué sed tengo', 'Necesito algo fresquito'], mood: -1 },
     toilet: { t: ['Necesito ir al baño ya', 'Me hago pis'], mood: -1 },
     no_toilet: { t: ['¿Es que aquí no hay baños?', 'No encuentro los baños'], mood: -3 },
-    tired: { t: ['Estoy cansado de estar de pie', 'Me duelen los pies'], mood: -1 },
+    tired: { t: ['Llevo demasiado rato de pie', 'Me duelen los pies'], mood: -1 },
     no_seats: { t: ['Faltan gradas para ver las motos', 'No hay dónde sentarse'], mood: -2 },
     great_jump: { t: ['¡Qué salto más bestia!', '¡Ese piloto vuela!', '¡Menudo whip!'], mood: 2 },
     crash_seen: { t: ['¡Uff, menuda caída!', '¡Ay! Eso ha tenido que doler'], mood: 1 },
@@ -2996,7 +3093,10 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
   Track.roomBehind = function (world, x, z, h, w, bit) {
     const v = DIRV[h], len = 3 * unitLen(h), ux = v[0] / Math.hypot(v[0], v[1]), uz = v[1] / Math.hypot(v[0], v[1]);
     const nx = -uz, nz = ux, hw = w * 0.5 + 0.5, N = world.N, T = C.TILE;
-    for (let d = 1; d <= len; d += 1.5) for (const o of [-hw, 0, hw]) {
+    const dMax = len + hw + 0.25, ds = [];
+    for (let d = 1; d < dMax; d += 1.5) ds.push(d);
+    ds.push(dMax);
+    for (const d of ds) for (const o of [-hw, 0, hw]) {
       const px = x * LAT - ux * d + nx * o, pz = z * LAT - uz * d + nz * o;
       const tx = Math.floor(px / T), tz = Math.floor(pz / T);
       if (tx < 0 || tz < 0 || tx >= N || tz >= N) return false;
@@ -6474,8 +6574,8 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
     }
     requestMedic(rider, tr) {
       this.medicJobs.push({ rider: rider.id, t: this.time, track: tr.id });
-      if (!this.staff.some(s => s.role === 'medic')) this.notify(rider.name + ' está herido y no tienes sanitarios.', 'danger', { agent: rider });
-      else this.notify('Piloto herido: ' + rider.name + '. El sanitario va en camino.', 'warn', { agent: rider });
+      if (!this.staff.some(s => s.role === 'medic')) this.notify('Lesión de ' + rider.name + ' y no tienes sanitarios.', 'danger', { agent: rider });
+      else this.notify('Lesión en pista: ' + rider.name + '. El sanitario va en camino.', 'warn', { agent: rider });
     }
     takeMedicJob(s) {
       void s;
@@ -10664,17 +10764,25 @@ void main() {
 
 ;
 /* ---- src/ui/windows.js ---- */
-/* MX Tycoon - floating window manager. Panels build their DOM once and return an
-   update() function that the manager calls a few times per second. */
+/* MX Tycoon - window manager. On desktop panels are floating windows. On phones
+   they become one sheet at a time (bottom sheet in portrait, side sheet in
+   landscape) that folds down to its title bar whenever a tool needs the map.
+   Panels build their DOM once and return an update() function that the manager
+   calls a few times per second. */
 (function (MX) {
   'use strict';
   const { h, icon, clear } = MX.DOM;
 
+  /* tools that work on the map: on phones the sheet folds while they are active */
+  const MAP_TOOLS = new Set(['trackstart', 'trackfeature', 'tracksurface', 'trackwidth', 'trackedit', 'trackelev', 'trackdraw', 'build', 'path', 'addon', 'decor', 'demolish', 'terrain', 'paint', 'land']);
+  const isPhone = () => document.documentElement.classList.contains('phone');
+
   const WM = {
-    root: null, wins: new Map(), z: 20, pos: {},
+    root: null, wins: new Map(), z: 20, pos: {}, measureT: 0,
     init(root) {
       this.root = root;
       try { this.pos = JSON.parse(localStorage.getItem('mxtycoon.winpos') || '{}'); } catch (e) { this.pos = {}; }
+      MX.Bus.on('tool', (name) => this.onTool(name));
     },
     topLimit() { const tb = document.getElementById('topbar'); return tb && tb.offsetHeight ? tb.getBoundingClientRect().bottom + 4 : 48; },
     isOpen(id) { return this.wins.has(id); },
@@ -10683,38 +10791,68 @@ void main() {
       if (this.wins.has(id)) {
         const w = this.wins.get(id);
         if (o.rebuild) this._build(w, o);
+        if (isPhone() && w.el.dataset.sheet === 'min') this.setSheet(id, 'half');
         this.focus(id);
         return w;
       }
+      /* phones show one sheet at a time */
+      if (isPhone()) for (const k of Array.from(this.wins.keys())) this.close(k, true);
       const el = h('div', { class: 'win ' + (o.cls || ''), role: 'dialog', 'aria-label': o.title });
+      const acts = h('span', { class: 'win-acts' });
       const title = h('div', { class: 'win-title' },
         o.icon ? icon(o.icon, 'win-ic') : null,
         h('span', { class: 'win-t' }, o.title),
         h('span', { class: 'win-stripes' }),
-        h('button', { class: 'win-x', title: 'Cerrar (Esc)', 'aria-label': 'Cerrar', onclick: () => this.close(id) }, icon('close'))
+        acts,
+        h('button', { class: 'win-exp', title: 'Ampliar o reducir', 'aria-label': 'Ampliar o reducir', onclick: (e) => { e.stopPropagation(); this.setSheet(id, w.el.dataset.sheet === 'full' ? 'half' : 'full'); } }, h('i')),
+        h('button', { class: 'win-x', title: 'Cerrar (Esc)', 'aria-label': 'Cerrar', onclick: (e) => { e.stopPropagation(); this.close(id); } }, icon('close'))
       );
       const tabs = h('div', { class: 'win-tabs' });
       const body = h('div', { class: 'win-body' });
       el.append(title, tabs, body);
       this.root.appendChild(el);
-      const w = { id, el, body, tabsEl: tabs, titleEl: title.querySelector('.win-t'), o, update: null, t: 0 };
+      const w = { id, el, body, tabsEl: tabs, titleEl: title.querySelector('.win-t'), actsEl: acts, o, update: null, t: 0 };
       this.wins.set(id, w);
+      this._place(w);
+      this._drag(w, title);
+      el.addEventListener('pointerdown', () => this.focus(id));
+      this._build(w, o);
+      this.focus(id);
+      this._toolActs(w);
+      this.syncSheets();
+      MX.Bus.emit('ui:open', id);
+      return w;
+    },
+    /* desktop: floating position; phone: sheet laid out by CSS */
+    _place(w) {
+      const el = w.el, o = w.o;
+      if (isPhone()) {
+        el.classList.add('sheet');
+        el.style.left = ''; el.style.top = ''; el.style.width = '';
+        if (!el.dataset.sheet) el.dataset.sheet = 'half';
+        return;
+      }
+      el.classList.remove('sheet');
       const vw = this.root.clientWidth || window.innerWidth, vh = this.root.clientHeight || window.innerHeight;
       const width = Math.min(o.width || 360, vw - 16);
       el.style.width = width + 'px';
-      const saved = this.pos[id];
+      const saved = this.pos[w.id];
       let x = saved ? saved.x : (o.x != null ? o.x : Math.max(8, Math.min(vw - width - 8, 70 + (this.wins.size % 5) * 28)));
       let y = saved ? saved.y : (o.y != null ? o.y : this.topLimit() + 16 + (this.wins.size % 5) * 24);
       const top = this.topLimit();
       x = Math.max(4, Math.min(x, vw - 80)); y = Math.max(top, Math.min(y, vh - 60));
       if (vw < 640) { x = 8; el.style.width = (vw - 16) + 'px'; }
       el.style.left = x + 'px'; el.style.top = y + 'px';
-      this._drag(w, title);
-      el.addEventListener('pointerdown', () => this.focus(id));
-      this._build(w, o);
-      this.focus(id);
-      MX.Bus.emit('ui:open', id);
-      return w;
+    },
+    /* after a resize or rotation that switches between phone and desktop layouts */
+    relayout() {
+      if (isPhone() && this.wins.size > 1) {
+        let top = null;
+        for (const w of this.wins.values()) if (!top || +w.el.style.zIndex > +top.el.style.zIndex) top = w;
+        for (const k of Array.from(this.wins.keys())) if (k !== top.id) this.close(k, true);
+      }
+      for (const w of this.wins.values()) this._place(w);
+      this.syncSheets();
     },
     _build(w, o) {
       /* rebuilding the same tab keeps the scroll position (option buttons rebuild the panel) */
@@ -10741,20 +10879,73 @@ void main() {
     },
     setTab(id, tab) { const w = this.wins.get(id); if (w) { w.tab = tab; this._build(w, w.o); } },
     rebuild(id) { const w = this.wins.get(id); if (w) this._build(w, w.o); },
-    setTitle(id, t) { const w = this.wins.get(id); if (w) w.titleEl.textContent = t; },
+    setTitle(id, t) { const w = this.wins.get(id); if (w && w.titleEl.textContent !== t) w.titleEl.textContent = t; },
     focus(id) {
       const w = this.wins.get(id);
       if (!w) return;
       w.el.style.zIndex = ++this.z;
       for (const o of this.wins.values()) o.el.classList.toggle('focus', o === w);
     },
-    close(id) {
+    /* sheet state on phones: 'min' (title bar only), 'half' or 'full' */
+    setSheet(id, state) {
+      const w = this.wins.get(id);
+      if (!w || !isPhone()) return;
+      w.el.dataset.sheet = state;
+      this.syncSheets();
+    },
+    syncSheets() {
+      const ui = document.getElementById('ui');
+      if (!ui) return;
+      const phone = isPhone();
+      let full = false;
+      for (const w of this.wins.values()) if (w.el.dataset.sheet === 'full') full = true;
+      ui.classList.toggle('sheet-open', phone && this.wins.size > 0);
+      ui.classList.toggle('sheet-full', phone && full);
+      requestAnimationFrame(() => this.measure());
+    },
+    /* --bottom-ui: height of the sheet or toolbar at the bottom, for notes and framing;
+       --top-ui: bottom edge of the top bar or the tutorial banner, for toasts */
+    measure() {
+      const root = document.documentElement;
+      let b = 0, t = 0;
+      if (isPhone()) {
+        const vh = window.innerHeight;
+        if (!root.classList.contains('land')) for (const w of this.wins.values()) b = Math.max(b, vh - w.el.getBoundingClientRect().top);
+        if (!this.wins.size) { const tb = document.getElementById('toolbar'); if (tb && tb.offsetHeight) b = vh - tb.getBoundingClientRect().top; }
+        const tut = document.getElementById('tutorial');
+        if (tut && !tut.hidden && tut.offsetHeight) t = tut.getBoundingClientRect().bottom;
+      }
+      const set = (k, px) => { const v = px ? Math.round(px) + 'px' : ''; if (root.style.getPropertyValue(k) !== v) root.style.setProperty(k, v); };
+      set('--bottom-ui', b);
+      set('--top-ui', t);
+    },
+    onTool(name) {
+      if (!isPhone()) { for (const w of this.wins.values()) this._toolActs(w); return; }
+      for (const w of this.wins.values()) {
+        if (MAP_TOOLS.has(name)) w.el.dataset.sheet = 'min';
+        else if (name === 'trackbuild' && w.id === 'tracks' && w.el.dataset.sheet === 'min') w.el.dataset.sheet = 'half';
+        this._toolActs(w);
+      }
+      this.syncSheets();
+    },
+    /* a rotate button in the title bar while a rotatable tool is active (phones have no R key) */
+    _toolActs(w) {
+      const t = MX.Tools && MX.Tools.current;
+      const want = !!(t && t.rotate && isPhone());
+      if (!!w.actsEl.firstChild === want) return;
+      clear(w.actsEl);
+      if (want) w.actsEl.append(h('button', { class: 'win-rot', title: 'Girar (R)', 'aria-label': 'Girar', onclick: (e) => { e.stopPropagation(); const c = MX.Tools.current; if (c && c.rotate) c.rotate(); } }, icon('rotate')));
+    },
+    close(id, quiet) {
       const w = this.wins.get(id);
       if (!w) return false;
       w.el.remove();
       this.wins.delete(id);
       if (w.o.onClose) w.o.onClose();
       MX.Bus.emit('ui:close', id);
+      /* on phones closing the sheet also ends the tool it was driving */
+      if (isPhone() && !quiet && !this.wins.size && MX.Tools && MX.Tools.current && MX.Tools.current.name !== 'select') MX.Tools.select();
+      this.syncSheets();
       return true;
     },
     closeTop() {
@@ -10763,7 +10954,7 @@ void main() {
       if (top) { this.close(top.id); return true; }
       return false;
     },
-    closeAll() { for (const id of Array.from(this.wins.keys())) this.close(id); },
+    closeAll() { for (const id of Array.from(this.wins.keys())) this.close(id, true); this.syncSheets(); },
     tick(dt) {
       for (const w of this.wins.values()) {
         w.t -= dt;
@@ -10771,30 +10962,42 @@ void main() {
         w.t = w.o.every || 0.4;
         try { w.update(); } catch (e) { console.error('[win ' + w.id + ']', e); }
       }
+      this.measureT -= dt;
+      if (this.measureT <= 0) { this.measureT = 0.3; this.measure(); }
     },
     _drag(w, handle) {
-      let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+      let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false, sheetDrag = false;
       handle.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('.win-x')) return;
-        dragging = true; sx = e.clientX; sy = e.clientY; ox = w.el.offsetLeft; oy = w.el.offsetTop;
+        if (e.target.closest('button')) return;
+        dragging = true; sheetDrag = isPhone(); sx = e.clientX; sy = e.clientY; ox = w.el.offsetLeft; oy = w.el.offsetTop;
         handle.setPointerCapture(e.pointerId);
         e.preventDefault();
       });
       handle.addEventListener('pointermove', (e) => {
-        if (!dragging) return;
+        if (!dragging || sheetDrag) return;
         const vw = this.root.clientWidth, vh = this.root.clientHeight;
         const x = Math.max(-w.el.offsetWidth + 80, Math.min(vw - 80, ox + e.clientX - sx));
         const y = Math.max(this.topLimit(), Math.min(vh - 40, oy + e.clientY - sy));
         w.el.style.left = x + 'px'; w.el.style.top = y + 'px';
       });
-      const end = () => {
+      const end = (e) => {
         if (!dragging) return;
         dragging = false;
+        if (sheetDrag) {
+          /* tap folds or unfolds; a swipe up or down steps between min, half and full */
+          const dy = (e && e.clientY != null ? e.clientY : sy) - sy;
+          const st = w.el.dataset.sheet || 'half';
+          const land = document.documentElement.classList.contains('land');
+          if (Math.abs(dy) < 12 || land) this.setSheet(w.id, st === 'min' ? 'half' : 'min');
+          else if (dy > 0) this.setSheet(w.id, st === 'full' ? 'half' : 'min');
+          else this.setSheet(w.id, st === 'min' ? 'half' : 'full');
+          return;
+        }
         this.pos[w.id] = { x: w.el.offsetLeft, y: w.el.offsetTop };
-        try { localStorage.setItem('mxtycoon.winpos', JSON.stringify(this.pos)); } catch (e) { /* storage unavailable */ }
+        try { localStorage.setItem('mxtycoon.winpos', JSON.stringify(this.pos)); } catch (err) { /* storage unavailable */ }
       };
       handle.addEventListener('pointerup', end);
-      handle.addEventListener('pointercancel', end);
+      handle.addEventListener('pointercancel', () => { dragging = false; });
     }
   };
 
@@ -11006,9 +11209,16 @@ void main() {
     name: 'trackbuild',
     hint: 'Elige dirección y pendiente · Intro o clic en la pieza fantasma: construir · Retroceso: quitar la última · Flechas: dirección y pendiente · Esc: salir',
     get tr() { return game().selectedTrack; },
-    enter() { this.refresh(); },
+    enter() { this.refresh(); this.frame(); },
     exit() { R().setGhostMesh(null); R().setOverlayMesh(null); this.probe = null; },
     piece() { return MX.Panels1.currentPiece(); },
+    /* keep the construction point in sight, above the panel */
+    frame() {
+      const tr = this.tr, e = tr && tr.endPose;
+      if (!e || tr.closed) return;
+      const x = e.x * T, z = e.z * T;
+      setTimeout(() => app().frameWorld(x, (tr.S ? tr.S.y[tr.S.n - 1] : game().world.heightAt(x, z)), z), 60);
+    },
     refresh() {
       const tr = this.tr;
       this.probe = null;
@@ -11047,6 +11257,7 @@ void main() {
       }
       this.refresh();
       app().panels.tracks();
+      this.frame();
     },
     closed(tr) {
       sfx('success');
@@ -11054,6 +11265,7 @@ void main() {
       app().trackUI.section = 'features';
       Tools.set(TrackFeature);
       MX.WM.rebuild('tracks');
+      MX.WM.setSheet('tracks', 'half');
     },
     undo() {
       const tr = this.tr;
@@ -11061,6 +11273,7 @@ void main() {
       if (result(game().removeLastPiece(tr))) sfx('demolish');
       this.refresh();
       app().panels.tracks();
+      this.frame();
     },
     auto() {
       const tr = this.tr, ui = app().trackUI;
@@ -11594,7 +11807,8 @@ void main() {
       if (!this.t) return;
       if (result(game().placeDecor(this.type, this.t.tx, this.t.tz, this.rot * Math.PI / 2))) sfx('place');
     },
-    key(e) { if (e.key === 'r' || e.key === 'R') { this.rot = (this.rot + 1) % 4; return true; } return false; }
+    rotate() { this.rot = (this.rot + 1) % 4; if (this.lastP) this.hover(this.lastP); sfx('click'); },
+    key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; }
   };
 
   /* -------- Demolish -------- */
@@ -11990,6 +12204,14 @@ void main() {
         this.speedEl.appendChild(b);
         return b;
       });
+      /* phones: one button that steps through the speeds */
+      this.cycleBtn = h('button', { class: 'sp sp-cycle', title: 'Cambiar velocidad', 'aria-label': 'Cambiar velocidad', onclick: () => {
+        const g = app.game;
+        if (!g) return;
+        const order = [1, 2, 4, 8];
+        app.setSpeed(order[(order.indexOf(g.speed) + 1) % order.length]);
+      } }, icon('play'), h('b', { class: 'sp-x' }, '1x'));
+      this.speedEl.appendChild(this.cycleBtn);
       this.soundBtn = h('button', { class: 'tb-btn', title: 'Sonido', onclick: () => app.toggleSound() }, icon('sound'));
       this.rotBtn = h('button', { class: 'tb-btn', title: 'Girar cámara (Q / E)', onclick: () => { app.renderer.cam.yawIndex = (app.renderer.cam.yawIndex + 1) % 4; } }, icon('rotate'));
       this.menuBtn = h('button', { class: 'tb-btn', title: 'Menú (Esc)', onclick: () => this.menu() }, icon('menu'));
@@ -11997,12 +12219,12 @@ void main() {
       /* toolbar */
       this.bar = h('div', { id: 'toolbar', role: 'toolbar' });
       const groups = [
-        [['track', 'Circuitos', () => app.panels.tracks(), 'tracks'], ['terrain', 'Terreno', () => app.panels.terrain(), 'terrain'], ['build', 'Construir', () => app.panels.build(), 'build'], ['path', 'Caminos', () => app.panels.paths(), 'paths'], ['decor', 'Decorar', () => app.panels.decor(), 'decor'], ['demolish', 'Demoler', () => MX.Tools.set(MX.Tools.list.Demolish), 'demolish']],
+        [['track', 'Circuitos', () => app.panels.tracks(), 'tracks'], ['terrain', 'Terreno', () => app.panels.terrain(), 'terrain'], ['build', 'Construir', () => app.panels.build(), 'build'], ['path', 'Caminos', () => app.panels.paths(), 'paths'], ['decor', 'Decorar', () => app.panels.decor(), 'decor'], ['demolish', 'Demoler', () => { if (MX.Tools.current === MX.Tools.list.Demolish) MX.Tools.select(); else MX.Tools.set(MX.Tools.list.Demolish); }, 'demolish']],
         [['staff', 'Personal', () => app.panels.staff(), 'staff'], ['finance', 'Finanzas', () => app.panels.finance(), 'finance'], ['events', 'Eventos', () => app.panels.events(), 'events'], ['research', 'Investigar', () => app.panels.research(), 'research'], ['objectives', 'Objetivos', () => app.panels.objectives(), 'objectives'], ['park', 'Parque', () => app.panels.park(), 'park']]
       ];
       this.toolBtns = {};
       groups.forEach((g, gi) => {
-        const grp = h('div', { class: 'tg' });
+        const grp = h('div', { class: 'tg ' + (gi ? 'tg-mgmt' : 'tg-build') });
         for (const [ic, label, fn, id] of g) {
           const b = h('button', { class: 'tbtn', title: label, onclick: () => { MX.Audio && MX.Audio.sfx('click'); fn(); } }, icon(ic), h('span', null, label));
           b.dataset.id = id;
@@ -12012,6 +12234,20 @@ void main() {
         this.bar.appendChild(grp);
         if (gi === 0) this.bar.appendChild(h('div', { class: 'tsep' }));
       });
+      /* phones show one group at a time: this button swaps building and management */
+      this.switchBtn = h('button', { class: 'tbtn tg-switch', title: 'Gestión', onclick: () => {
+        const m = this.bar.classList.toggle('mgmt');
+        this.switchBtn.title = m ? 'Obras' : 'Gestión';
+        this.switchBtn.querySelector('.px-icon').style.backgroundImage = 'url(' + MX.DOM.iconURL(m ? 'build' : 'finance', 3) + ')';
+        this.switchBtn.querySelector('span:not(.px-icon)').textContent = m ? 'Obras' : 'Gestión';
+        MX.Audio && MX.Audio.sfx('click');
+      } }, icon('finance'), h('span', null, 'Gestión'));
+      this.bar.appendChild(this.switchBtn);
+      /* phones: camera buttons on the map (no keyboard, no minimap) */
+      this.camEl = h('div', { id: 'camctl' },
+        h('button', { title: 'Girar la vista', 'aria-label': 'Girar la vista', onclick: () => { app.renderer.cam.yawIndex = (app.renderer.cam.yawIndex + 1) % 4; } }, icon('rotate')),
+        h('button', { title: 'Acercar', 'aria-label': 'Acercar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 1.35) }, '+'),
+        h('button', { title: 'Alejar', 'aria-label': 'Alejar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 0.74) }, '−'));
       /* other HUD parts */
       this.objEl = h('div', { id: 'objtracker', onclick: () => app.panels.objectives() });
       this.notesEl = h('div', { id: 'notes', 'aria-live': 'polite' });
@@ -12027,7 +12263,7 @@ void main() {
       this.mini.addEventListener('pointerdown', (e) => this.miniClick(e));
       this.mini.addEventListener('pointermove', (e) => { if (e.buttons) this.miniClick(e); });
       this.overlay = h('canvas', { id: 'overlay' });
-      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.bar);
+      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.camEl, this.bar);
       this.octx = this.overlay.getContext('2d');
     }
     setVisible(v) { this.root.classList.toggle('hud-hidden', !v); }
@@ -12067,7 +12303,9 @@ void main() {
       const money = g.econ.money;
       this.moneyEl.querySelector('b').textContent = U.fmtMoney(money);
       this.moneyEl.classList.toggle('neg', money < 0);
-      this.dateEl.querySelector('b').textContent = g.dateText();
+      const phone = document.documentElement.classList.contains('phone');
+      const dt0 = g.date();
+      this.dateEl.querySelector('b').textContent = phone ? dt0.day + ' ' + U.MONTHS_SHORT[dt0.month] : g.dateText();
       this.repEl.querySelector('b').textContent = Math.round(g.rep);
       this.repEl.querySelector('small').textContent = g.repLabel();
       this.visEl.querySelector('b').textContent = g.visitors.length;
@@ -12079,6 +12317,13 @@ void main() {
       this.wxEl.querySelector('b').textContent = wd.name;
       this.parkEl.querySelector('.tb-name').textContent = g.parkName;
       for (const b of this.speedBtns) b.classList.toggle('on', +b.dataset.v === g.speed);
+      if (this._cyc !== g.speed) {
+        this._cyc = g.speed;
+        const ic = { 0: 'play', 1: 'play', 2: 'fast', 4: 'faster', 8: 'turbo' }[g.speed] || 'play';
+        this.cycleBtn.querySelector('.px-icon').style.backgroundImage = 'url(' + MX.DOM.iconURL(ic, 3) + ')';
+        this.cycleBtn.querySelector('.sp-x').textContent = (g.speed || 1) + 'x';
+        this.cycleBtn.classList.toggle('on', g.speed > 0);
+      }
       const snd = MX.Audio && MX.Audio.enabled;
       const sic = this.soundBtn.querySelector('.px-icon');
       const sn = snd ? 'sound' : 'mute';
@@ -12349,6 +12594,10 @@ void main() {
         body.append(head, list, detail);
         return () => {
           const g = game();
+          const sel = g.selectedTrack;
+          const building = !!(sel && sel.pieces && !sel.closed && document.documentElement.classList.contains('phone'));
+          body.classList.toggle('constructing', building);
+          WM.setTitle('tracks', building ? 'Construcción · ' + sel.name : 'Circuitos');
           keyed(list, g.tracks.map(t => t.id + t.state + t.name + (g.selectedTrack === t)).join('|'), (el) => {
             if (!g.tracks.length) el.append(h('p', { class: 'muted' }, 'Aún no tienes circuitos. Pulsa «Nuevo circuito», coloca la parrilla de salida y construye el trazado pieza a pieza.'));
             for (const t of g.tracks) {
@@ -12369,14 +12618,15 @@ void main() {
     const tr = g.newTrack();
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     MX.Tools.set(TL().TrackStart);
-    app().hud.toast('Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
+    const phone = document.documentElement.classList.contains('phone');
+    app().hud.toast(phone ? 'Toca tu terreno para ver la parrilla y toca encima para colocarla' : 'Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
   }
   function buildTrackDetail(el, tr) {
     if (!tr) return;
     const g = game(), ui = app().trackUI;
     const nameIn = h('input', { id: 'track-name', class: 'inp', value: tr.name, maxlength: 28, 'aria-label': 'Nombre del circuito', onchange: (e) => { tr.name = e.target.value || tr.name; tr.ver++; } });
     const st = STATE[tr.state];
-    el.append(h('div', { class: 'row gap center' }, nameIn, chip(st[0], st[1])));
+    el.append(h('div', { class: 'row gap center name-row' }, nameIn, chip(st[0], st[1])));
     /* tools */
     const editable = tr.state !== 'open';
     const toolBtn = (ic, label, tool, extra) => {
@@ -12571,6 +12821,7 @@ void main() {
     const noFocus = (e) => e.preventDefault();
     const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
     const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
+    if (document.documentElement.classList.contains('phone')) { compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el); return; }
     box.append(status);
     /* direction */
     const dirs = h('div', { class: 'bld-dirs' });
@@ -12613,7 +12864,10 @@ void main() {
         h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino más corto hasta la salida y lo construye', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
       h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'),
       h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
-    el._upd = () => {
+    el._upd = constructorStatus(tr, status, preview);
+  }
+  function constructorStatus(tr, status, preview) {
+    return () => {
       const e = tr.endPose, o = tr.origin;
       clear(status);
       if (e && o) {
@@ -12634,6 +12888,53 @@ void main() {
         h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
           !pr.ok ? h('em', null, pr.reason) : null));
     };
+  }
+  /* Phones: directions, slopes and the build buttons first; the rest folds away. */
+  function compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el) {
+    const g = game();
+    box.classList.add('compact');
+    box.append(status);
+    const dirs = h('div', { class: 'bld-dirs' });
+    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', !b.special && b.dir === dd.id, dd.name, () => { b.dir = dd.id; b.special = null; changed(); }, dirGlyph(dd)));
+    box.append(dirs);
+    const ctx = h('div', { class: 'row gap bld-ctx' });
+    if (b.special) {
+      ctx.append(h('span', { class: 'chip chip-info' }, Cat.features[b.special].name), opt('btn small', false, 'Volver a una pieza normal', () => { b.special = null; changed(); }, 'Pieza normal'));
+    } else if (d.kind === 'straight') {
+      for (const [n, label] of BUILD_LENS) ctx.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label));
+    } else {
+      for (const [v, label] of BUILD_BANKS) {
+        const locked = v === 2 && !g.isUnlocked(Cat.features.berm_big);
+        ctx.append(opt('btn small' + (locked ? ' locked' : ''), b.bank === v, label, () => { if (locked) { app().hud.toast(lockReason(Cat.features.berm_big), 'bad'); return; } b.bank = v; changed(); }, v === 0 ? 'Sin peralte' : v === 1 ? 'Peralte' : 'Grande', locked ? icon('lock') : null));
+      }
+    }
+    box.append(ctx);
+    if (!b.special) {
+      const slopes = h('div', { class: 'bld-slopes' });
+      for (const [v, label] of BUILD_SLOPES) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v)));
+      box.append(slopes);
+    }
+    box.append(preview,
+      h('div', { class: 'row gap bld-actions' },
+        h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir'),
+        h('button', { id: 'bld-undo', class: 'btn', title: 'Quitar la última pieza', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar'),
+        h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino más corto hasta la salida', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
+        opt('btn bld-dots', !!b.more, 'Más opciones: piezas especiales, anchura, superficie', () => { b.more = b.more ? null : 'menu'; changed(); }, h('span', { class: 'dots' }, '•••'))));
+    if (b.more) box.append(h('div', { class: 'row gap bld-more' },
+      opt('btn small', b.more === 'sp', 'Piezas especiales: meta y saltos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
+      opt('btn small', b.more === 'ws', 'Anchura y superficie', () => { b.more = b.more === 'ws' ? 'menu' : 'ws'; changed(); }, icon('paint'), 'Ancho y suelo'),
+      h('button', { class: 'btn small danger', title: 'Borrar circuito', 'aria-label': 'Borrar circuito', onmousedown: noFocus, onclick: () => delTrack(tr) }, icon('demolish'))));
+    if (b.more === 'sp') {
+      const sp = h('div', { class: 'bld-strip' });
+      for (const k of SPECIALS) {
+        const fd = Cat.features[k];
+        const locked = !g.isUnlocked(fd);
+        sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.name, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
+          h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
+      }
+      box.append(sp);
+    } else if (b.more === 'ws') widthSurface(box, tr, true);
+    el._upd = constructorStatus(tr, status, preview);
   }
 
   function widthSurface(el, tr, beforeClose) {
@@ -13576,19 +13877,20 @@ void main() {
       return [
         { title: '¡Bienvenido a MX Tycoon!', text: 'Tienes un terreno junto a la carretera y 150.000 €. Tu misión: convertirlo en un complejo de motocross de referencia mundial. Te enseño lo básico en un par de minutos.', next: 'Empezar' },
         { title: 'La cámara', text: 'Arrastra con el botón derecho del ratón (o usa WASD) para moverte y la rueda para acercarte. Q y E giran la vista. En pantallas táctiles, arrastra con un dedo y pellizca.', init: () => { const c = app.renderer.cam; this.c0 = [c.tx, c.tz, c.targetZoom]; },
+          tp: 'Arrastra con un dedo para moverte y pellizca para acercarte. Los botones de la derecha giran la vista y acercan o alejan.',
           check: () => { const c = app.renderer.cam; return Math.hypot(c.tx - this.c0[0], c.tz - this.c0[1]) > 12 || Math.abs(c.targetZoom - this.c0[2]) > 1.5; } },
         { title: 'Tu primer circuito', text: 'Abre el menú Circuitos en la barra inferior.', target: '[data-id="tracks"]', check: () => MX.WM.isOpen('tracks') },
-        { title: 'Coloca la salida', text: 'Pulsa «Nuevo circuito» y haz clic en tu terreno, la zona clara, para colocar la parrilla de salida. En pantallas táctiles, toca para verla y vuelve a tocar encima. La tecla R o el botón «Girar» la orientan.', target: '#win-tracks-new', check: () => g().tracks.some(t => t.pieces && t.pieces.length) || g().tracks.some(t => t.closed) },
-        { title: 'Construye pieza a pieza', text: 'Como en los clásicos: elige la dirección (recta o curva cerrada, media o abierta) y la pendiente, y pulsa «Construir pieza». La pieza fantasma te enseña dónde irá. Mete un salto desde «Pieza especial» y la «Meta». Vuelve hasta la salida para cerrar el circuito, o pulsa «Cerrar automáticamente».', target: '#bld-build', check: () => g().tracks.some(t => t.closed) },
-        { title: 'Salida y meta', text: 'Tu circuito necesita la línea de meta. Si no la pusiste al construir, colócala en la pestaña Elementos haciendo clic o tocando sobre una recta.', check: () => hasFeat(tr(), f => f.type === 'start') && hasFeat(tr(), f => f.type === 'finish') },
+        { title: 'Coloca la salida', text: 'Pulsa «Nuevo circuito» y haz clic en tu terreno, la zona clara, para colocar la parrilla de salida. En pantallas táctiles, toca para verla y vuelve a tocar encima. La tecla R o el botón «Girar» la orientan.', tp: 'Pulsa «Nuevo circuito» y toca tu terreno (la zona clara) para ver la parrilla; toca otra vez encima para colocarla. El botón amarillo la gira.', target: '#win-tracks-new', check: () => g().tracks.some(t => t.pieces && t.pieces.length) || g().tracks.some(t => t.closed) },
+        { title: 'Construye pieza a pieza', text: 'Como en los clásicos: elige la dirección (recta o curva cerrada, media o abierta) y la pendiente, y pulsa «Construir pieza». La pieza fantasma te enseña dónde irá. Mete un salto desde «Pieza especial» y la «Meta». Vuelve hasta la salida para cerrar el circuito, o pulsa «Cerrar automáticamente».', tp: 'Elige dirección y pendiente y pulsa «Construir»: la pieza fantasma enseña dónde irá. En ••• tienes saltos y la meta. Vuelve a la salida o pulsa «Cerrar» para completar la vuelta.', target: '#bld-build', check: () => g().tracks.some(t => t.closed) },
+        { title: 'Salida y meta', text: 'Tu circuito necesita la línea de meta. Si no la pusiste al construir, colócala en la pestaña Elementos haciendo clic o tocando sobre una recta.', tp: 'Falta la línea de meta: en la pestaña Elementos elígela y toca una recta del circuito.', check: () => hasFeat(tr(), f => f.type === 'start') && hasFeat(tr(), f => f.type === 'finish') },
         { title: 'Hora de volar', text: 'Añade al menos un salto: un tabletop en una recta es perfecto para empezar. Los saltos atraen pilotos y público.', check: () => hasFeat(tr(), f => MX.Catalog.features[f.type].group === 'jump') },
-        { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
+        { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', tp: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde). El botón amarillo lo gira.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
         { title: 'Servicios para el público', text: 'En Construir → Público: pon una Taquilla y acceso, un Aparcamiento tocando la carretera y unos Baños.', target: '[data-id="build"]', check: () => g().count('entrance') && g().count('parking') && g().count('toilets') },
         { title: 'Caminos', text: 'Abre Caminos y une el aparcamiento con la taquilla, y la taquilla con los baños y con una zona junto a la pista. El público solo anda por caminos.', target: '[data-id="paths"]',
           check: () => { const G = g(); if (G.fieldsDirty) G.rebuildFields(); const lot = G.buildingsOf('parking')[0]; const ent = G.buildingsOf('entrance')[0]; if (!lot || !ent) return false; return G.doorTiles(lot, 'path').some(t => G.fieldReach('entrance', t.tx, t.tz)) && G.doorTiles(ent, 'path').some(t => G.fieldReach('toilet', t.tx, t.tz)); } },
         { title: '¡Abrimos!', text: 'Vuelve a Circuitos, pulsa «Validar» para revisar que todo está bien y luego «Abrir al público». Si algo falla, la lista te dice qué arreglar.', target: '[data-id="tracks"]', check: () => g().tracks.some(t => t.state === 'open') },
         { title: 'Llegan los pilotos', text: 'Las furgonetas ya vienen por la carretera. Cuando veas un piloto en pista, haz clic sobre él para ver sus datos y pulsa «Seguir».', init: () => { this.openedAgent = false; this.t0 = performance.now(); }, check: () => this.openedAgent || performance.now() - this.t0 > 90000 },
-        { title: 'A crecer', text: 'Acelera el tiempo con los botones de velocidad de arriba. Contrata personal (un limpiador y un mecánico), mira Finanzas y sigue los Objetivos. Organiza carreras para ganar prestigio. ¡Suerte!', target: '.tb-speed', next: 'Terminar' }
+        { title: 'A crecer', text: 'Acelera el tiempo con los botones de velocidad de arriba. Contrata personal (un limpiador y un mecánico), mira Finanzas y sigue los Objetivos. Organiza carreras para ganar prestigio. ¡Suerte!', tp: 'Acelera el tiempo con el botón de velocidad de arriba. En «Gestión» contrata personal, mira Finanzas y sigue los Objetivos. Organiza carreras para ganar prestigio. ¡Suerte!', target: '.tb-speed', next: 'Terminar' }
       ];
     }
     start(force) {
@@ -13601,6 +13903,7 @@ void main() {
     stop(done) {
       this.active = false; this.el.hidden = true; this.highlight(null);
       this.root.classList.remove('tut-on');
+      this.remeasure();
       if (done) MX.Save.flag('tutorialDone', '1');
     }
     next() {
@@ -13614,15 +13917,21 @@ void main() {
     }
     render() {
       const s = this.steps[this.i];
+      const phone = document.documentElement.classList.contains('phone');
       clear(this.el);
+      this.el.classList.remove('more');
       this.el.append(
-        h('div', { class: 'tut-h', title: 'Plegar o desplegar', onclick: () => { const m = this.el.classList.toggle('min'); this.root.classList.toggle('tut-min', m); } }, icon('objectives'), h('b', null, s.title), h('small', null, 'Paso ' + (this.i + 1) + ' de ' + this.steps.length)),
-        h('p', null, s.text),
-        h('div', { class: 'row gap' },
-          s.check ? h('span', { class: 'tut-wait' }, 'Hazlo y seguimos…') : h('button', { class: 'btn primary', onclick: () => this.next() }, s.next || 'Siguiente'),
-          h('button', { class: 'btn small ghost', onclick: () => this.stop(true) }, 'Saltar tutorial')));
+        h('div', { class: 'tut-h', title: 'Plegar o desplegar', onclick: () => { const m = this.el.classList.toggle('min'); this.root.classList.toggle('tut-min', m); this.remeasure(); } },
+          icon('objectives'), h('b', null, s.title), h('small', null, 'Paso ' + (this.i + 1) + ' de ' + this.steps.length),
+          h('button', { class: 'tut-skip', title: 'Saltar el tutorial', onclick: (e) => { e.stopPropagation(); this.stop(true); } }, 'Saltar'),
+          h('i', { class: 'tut-fold', 'aria-hidden': 'true' })),
+        h('p', { title: 'Ver el texto completo', onclick: () => { this.el.classList.toggle('more'); this.remeasure(); } }, phone && s.tp ? s.tp : s.text),
+        s.check ? h('div', { class: 'tut-wait' }, 'Hazlo y seguimos…') : h('div', { class: 'row gap' }, h('button', { class: 'btn primary', onclick: () => this.next() }, s.next || 'Siguiente')));
       this.highlight(s.target);
+      this.remeasure();
     }
+    /* toasts on phones sit under the banner, so its height matters */
+    remeasure() { requestAnimationFrame(() => MX.WM.measure()); }
     highlight(sel) {
       if (this.hl) this.hl.classList.remove('tut-hl');
       this.hl = null;
@@ -14085,7 +14394,37 @@ void main() {
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
       this.renderer.resize(r.width, r.height, dpr);
       this.hud.resizeOverlay(r.width, r.height, dpr);
-      document.documentElement.classList.toggle('narrow', r.width < 760);
+      const root = document.documentElement;
+      root.classList.toggle('narrow', r.width < 760);
+      /* phones: bottom sheets in portrait, side sheet in landscape */
+      const phone = r.width < 600 || (r.height < 500 && r.width < 1000);
+      const land = phone && r.width > r.height;
+      if (phone !== root.classList.contains('phone') || land !== root.classList.contains('land')) {
+        root.classList.toggle('phone', phone);
+        root.classList.toggle('land', land);
+        MX.WM.relayout();
+      }
+    },
+    /* Pan so a world point sits inside the part of the map not covered by panels. */
+    frameWorld(x, y, z, force) {
+      const r = this.renderer, p = r.worldToCss(x, y, z);
+      const W = window.innerWidth, H = window.innerHeight;
+      const tb = document.getElementById('topbar');
+      let top = tb ? tb.getBoundingClientRect().bottom : 44;
+      const tut = document.getElementById('tutorial');
+      if (tut && !tut.hidden && document.documentElement.classList.contains('phone')) top = Math.max(top, tut.getBoundingClientRect().bottom);
+      let bottom = H, left = 0;
+      const bar = document.getElementById('toolbar');
+      if (bar && bar.offsetHeight) bottom = Math.min(bottom, bar.getBoundingClientRect().top);
+      for (const w of MX.WM.wins.values()) {
+        if (!w.el.classList.contains('sheet')) continue;
+        const b = w.el.getBoundingClientRect();
+        if (document.documentElement.classList.contains('land')) left = Math.max(left, b.right); else bottom = Math.min(bottom, b.top);
+      }
+      const m = 40;
+      if (!force && p[0] > left + m && p[0] < W - m && p[1] > top + m && p[1] < bottom - m) return;
+      const tx = (left + W) / 2, ty = top + (bottom - top) * 0.45;
+      this.panAnim = { dx: tx - p[0], dy: ty - p[1], t: 0, ax: 0, ay: 0 };
     },
     applyGraphics() {
       const s = this.settings, r = this.renderer;
@@ -14305,6 +14644,14 @@ void main() {
           const cam = this.renderer.cam;
           cam.yaw += dt * 0.045;
           g.speed = 1;
+        }
+        if (this.panAnim) {
+          const pa = this.panAnim;
+          pa.t += dt;
+          const k = Math.min(1, pa.t / 0.35), e = 1 - Math.pow(1 - k, 3);
+          this.input.panBy(pa.dx * e - pa.ax, pa.dy * e - pa.ay);
+          pa.ax = pa.dx * e; pa.ay = pa.dy * e;
+          if (k >= 1) this.panAnim = null;
         }
         this.input.update(dt);
         if (MX.Tools.current && MX.Tools.current.tick) MX.Tools.current.tick(dt);

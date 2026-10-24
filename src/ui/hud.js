@@ -35,6 +35,14 @@
         this.speedEl.appendChild(b);
         return b;
       });
+      /* phones: one button that steps through the speeds */
+      this.cycleBtn = h('button', { class: 'sp sp-cycle', title: 'Cambiar velocidad', 'aria-label': 'Cambiar velocidad', onclick: () => {
+        const g = app.game;
+        if (!g) return;
+        const order = [1, 2, 4, 8];
+        app.setSpeed(order[(order.indexOf(g.speed) + 1) % order.length]);
+      } }, icon('play'), h('b', { class: 'sp-x' }, '1x'));
+      this.speedEl.appendChild(this.cycleBtn);
       this.soundBtn = h('button', { class: 'tb-btn', title: 'Sonido', onclick: () => app.toggleSound() }, icon('sound'));
       this.rotBtn = h('button', { class: 'tb-btn', title: 'Girar cámara (Q / E)', onclick: () => { app.renderer.cam.yawIndex = (app.renderer.cam.yawIndex + 1) % 4; } }, icon('rotate'));
       this.menuBtn = h('button', { class: 'tb-btn', title: 'Menú (Esc)', onclick: () => this.menu() }, icon('menu'));
@@ -42,12 +50,12 @@
       /* toolbar */
       this.bar = h('div', { id: 'toolbar', role: 'toolbar' });
       const groups = [
-        [['track', 'Circuitos', () => app.panels.tracks(), 'tracks'], ['terrain', 'Terreno', () => app.panels.terrain(), 'terrain'], ['build', 'Construir', () => app.panels.build(), 'build'], ['path', 'Caminos', () => app.panels.paths(), 'paths'], ['decor', 'Decorar', () => app.panels.decor(), 'decor'], ['demolish', 'Demoler', () => MX.Tools.set(MX.Tools.list.Demolish), 'demolish']],
+        [['track', 'Circuitos', () => app.panels.tracks(), 'tracks'], ['terrain', 'Terreno', () => app.panels.terrain(), 'terrain'], ['build', 'Construir', () => app.panels.build(), 'build'], ['path', 'Caminos', () => app.panels.paths(), 'paths'], ['decor', 'Decorar', () => app.panels.decor(), 'decor'], ['demolish', 'Demoler', () => { if (MX.Tools.current === MX.Tools.list.Demolish) MX.Tools.select(); else MX.Tools.set(MX.Tools.list.Demolish); }, 'demolish']],
         [['staff', 'Personal', () => app.panels.staff(), 'staff'], ['finance', 'Finanzas', () => app.panels.finance(), 'finance'], ['events', 'Eventos', () => app.panels.events(), 'events'], ['research', 'Investigar', () => app.panels.research(), 'research'], ['objectives', 'Objetivos', () => app.panels.objectives(), 'objectives'], ['park', 'Parque', () => app.panels.park(), 'park']]
       ];
       this.toolBtns = {};
       groups.forEach((g, gi) => {
-        const grp = h('div', { class: 'tg' });
+        const grp = h('div', { class: 'tg ' + (gi ? 'tg-mgmt' : 'tg-build') });
         for (const [ic, label, fn, id] of g) {
           const b = h('button', { class: 'tbtn', title: label, onclick: () => { MX.Audio && MX.Audio.sfx('click'); fn(); } }, icon(ic), h('span', null, label));
           b.dataset.id = id;
@@ -57,6 +65,20 @@
         this.bar.appendChild(grp);
         if (gi === 0) this.bar.appendChild(h('div', { class: 'tsep' }));
       });
+      /* phones show one group at a time: this button swaps building and management */
+      this.switchBtn = h('button', { class: 'tbtn tg-switch', title: 'Gestión', onclick: () => {
+        const m = this.bar.classList.toggle('mgmt');
+        this.switchBtn.title = m ? 'Obras' : 'Gestión';
+        this.switchBtn.querySelector('.px-icon').style.backgroundImage = 'url(' + MX.DOM.iconURL(m ? 'build' : 'finance', 3) + ')';
+        this.switchBtn.querySelector('span:not(.px-icon)').textContent = m ? 'Obras' : 'Gestión';
+        MX.Audio && MX.Audio.sfx('click');
+      } }, icon('finance'), h('span', null, 'Gestión'));
+      this.bar.appendChild(this.switchBtn);
+      /* phones: camera buttons on the map (no keyboard, no minimap) */
+      this.camEl = h('div', { id: 'camctl' },
+        h('button', { title: 'Girar la vista', 'aria-label': 'Girar la vista', onclick: () => { app.renderer.cam.yawIndex = (app.renderer.cam.yawIndex + 1) % 4; } }, icon('rotate')),
+        h('button', { title: 'Acercar', 'aria-label': 'Acercar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 1.35) }, '+'),
+        h('button', { title: 'Alejar', 'aria-label': 'Alejar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 0.74) }, '−'));
       /* other HUD parts */
       this.objEl = h('div', { id: 'objtracker', onclick: () => app.panels.objectives() });
       this.notesEl = h('div', { id: 'notes', 'aria-live': 'polite' });
@@ -72,7 +94,7 @@
       this.mini.addEventListener('pointerdown', (e) => this.miniClick(e));
       this.mini.addEventListener('pointermove', (e) => { if (e.buttons) this.miniClick(e); });
       this.overlay = h('canvas', { id: 'overlay' });
-      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.bar);
+      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.camEl, this.bar);
       this.octx = this.overlay.getContext('2d');
     }
     setVisible(v) { this.root.classList.toggle('hud-hidden', !v); }
@@ -112,7 +134,9 @@
       const money = g.econ.money;
       this.moneyEl.querySelector('b').textContent = U.fmtMoney(money);
       this.moneyEl.classList.toggle('neg', money < 0);
-      this.dateEl.querySelector('b').textContent = g.dateText();
+      const phone = document.documentElement.classList.contains('phone');
+      const dt0 = g.date();
+      this.dateEl.querySelector('b').textContent = phone ? dt0.day + ' ' + U.MONTHS_SHORT[dt0.month] : g.dateText();
       this.repEl.querySelector('b').textContent = Math.round(g.rep);
       this.repEl.querySelector('small').textContent = g.repLabel();
       this.visEl.querySelector('b').textContent = g.visitors.length;
@@ -124,6 +148,13 @@
       this.wxEl.querySelector('b').textContent = wd.name;
       this.parkEl.querySelector('.tb-name').textContent = g.parkName;
       for (const b of this.speedBtns) b.classList.toggle('on', +b.dataset.v === g.speed);
+      if (this._cyc !== g.speed) {
+        this._cyc = g.speed;
+        const ic = { 0: 'play', 1: 'play', 2: 'fast', 4: 'faster', 8: 'turbo' }[g.speed] || 'play';
+        this.cycleBtn.querySelector('.px-icon').style.backgroundImage = 'url(' + MX.DOM.iconURL(ic, 3) + ')';
+        this.cycleBtn.querySelector('.sp-x').textContent = (g.speed || 1) + 'x';
+        this.cycleBtn.classList.toggle('on', g.speed > 0);
+      }
       const snd = MX.Audio && MX.Audio.enabled;
       const sic = this.soundBtn.querySelector('.px-icon');
       const sn = snd ? 'sound' : 'mute';

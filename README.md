@@ -21,12 +21,14 @@ Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Conti
 | --- | --- | --- |
 | Mover la cámara | Arrastrar con botón derecho, WASD o flechas | Arrastrar con un dedo |
 | Construir circuitos | Intro construye la pieza, Retroceso quita la última, flechas cambian dirección y pendiente | Botones del constructor |
-| Zoom | Rueda, + y − | Pellizcar |
+| Zoom | Rueda, + y − | Pellizcar o botones + y − |
 | Girar la vista | Q y E | Botón de girar |
-| Pausa y velocidad | Espacio, 1 a 4 | Botones de velocidad |
-| Girar edificio | R o clic derecho | Botón derecho del menú de herramienta |
-| Cancelar herramienta | Esc o clic derecho | Botón cerrar |
+| Pausa y velocidad | Espacio, 1 a 4 | Pausa y botón de velocidad (cambia de 1x a 4x) |
+| Girar edificio | R o clic derecho | Botón amarillo de la barra del menú |
+| Cancelar herramienta | Esc o clic derecho | Cerrar el menú |
 | Guardado rápido | Ctrl+S | Menú |
+
+En el móvil los menús son hojas que salen desde abajo (en horizontal, desde la izquierda) y se pliegan solas cuando una herramienta necesita el mapa: toca su barra de título para plegarlas o desplegarlas, o desliza hacia arriba para verlas a pantalla completa. La barra inferior alterna entre **Obras** y **Gestión**, y el tutorial se pliega tocando su título.
 
 La partida se guarda automáticamente en el navegador (localStorage) y se puede exportar o importar como código de texto.
 
@@ -54,5 +56,6 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `node tools/sim-test.cjs` simula un complejo durante varios meses en Node y muestra la economía.
 - `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
+- `MOBILE=1 node tools/qa.mjs index.html tools/scen/phone.mjs <carpeta> 390 844` repite el recorrido con toques en un móvil simulado (prueba también `844 390` en horizontal).
 
 Todos los gráficos, sonidos y logotipos de patrocinadores se generan por código; las marcas y nombres son ficticios.

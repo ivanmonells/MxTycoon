@@ -1105,7 +1105,10 @@
   Track.roomBehind = function (world, x, z, h, w, bit) {
     const v = DIRV[h], len = 3 * unitLen(h), ux = v[0] / Math.hypot(v[0], v[1]), uz = v[1] / Math.hypot(v[0], v[1]);
     const nx = -uz, nz = ux, hw = w * 0.5 + 0.5, N = world.N, T = C.TILE;
-    for (let d = 1; d <= len; d += 1.5) for (const o of [-hw, 0, hw]) {
+    const dMax = len + hw + 0.25, ds = [];
+    for (let d = 1; d < dMax; d += 1.5) ds.push(d);
+    ds.push(dMax);
+    for (const d of ds) for (const o of [-hw, 0, hw]) {
       const px = x * LAT - ux * d + nx * o, pz = z * LAT - uz * d + nz * o;
       const tx = Math.floor(px / T), tz = Math.floor(pz / T);
       if (tx < 0 || tz < 0 || tx >= N || tz >= N) return false;
