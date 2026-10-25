@@ -104,7 +104,11 @@
     chart: ['............', 'k...........', 'k.........g.', 'k........g..', 'k.....g.g...', 'k....g.g....', 'k.g.g.......', 'k..g........', 'k...........', 'kkkkkkkkkkkk', '............', '............'],
     trophy: ['............', '.kkkkkkkkkk.', 'kykyyyyyykyk', 'kykyyyyyykyk', '.kkyyyyyykk.', '..kyyyyyyk..', '...kyyyyk...', '....kyyk....', '....kyyk....', '...kkkkkk...', '..kyyyyyyk..', '..kkkkkkkk..'],
     jump: ['............', '............', '.......kk...', '......kook..', '.....kkkkk..', '...k.......k', '..knk.....kn', '.knnnk...knn', 'knnnnnkkknnn', 'kkkkkkkkkkkk', '............', '............'],
-    camera: ['............', '............', '...kkk......', '.kkkkkkkkkk.', '.kllllllllk.', '.klllkkllllk', '.kllkbbkllk.', '.kllkbbkllk.', '.klllkkllllk', '.kkkkkkkkkk.', '............', '............']
+    camera: ['............', '............', '...kkk......', '.kkkkkkkkkk.', '.kllllllllk.', '.klllkkllllk', '.kllkbbkllk.', '.kllkbbkllk.', '.klllkkllllk', '.kkkkkkkkkk.', '............', '............'],
+    heart: ['............', '.kkk....kkk.', 'krrrk..krrrk', 'krwrrkkrrrrk', 'krrrrrrrrrrk', 'krrrrrrrrrrk', '.krrrrrrrrk.', '..krrrrrrk..', '...krrrrk...', '....krrk....', '.....kk.....', '............'],
+    user: ['............', '....kkkk....', '...kppppk...', '...kppppk...', '...kppppk...', '....kkkk....', '..kkbbbbkk..', '.kbbbbbbbbk.', '.kbbbbbbbbk.', '.kbbbbbbbbk.', '.kkkkkkkkkk.', '............'],
+    google: ['............', '....rrrrr...', '..rrrrrrrr..', '.rrr....rr..', '.yy.........', '.yy....bbbbb', '.yy....bbbbb', '.gg......bb.', '..ggg...bbb.', '...gggggbb..', '....ggggg...', '............'],
+    globe: ['............', '....kkkk....', '..kkbbggkk..', '.kbbgggbbbk.', '.kbgggbbbbk.', 'kbbbggbbggbk', 'kbbbbbbgggbk', '.kbbbbbgggk.', '.kbbggbbgbk.', '..kkbbbbkk..', '....kkkk....', '............']
   };
   /* line-art icons drawn light with a hard drop shadow so they read on dark buttons */
   const LIGHT = new Set(['pause', 'play', 'fast', 'faster', 'menu', 'close', 'rotate', 'grid', 'chart', 'follow', 'music', 'sound', 'mute', 'camera']);

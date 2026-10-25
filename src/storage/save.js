@@ -38,7 +38,7 @@
   }
 
   const Save = {
-    SLOTS,
+    SLOTS, pack, unpack,
     meta(slot) { const m = lsGet(META + slot); if (!m) return null; try { return JSON.parse(m); } catch (e) { return null; } },
     latest() {
       let best = null;

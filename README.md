@@ -45,6 +45,7 @@ src/render    motor WebGL2 propio: cámara ortográfica, sombras, contornos, tex
 src/ui        HUD, ventanas, herramientas de construcción, entrada, tutorial
 src/audio     efectos y música sintetizados con WebAudio
 src/storage   guardado en localStorage con compresión y códigos de exportación
+src/net       modo online de la versión web (Firebase): Google, apodos, nube y ranking
 src/main.js   arranque, pantalla de título, bucle principal
 ```
 
@@ -59,5 +60,9 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/phone.mjs <carpeta> 390 844` repite el recorrido con toques en un móvil simulado (prueba también `844 390` en horizontal).
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/touchplace.mjs <carpeta> 390 844` coloca edificios, decoración, saltos, caminos y terreno solo con toques y arrastres.
+
+## Versión online
+
+Para publicar el juego en Internet con inicio de sesión de Google, partidas en la nube y ranking de circuitos, sigue [ONLINE.md](ONLINE.md).
 
 Todos los gráficos, sonidos y logotipos de patrocinadores se generan por código; las marcas y nombres son ficticios.

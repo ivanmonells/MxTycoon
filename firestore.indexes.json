@@ -1,0 +1,8 @@
+{
+  "indexes": [
+    { "collectionGroup": "circuits", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "score", "order": "DESCENDING" }] },
+    { "collectionGroup": "circuits", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "visits", "order": "DESCENDING" }] },
+    { "collectionGroup": "circuits", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "updated", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

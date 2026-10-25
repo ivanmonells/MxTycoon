@@ -1,0 +1,100 @@
+rules_version = '2';
+/* MX Tycoon - who can read and write what (see src/net/online.js for the layout).
+   Saves are private; profiles, nicknames and the circuit ranking are public to read;
+   counters only move one step at a time and every vote has its own document. */
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function at(p) { return path('/databases/' + database + '/documents/' + p); }
+    function nickOf(uid) { return get(at('users/' + uid)).data.nick; }
+
+    match /users/{uid} {
+      allow read: if true;
+      allow create, update: if signedIn() && me() == uid
+        && request.resource.data.keys().hasOnly(['nick', 'nickLower', 'created', 'updated'])
+        && request.resource.data.nick is string
+        && request.resource.data.nick.matches('^[A-Za-z0-9ñÑ_-]{3,16}$')
+        && request.resource.data.nickLower == request.resource.data.nick.lower()
+        && getAfter(at('nicknames/' + request.resource.data.nickLower)).data.uid == uid;
+      allow delete: if false;
+
+      match /saves/{slot} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid && slot in ['auto', '1', '2', '3']
+          && request.resource.data.keys().hasOnly(['park', 'date', 'money', 'rep', 'mode', 'ts', 'size'])
+          && request.resource.data.park is string && request.resource.data.park.size() <= 60;
+      }
+      match /savedata/{slot} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid && slot in ['auto', '1', '2', '3']
+          && request.resource.data.keys().hasOnly(['z', 'v'])
+          && request.resource.data.z is string && request.resource.data.z.size() < 900000;
+      }
+    }
+
+    /* one document per nickname makes them unique */
+    match /nicknames/{name} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == me()
+        && name.matches('^[a-z0-9ñ_-]{3,16}$')
+        && getAfter(at('users/' + me())).data.nickLower == name;
+      allow delete: if signedIn() && resource.data.uid == me()
+        && getAfter(at('users/' + me())).data.nickLower != name;
+      allow update: if false;
+    }
+
+    match /circuits/{cid} {
+      function body(d) {
+        return d.keys().hasOnly(['uid', 'nick', 'park', 'track', 'type', 'len', 'r10', 'diff', 'safety', 'jumps', 'slot', 'pts', 'score', 'likes', 'visits', 'created', 'updated', 'v'])
+          && d.uid == me() && cid.matches('^' + me() + '_[A-Za-z0-9]+_[0-9]+$')
+          && d.nick == nickOf(me())
+          && d.park is string && d.park.size() <= 60 && d.track is string && d.track.size() <= 40
+          && d.type in ['kids', 'mx', 'sx', 'flat', 'enduro', 'carcross']
+          && d.len is int && d.r10 is int && d.r10 >= 0 && d.r10 <= 100
+          && d.likes is int && d.visits is int
+          && d.pts is list && d.pts.size() <= 160
+          && d.score == d.r10 + d.likes * 3;
+      }
+      function likeDoc() { return at('circuits/' + cid + '/likes/' + me()); }
+      allow read: if true;
+      allow create: if signedIn() && body(request.resource.data)
+        && request.resource.data.likes == 0 && request.resource.data.visits == 0;
+      allow update: if signedIn() && (
+        /* the owner republishes: the counters stay as they are */
+        (resource.data.uid == me() && body(request.resource.data)
+          && request.resource.data.likes == resource.data.likes
+          && request.resource.data.visits == resource.data.visits
+          && request.resource.data.created == resource.data.created)
+        /* someone visits it */
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visits'])
+          && request.resource.data.visits == resource.data.visits + 1)
+        /* someone else likes or stops liking it, together with their vote document */
+        || (resource.data.uid != me()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'score'])
+          && request.resource.data.score == resource.data.r10 + request.resource.data.likes * 3
+          && ((request.resource.data.likes == resource.data.likes + 1 && !exists(likeDoc()) && existsAfter(likeDoc()))
+            || (request.resource.data.likes == resource.data.likes - 1 && exists(likeDoc()) && !existsAfter(likeDoc()))))
+      );
+      allow delete: if signedIn() && resource.data.uid == me();
+
+      /* the park to visit, written together with the circuit */
+      match /data/{doc} {
+        allow read: if true;
+        allow create, update: if signedIn() && doc == 'park'
+          && getAfter(at('circuits/' + cid)).data.uid == me()
+          && request.resource.data.keys().hasOnly(['z'])
+          && request.resource.data.z is string && request.resource.data.z.size() < 900000;
+        allow delete: if signedIn() && get(at('circuits/' + cid)).data.uid == me();
+      }
+      match /likes/{uid} {
+        allow read: if signedIn() && me() == uid;
+        allow create: if signedIn() && me() == uid && request.resource.data.keys().hasOnly(['at'])
+          && getAfter(at('circuits/' + cid)).data.likes == get(at('circuits/' + cid)).data.likes + 1;
+        allow delete: if signedIn() && me() == uid
+          && getAfter(at('circuits/' + cid)).data.likes == get(at('circuits/' + cid)).data.likes - 1;
+      }
+    }
+  }
+}

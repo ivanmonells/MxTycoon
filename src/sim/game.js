@@ -69,6 +69,8 @@
       g.mode = opts.mode || 'career';
       g.seed = opts.seed || ((Math.random() * 1e9) | 0);
       g.parkName = opts.parkName || (U.rng.pick(Cat.names.parkPrefix) + ' ' + U.rng.pick(Cat.names.parkName));
+      /* stable id of this park (published circuits are keyed by it) */
+      g.parkId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
       g.rng = new U.RNG(g.seed ^ 0xabcdef);
       g.world = new MX.World(C.MAP);
       g.world.generate(g.seed, opts.preset || 'valle');
@@ -1663,7 +1665,7 @@
         hu: Math.round(v.hunger), th: Math.round(v.thirst), bl: Math.round(v.bladder), en: Math.round(v.energy), ti: Math.round(v.timeIn), ms: Math.round(v.maxStay)
       }));
       return {
-        v: C.SAVE_VERSION, mode: this.mode, seed: this.seed, parkName: this.parkName,
+        v: C.SAVE_VERSION, mode: this.mode, seed: this.seed, parkName: this.parkName, pid: this.parkId,
         time: this.time, day: this.day, dayT: this.dayT, speed: this.speed,
         rep: this.rep, prestige: this.prestige, weather: this.weather, weatherDays: this.weatherDays, groundWet: this.groundWet || 0,
         unlocked: Array.from(this.unlocked), totals: this.totals, history: this.history, thoughtStats: this.thoughtStats,
@@ -1684,6 +1686,7 @@
     static deserialize(d) {
       const g = new Game();
       g.mode = d.mode; g.seed = d.seed; g.parkName = d.parkName;
+      g.parkId = d.pid || ('s' + ((d.seed >>> 0).toString(36)));
       g.time = d.time; g.day = d.day; g.dayT = d.dayT; g.speed = d.speed || 1;
       g.rep = d.rep; g.prestige = d.prestige || 0; g.weather = d.weather || 'sunny'; g.weatherDays = d.weatherDays || 0; g.groundWet = d.groundWet || 0;
       g.unlocked = new Set(d.unlocked || []); g.totals = Object.assign(g.totals, d.totals || {}); g.history = d.history || [];

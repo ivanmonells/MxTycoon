@@ -845,3 +845,47 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .bike-shot b { font-size: 15px; line-height: 1.15; }
 .brand-tag { align-self: flex-start; padding: 1px 7px; border: 2px solid var(--ink); border-radius: 3px; font: 800 11px/1.3 var(--f-num); letter-spacing: .04em; text-transform: uppercase; }
 .brand-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1px solid #111; flex: none; align-self: center; }
+
+/* ---------- online: account, ranking, visits ---------- */
+.title-account { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: -2px 0 10px; min-height: 30px; }
+.title-account small { flex-basis: 100%; line-height: 1.25; }
+.btn.google { background: #fbfbfb; color: #1f1f1f; text-shadow: none; }
+.btn.google:hover:not(:disabled) { background: #fff; }
+.acc-user { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 4px; background: var(--well); border: 2px solid var(--ink); border-radius: 4px; }
+.acc-user b { color: var(--yellow); font: 800 16px/1.2 var(--f-num); }
+.nick-err { display: block; min-height: 1.3em; margin: 4px 0 6px; color: var(--warn); }
+.cloud h4 { display: flex; align-items: center; gap: 6px; }
+.rank-win .win-body { display: flex; flex-direction: column; gap: 8px; }
+.rk-acct { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.rk-head, .rk-filter { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: var(--panel3); color: var(--text); border: 2px solid var(--ink); border-radius: 12px; font: 600 13px/1.2 var(--f-ui); cursor: pointer; }
+.chip-btn.on { border-color: var(--yellow); background: #4e3e2a; }
+.chip-btn .type-tag { font-size: 9px; padding: 0 4px; border-width: 1px; }
+.rk-list { display: flex; flex-direction: column; gap: 6px; }
+.rk-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 4px; background: var(--well); border: 2px solid var(--ink); border-radius: 4px; }
+.rk-row.mine { border-color: #8a6d1f; }
+.rk-pos { flex: none; width: 2.1em; text-align: center; font: 800 17px/1 var(--f-num); color: var(--muted); }
+.rk-pos.top { color: var(--yellow); }
+.rk-shape { flex: none; width: 84px; height: 60px; border: 2px solid var(--ink); border-radius: 3px; }
+.rk-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rk-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rk-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.rk-info small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.rk-info small b { color: var(--text); }
+.rk-stats { display: flex; align-items: center; flex-wrap: wrap; }
+.px-icon.rk-ic { width: 12px; height: 12px; margin: 0 1px; }
+.rk-acts { flex: none; display: flex; flex-direction: column; gap: 4px; }
+.visit-bar {
+  position: absolute; top: calc(var(--tbh) + 8px + var(--sat)); left: 50%; transform: translateX(-50%); z-index: 22;
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; max-width: calc(100% - 24px);
+  background: rgba(26, 20, 16, .94); border: 2px solid var(--ink); border-radius: 6px; box-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+}
+.vb-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.vb-txt small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.vb-txt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.visit-bar .like.on { background: linear-gradient(#ef5350, #b71c1c); color: #fff; }
+.phone .visit-bar { left: calc(6px + var(--sal)); right: calc(6px + var(--sar)); transform: none; top: calc(var(--tbh) + 4px + var(--sat)); max-width: none; gap: 5px; }
+.phone .visit-bar .vb-l { display: none; }
+.phone .rk-row { flex-wrap: wrap; }
+.phone .rk-acts { flex-direction: row; width: 100%; justify-content: flex-end; }
+.rk-acct small b { color: var(--text); }

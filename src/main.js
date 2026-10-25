@@ -175,10 +175,13 @@
       this.titleEl.hidden = false;
       clear(this.titleEl);
       const latest = MX.Save.latest();
+      const online = MX.Online && MX.Online.enabled;
+      const cont = h('button', { class: 'tbtn-big', disabled: !latest, onclick: () => this.continueLatest() }, icon('save'), h('span', null, 'Continuar', h('small', null, latest ? latest.park + ' · ' + latest.date : 'No hay partidas guardadas')));
       const menu = h('div', { class: 'title-menu' },
         h('button', { class: 'tbtn-big primary', onclick: () => this.newGameDialog('career') }, icon('play'), h('span', null, 'Nueva partida', h('small', null, 'Modo carrera con objetivos'))),
-        h('button', { class: 'tbtn-big', disabled: !latest, onclick: () => this.continueLatest() }, icon('save'), h('span', null, 'Continuar', h('small', null, latest ? latest.park + ' · ' + latest.date : 'No hay partidas guardadas'))),
+        cont,
         h('button', { class: 'tbtn-big', onclick: () => this.newGameDialog('sandbox') }, icon('build'), h('span', null, 'Modo sandbox', h('small', null, 'Construye sin límites'))),
+        online ? h('button', { class: 'tbtn-big', onclick: () => { this.startAudio(); MX.OnlineUI.rankingPanel(); } }, icon('trophy'), h('span', null, 'Ranking de circuitos', h('small', null, 'Visita los mejores circuitos de otros jugadores'))) : null,
         h('div', { class: 'row gap center' },
           h('button', { class: 'btn', onclick: () => { this.startAudio(); this.panels.saves('load'); } }, icon('save'), 'Cargar'),
           h('button', { class: 'btn', onclick: () => { this.startAudio(); this.panels.options(); } }, icon('gear'), 'Opciones'),
@@ -187,8 +190,11 @@
         h('div', { class: 'title-card' },
           h('div', { class: 'logo' }, h('span', { class: 'logo-mx' }, 'MX'), h('span', { class: 'logo-tycoon' }, 'TYCOON')),
           h('div', { class: 'logo-sub' }, 'Motocross Empire'),
+          online ? MX.OnlineUI.accountBar() : null,
           menu),
         h('div', { class: 'title-foot' }, 'Construye circuitos, gestiona tu complejo y organiza el Gran Premio · v' + MX.VERSION));
+      MX.OnlineUI.visitBar(null);
+      if (online) MX.OnlineUI.patchContinue(cont, latest);
     },
     makeDemo() {
       this.demo = true;
@@ -245,6 +251,27 @@
       this.startAudio();
       if (g.fieldsDirty) g.rebuildFields();
       for (const b of g.buildings.values()) b.warn = null;
+      MX.OnlineUI.visitBar(g);
+    },
+    /* open a published circuit: the owner's park is loaded to look around (nothing is saved) */
+    async visitCircuit(cid) {
+      this.startAudio();
+      this.modal('Ranking de circuitos', [h('p', null, 'Cargando el circuito…')], []);
+      const r = await MX.Online.circuit(cid);
+      if (this._modalClose) this._modalClose();
+      if (!r.ok) { this.modal('No se pudo abrir', [h('p', null, r.reason)], [{ label: 'Vale' }]); return r; }
+      let g;
+      try { g = MX.Game.deserialize(r.data); } catch (e) { console.error(e); this.modal('No se pudo abrir', [h('p', null, 'Ese circuito es de otra versión del juego.')], [{ label: 'Vale' }]); return { ok: false }; }
+      if (this.game && !this.demo && !this.game.visit) await this.autosave();
+      g.visit = { id: cid, entry: r.entry };
+      g.speed = 1;
+      this.tutorial.stop(false);
+      MX.WM.closeAll();
+      this.startGame(g);
+      MX.OnlineUI.focusTrack(g);
+      MX.Online.countVisit(r.entry);
+      this.hud.toast('Estás visitando el complejo de ' + r.entry.nick + '. Mira, sigue a los pilotos y explora: los cambios no se guardan.', 'info');
+      return { ok: true };
     },
     async continueLatest() {
       const l = MX.Save.latest();
@@ -274,12 +301,15 @@
       }
     },
     async autosave() {
-      if (!this.game || this.demo) return;
+      if (!this.game || this.demo || this.game.visit) return;
       const r = await MX.Save.save('auto', this.game);
-      if (r.ok) this.hud.toast('Partida guardada automáticamente', 'info');
+      const on = MX.Online;
+      const cloud = on && on.enabled && on.signedIn ? await on.saveGame('auto', this.game) : null;
+      if (r.ok || (cloud && cloud.ok)) this.hud.toast(cloud && cloud.ok ? 'Partida guardada (también en la nube)' : 'Partida guardada automáticamente', 'info');
     },
     async quickSave() {
       if (!this.game || this.demo) return;
+      if (this.game.visit) { this.hud.toast('Estás visitando un circuito: no se puede guardar', 'info'); return; }
       const r = await MX.Save.save('1', this.game);
       this.hud.toast(r.ok ? 'Partida guardada en la ranura 1' : r.reason, r.ok ? 'good' : 'bad');
     },

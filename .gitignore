@@ -1,2 +1,7 @@
 dist/artifact.html
 node_modules/
+dist/web-emu/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+tools/.cache/

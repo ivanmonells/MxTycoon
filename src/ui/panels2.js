@@ -690,7 +690,7 @@
           clear(list);
           for (const slot of S.SLOTS) {
             const meta = S.meta(slot);
-            const canSave = mode !== 'load' && slot !== 'auto' && app().game && !app().demo;
+            const canSave = mode !== 'load' && slot !== 'auto' && app().game && !app().demo && !app().game.visit;
             list.append(h('div', { class: 'slot' },
               h('div', { class: 'grow' }, h('b', null, slot === 'auto' ? 'Autoguardado' : 'Ranura ' + slot), meta ? h('small', null, meta.park + ' · ' + meta.date + ' · ' + U.fmtMoney(meta.money) + ' · ' + new Date(meta.ts).toLocaleString('es-ES')) : h('small', { class: 'muted' }, 'Vacía')),
               canSave ? h('button', { class: 'btn', onclick: async () => { const r = await S.save(slot, app().game); app().hud && app().hud.toast(r.ok ? 'Partida guardada' : r.reason, r.ok ? 'good' : 'bad'); fill(); } }, 'Guardar') : null,
@@ -701,7 +701,8 @@
         fill();
         const ta = h('textarea', { id: 'save-code', class: 'inp code', rows: 3, placeholder: 'Pega aquí un código de partida para importarla', 'aria-label': 'Código de partida' });
         const file = h('input', { id: 'save-file', type: 'file', accept: '.json,.txt,application/json,text/plain', onchange: async (e) => { const f = e.target.files[0]; if (f) { ta.value = await f.text(); } } });
-        body.append(list, h('h4', null, 'Copia de seguridad'),
+        if (app().game && app().game.visit && !app().demo) body.append(h('div', { class: 'callout' }, icon('info'), 'Estás visitando el circuito de otro jugador: aquí no se puede guardar.'));
+        body.append(list, MX.OnlineUI.cloudSection(mode), h('h4', null, 'Copia de seguridad'),
           h('p', { class: 'muted small' }, 'Las partidas se guardan en este navegador. Exporta un código para conservarlas en otro sitio.'),
           h('div', { class: 'row gap wrap' },
             app().game && !app().demo ? h('button', { class: 'btn', onclick: async () => { const code = await S.exportCode(app().game); ta.value = code; ta.select(); try { await navigator.clipboard.writeText(code); app().toastAny('Código copiado al portapapeles', 'good'); } catch (err) { app().toastAny('Selecciona el texto y cópialo', 'info'); } } }, icon('save'), 'Exportar código') : null,
@@ -718,6 +719,8 @@
         body.append(
           b('play', 'Continuar', () => {}),
           b('save', 'Guardar o cargar', () => savePanel()),
+          MX.Online && MX.Online.enabled ? b('trophy', 'Ranking de circuitos', () => MX.OnlineUI.rankingPanel()) : null,
+          MX.Online && MX.Online.enabled ? b('user', MX.Online.user ? 'Cuenta: ' + (MX.Online.nick || 'sin apodo') : 'Entrar con Google', () => (MX.Online.user ? MX.OnlineUI.nickDialog(!MX.Online.nick) : MX.OnlineUI.signIn())) : null,
           b('gear', 'Opciones', () => optionsPanel()),
           b('info', 'Controles y ayuda', () => helpPanel()),
           b('objectives', 'Ver tutorial de nuevo', () => app().tutorial && app().tutorial.start(true)),

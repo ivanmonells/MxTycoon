@@ -226,6 +226,8 @@
       acts.append(h('button', { class: 'btn primary', onclick: () => { const r = g.openTrack(tr); if (r.ok) { MX.Audio.sfx('success'); app().fx.confettiAt && app().fx.confettiAt(tr); } else { app().hud.toast(r.reason, 'bad'); MX.Audio.sfx('error'); } WM.rebuild('tracks'); } }, icon('events'), 'Abrir al público'));
     } else acts.append(h('button', { class: 'btn', onclick: () => { const r = g.closeTrack(tr); if (!r.ok) app().hud.toast(r.reason, 'bad'); WM.rebuild('tracks'); } }, icon('lock'), 'Cerrar para obras'));
     acts.append(h('button', { class: 'btn danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar'));
+    const pub = MX.OnlineUI.publishButton(tr);
+    if (pub) acts.append(pub);
     el.append(acts);
   }
   function featureGlyph(d) {
