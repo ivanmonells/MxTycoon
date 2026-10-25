@@ -556,6 +556,10 @@
       return (x0, z0, x1, z1) => sum[x1 + z1 * (N + 1)] - sum[x0 + z1 * (N + 1)] - sum[x1 + z0 * (N + 1)] + sum[x0 + z0 * (N + 1)];
     };
     const areaFree = prefix(free), areaClear = prefix(clear);
+    /* steepness of the ground, so the loop goes where it is gentlest */
+    const steep = new Uint8Array(N * N);
+    for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) steep[tx + tz * N] = Math.min(255, Math.round(w.tileSlope(tx, tz) * 20));
+    const areaSteep = prefix(steep);
     const area = (x0, z0, x1, z1) => {
       const a = areaFree(x0, z0, x1, z1);
       if (a !== (x1 - x0) * (z1 - z0)) return a;
@@ -569,23 +573,24 @@
     const dist = (c) => Math.hypot(c.x0 + c.w / 2 - ax, c.z0 + c.h / 2 - az);
     const cands = [];
     const big = type === 'carcross' || type === 'flat' ? 36 : type === 'kids' ? 20 : 30;
+    /* near the riders and on the gentlest ground */
+    const score = (c) => c.w + c.h - dist(c) / 3 - areaSteep(c.x0, c.z0, c.x0 + c.w, c.z0 + c.h) / (c.w * c.h) / 20 * 14;
     for (let wv = big; wv >= 14; wv -= 2) for (let hv = Math.min(big, wv); hv >= 11; hv -= 2) {
       let near = null;
       for (let z0 = 0; z0 + hv <= N; z0 += 2) for (let x0 = 0; x0 + wv <= N; x0 += 2) {
         if (area(x0, z0, x0 + wv, z0 + hv) !== wv * hv) continue;
         const c = { x0, z0, w: wv, h: hv };
-        if (!near || dist(c) < dist(near)) near = c;
+        if (!near || score(c) > score(near)) near = c;
       }
       if (near) cands.push(near);
     }
-    const score = (c) => c.w + c.h - dist(c) / 3;
     cands.sort((a, b) => score(b) - score(a) || b.w * b.h - a.w * a.h);
     if (!cands.length) { app().hud.toast('No hay un terreno libre suficientemente grande (mínimo 14 x 11 casillas)', 'bad'); return; }
     let tr = g.selectedTrack, fresh = false;
     if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length || tr.type !== type) { tr = g.newTrack(type); fresh = true; }
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     /* a loop that ends up somewhere the riders cannot use is taken down and the next spot tried */
-    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos/;
+    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente/;
     let res = null, best = null, checks = 0;
     for (const c of cands.slice(0, 16)) {
       res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface);
@@ -627,7 +632,7 @@
         for (const s of [1, 2, 3, 5, 7]) sizes.append(h('button', { class: 'btn small' + (TL().Terrain.size === s ? ' on' : ''), onclick: () => { TL().Terrain.size = s; TL().Paint.size = s; if (MX.Tools.current === TL().Terrain) MX.Tools.set(TL().Terrain); WM.rebuild('terrain'); } }, s + 'x' + s));
         const paint = h('div', { class: 'row gap wrap' });
         MX.World.GROUND_NAMES.forEach((n, i) => {
-          if (i === 4) return;
+          if (i === MX.World.G.ROCK || i === MX.World.G.SNOW) return;
           paint.append(h('button', { class: 'btn small' + (MX.Tools.current === TL().Paint && TL().Paint.ground === i ? ' on' : ''), onclick: () => { TL().Paint.ground = i; MX.Tools.set(TL().Paint); WM.rebuild('terrain'); } }, n));
         });
         body.append(h('h4', null, 'Movimiento de tierras'), row, h('h4', null, 'Tamaño del pincel'), sizes,

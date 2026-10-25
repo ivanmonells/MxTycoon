@@ -109,6 +109,12 @@
       const k = Math.floor(r * gravPal.length);
       return gravPal[U.clamp(k, 0, 5)];
     }));
+    const snowPal = ['#d9e1ea', '#e1e8ef', '#e8edf3', '#eef2f6', '#f3f6f9', '#f8fafc'].map(hex);
+    layer('snow', paint((x, y) => {
+      let c = palNoise(snowPal, 12, 111)(x, y);
+      if (U.hash2(x, y, 113) > 0.994) c = hex('#bfcbd8');
+      return c;
+    }));
     /* --- track surfaces: u across width, v along the track --- */
     const trackPal = ['#7a4f2c', '#875a32', '#946538', '#a0703f', '#ab7c48', '#b88a55'].map(hex);
     const ruts = (x, y, seed, depth) => {

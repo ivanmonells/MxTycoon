@@ -234,10 +234,11 @@
       const g = this.game, w = g.world, N = w.N;
       const c = this.mini, ctx = c.getContext('2d');
       const S = c.width;
-      if (!this._miniBase || this._miniVer !== w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer) {
-        this._miniVer = w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer;
+      const ver = w.uid + ':' + w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer;
+      if (!this._miniBase || this._miniVer !== ver) {
+        this._miniVer = ver;
         const img = ctx.createImageData(N, N);
-        const gc = [[86, 152, 58], [160, 156, 78], [140, 102, 64], [214, 190, 135], [138, 134, 128], [64, 90, 42], [176, 168, 150]];
+        const gc = [[86, 152, 58], [160, 156, 78], [140, 102, 64], [214, 190, 135], [138, 134, 128], [64, 90, 42], [176, 168, 150], [236, 241, 246]];
         const hr = w.heightRange();
         for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
           const i = tx + tz * N, o = i * 4;

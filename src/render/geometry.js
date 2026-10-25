@@ -5,7 +5,7 @@
   const C = MX.C, U = MX.U, MB = MX.MeshBuilder, Cat = MX.Catalog;
   const T = C.TILE;
   const L = () => MX.Tex.L;
-  const GROUND_LAYER = ['grass', 'dry', 'dirt', 'sand', 'rock', 'forest', 'gravel'];
+  const GROUND_LAYER = ['grass', 'dry', 'dirt', 'sand', 'rock', 'forest', 'gravel', 'snow'];
   const TRACK_LAYER = ['t_dirt', 't_sand', 't_mud', 't_hard', 't_clay', 't_loam', 't_gravel'];
   const CH = 16;
 

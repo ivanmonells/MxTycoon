@@ -475,7 +475,9 @@
       el.append(h('h4', null, 'Qué construye tu reputación'),
         row('Satisfacción del público', rp.vis), row('Satisfacción de los pilotos', rp.rid), row('Calidad de los circuitos', rp.track), row('Instalaciones', rp.fac),
         statRow('Prestigio por eventos', '+' + Math.round(rp.prestige || 0)), statRow('Penalización (lesiones, basura)', '−' + Math.round(rp.pen || 0)));
-      el.append(h('h4', null, 'Estadísticas'), statRow('Vueltas totales', U.fmtInt(g.totals.laps || g.tracks.reduce((a, t) => a + t.totals.laps, 0))),
+      const env = Cat.environments.find(e => e.id === g.world.preset);
+      el.append(h('h4', null, 'Estadísticas'), statRow('Terreno', env ? env.name + ' · relieve ' + env.relief + ' de 5' : 'Valle verde · relieve 1 de 5'),
+        statRow('Vueltas totales', U.fmtInt(g.totals.laps || g.tracks.reduce((a, t) => a + t.totals.laps, 0))),
         statRow('Caídas · lesiones', g.totals.crashes + ' · ' + g.totals.injuries), statRow('Abonados de temporada', g.passHolders.length),
         statRow('Personal', g.staff.length), statRow('Eventos organizados', g.totals.events), statRow('Patrocinadores', g.sponsors.length));
       const byDisc = {};

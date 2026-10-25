@@ -114,6 +114,8 @@ void main() {
   vec3 base = texture(uMats, vec3(vUv, layer)).rgb;
   float big = texture(uNoise, vWp.xz * 0.0035).r;
   base *= 0.9 + big * 0.2;
+  /* valleys a touch darker and heights a touch lighter, so the relief reads from above */
+  base *= 0.93 + 0.14 * clamp((vWp.y - 4.0) / 36.0, 0.0, 1.0);
   base *= 1.0 - uWet * 0.18;
   float own = texture(uOwn, vWp.xz / uMapSize).r;
   if (own < 0.25) {

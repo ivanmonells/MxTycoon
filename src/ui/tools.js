@@ -880,7 +880,7 @@
     if (w.scen[i] >= 0) return 'Ya hay algo aquí';
     return null;
   }
-  const DECOR_H = { tree_pine: 9, tree_oak: 7, tree_poplar: 11, flag: 6, banner: 4 };
+  const DECOR_H = { tree_pine: 9, tree_oak: 7, tree_poplar: 11, tree_fir: 8, tree_palm: 7, tree_cactus: 4, flag: 6, banner: 4 };
   const DecorTool = {
     name: 'decor', type: 'tree_pine', rot: 0, preview: true,
     get hint() { const d = Cat.decor[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + ' · R: girar · Esc: salir'; },

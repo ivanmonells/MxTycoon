@@ -198,38 +198,66 @@
     },
     makeDemo() {
       this.demo = true;
-      const g = MX.Game.create({ mode: 'sandbox', seed: 777, preset: 'valle', parkName: 'MX Park Los Pinares' });
+      const g = MX.Game.create({ mode: 'sandbox', seed: 31, preset: 'colinas', parkName: 'MX Park Los Pinares' });
       try { buildDemoPark(g); } catch (e) { console.error('demo', e); }
       this.game = g;
       g.speed = 1;
       this.renderer.setGame(g);
       for (let i = 0; i < 900; i++) { if (g.fieldsDirty) g.rebuildFields(); g.step(1 / 30); }
       const cam = this.renderer.cam;
-      cam.tx = 160; cam.tz = 214; cam.ty = 6; cam.zoom = cam.targetZoom = 7.5; cam.freeYaw = true;
+      cam.tx = 160; cam.tz = 214; cam.ty = g.world.heightAt(160, 214); cam.zoom = cam.targetZoom = 7.5; cam.freeYaw = true;
       cam.follow = null;
       this.input.enabled = false;
     },
     newGameDialog(mode) {
       this.startAudio();
       const nameDefault = U.rng.pick(Cat.names.parkPrefix) + ' ' + U.rng.pick(Cat.names.parkName);
-      const st = { preset: 'valle', tut: mode === 'career' };
+      const envs = Cat.environments;
+      const st = { preset: 'colinas', seed: (Math.random() * 1e9) | 0, tut: mode === 'career' };
       const name = h('input', { id: 'ng-name', class: 'inp', value: nameDefault, maxlength: 30 });
-      const presets = h('div', { class: 'row gap wrap' });
-      const P = [['valle', 'Valle verde', 'Suave y con bosques. Ideal para empezar.'], ['colinas', 'Colinas', 'Desniveles fuertes para circuitos con subidas y bajadas.'], ['desierto', 'Desierto', 'Terreno seco y arenoso, poca vegetación.']];
-      for (const [k, n, d] of P) presets.append(h('button', { class: 'preset' + (st.preset === k ? ' on' : ''), title: d, onclick: (e) => { st.preset = k; for (const b of presets.children) b.classList.remove('on'); e.currentTarget.classList.add('on'); } }, h('b', null, n), h('small', null, d)));
+      /* one card per environment, from flat to mountainous, with a map of this seed */
+      const about = h('p', { class: 'env-about' });
+      const relief = (n) => h('span', { class: 'relief', title: 'Relieve ' + n + ' de 5' }, h('small', null, 'Relieve'), ...[1, 2, 3, 4, 5].map(i => h('i', { class: i <= n ? 'on' : null })));
+      const cards = envs.map(e => {
+        const map = h('canvas', { class: 'env-map', width: C.MAP, height: C.MAP });
+        const card = h('button', { class: 'env-card', 'data-env': e.id, title: e.desc, onclick: () => pick(e.id) }, map, h('b', null, e.name), relief(e.relief));
+        card._map = map; card._id = e.id;
+        return card;
+      });
+      const pick = (id) => {
+        st.preset = id;
+        for (const c of cards) c.classList.toggle('on', c._id === id);
+        about.textContent = envs.find(e => e.id === id).desc;
+      };
+      const draw = () => {
+        const seed = st.seed;
+        cards.forEach((c, i) => setTimeout(() => {
+          if (seed !== st.seed || !c.isConnected) return;
+          const w = new MX.World(C.MAP);
+          w.generate(seed, c._id);
+          const ctx = c._map.getContext('2d'), img = ctx.createImageData(w.N, w.N);
+          img.data.set(MX.Terrain.preview(w, mode !== 'sandbox'));
+          ctx.putImageData(img, 0, 0);
+        }, 40 + i * 30));
+      };
+      pick(st.preset);
+      draw();
+      const reroll = h('button', { class: 'btn small', title: 'Genera otro mapa de cada terreno', onclick: () => { st.seed = (Math.random() * 1e9) | 0; draw(); } }, icon('rotate'), 'Otro mapa');
       const tut = mode === 'career' ? h('label', { class: 'tog', for: 'ng-tut' }, h('input', { id: 'ng-tut', type: 'checkbox', checked: true, onchange: (e) => { st.tut = e.target.checked; } }), h('span', null, 'Jugar con tutorial')) : null;
       this.modal(mode === 'career' ? 'Nueva partida' : 'Modo sandbox', [
         h('label', { for: 'ng-name' }, 'Nombre del complejo'), name,
-        h('h4', null, 'Terreno'), presets, tut,
-        h('p', { class: 'muted small' }, mode === 'career' ? 'Empiezas con 150.000 € y un terreno pequeño. Cumple objetivos para desbloquear terrenos, competiciones y mejoras.' : 'Dinero de sobra, todo el mapa comprado y todo desbloqueado. Sin objetivos ni bancarrota.')
-      ], [{ label: 'Empezar', primary: true, fn: () => this.newGame({ mode, preset: st.preset, parkName: name.value.trim() || nameDefault, tutorial: st.tut }) }, { label: 'Cancelar' }]);
+        h('div', { class: 'env-head' }, h('h4', null, 'Terreno'), reroll),
+        h('div', { class: 'env-grid' }, ...cards), about,
+        mode !== 'sandbox' ? h('p', { class: 'muted small' }, 'El recuadro amarillo es tu terreno inicial; podrás comprar más alrededor.') : null, tut,
+        h('p', { class: 'muted small' }, mode === 'career' ? 'Empiezas con 150.000 € y un terreno pequeño. Cumple objetivos para desbloquear terrenos, competiciones y mejoras. Cuanto más relieve, más juego dan los circuitos y más cuesta allanar para construir.' : 'Dinero de sobra, todo el mapa comprado y todo desbloqueado. Sin objetivos ni bancarrota.')
+      ], [{ label: 'Empezar', primary: true, fn: () => this.newGame({ mode, preset: st.preset, seed: st.seed, parkName: name.value.trim() || nameDefault, tutorial: st.tut }) }, { label: 'Cancelar' }], { wide: true });
     },
     newGame(opts) {
       this.demo = false;
-      const g = MX.Game.create({ mode: opts.mode, preset: opts.preset, parkName: opts.parkName });
+      const g = MX.Game.create({ mode: opts.mode, preset: opts.preset, seed: opts.seed, parkName: opts.parkName });
       this.startGame(g);
       const cam = this.renderer.cam;
-      cam.tx = 160; cam.tz = 250; cam.zoom = cam.targetZoom = 7;
+      cam.tx = 160; cam.tz = 250; cam.ty = g.world.heightAt(160, 250); cam.zoom = cam.targetZoom = 7;
       if (opts.tutorial) this.tutorial.start(true);
       else if (opts.mode === 'career' && MX.Save.flag('tutorialDone') !== '1') this.hud.toast('Consejo: abre Circuitos para dibujar tu primer trazado', 'info');
     },
@@ -332,12 +360,12 @@
     togglePause() { if (!this.game) return; if (this.game.speed) { this._prevSpeed = this.game.speed; this.game.speed = 0; } else this.game.speed = this._prevSpeed || 1; },
 
     /* ---------------- dialogs ---------------- */
-    modal(title, content, buttons) {
+    modal(title, content, buttons, opts) {
       const m = this.modalEl;
       clear(m);
       m.hidden = false;
       const close = () => { m.hidden = true; clear(m); };
-      const box = h('div', { class: 'modal-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      const box = h('div', { class: 'modal-box' + (opts && opts.wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
         h('div', { class: 'win-title' }, h('span', { class: 'win-t' }, title), h('span', { class: 'win-stripes' })),
         h('div', { class: 'modal-body' }, ...content),
         h('div', { class: 'modal-btns' }, ...(buttons || [{ label: 'Vale' }]).map(b => h('button', { class: 'btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : ''), onclick: () => { close(); if (b.fn) b.fn(); } }, b.label))));

@@ -15,7 +15,7 @@
     WATER_LEVEL: 3.0,
     BASE_HEIGHT: 6.0,
     MIN_HEIGHT: 0.0,
-    MAX_HEIGHT: 30.0,
+    MAX_HEIGHT: 80.0,
     HEIGHT_STEP: 0.5,
     G: 9.81,
     TRACK_DS: 0.5,        // physics sampling of the track centreline (m)

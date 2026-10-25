@@ -576,6 +576,23 @@ b.neg, .neg { color: #ff8a80; }
   box-shadow: 0 14px 40px rgba(0, 0, 0, .55), 0 4px 0 rgba(0, 0, 0, .4); animation: win-in .16s ease-out;
 }
 .modal-box .win-title { cursor: default; }
+.modal-box.wide { width: min(620px, 100%); }
+/* new game: the environments */
+.env-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.env-head h4 { margin: 0; }
+.env-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.env-card { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 5px; background: #3a2f26; border: 2px solid var(--ink); border-radius: 4px; text-align: left; color: var(--text); }
+.env-card:hover { background: #45372b; }
+.env-card.on { border-color: var(--yellow); background: #4e3e2a; }
+.env-card b { font: 700 14px var(--f-num); }
+.env-map { width: 100%; aspect-ratio: 1; image-rendering: pixelated; background: #2a2018; border-radius: 3px; }
+.relief { display: flex; align-items: center; gap: 2px; }
+.relief small { margin-right: 3px; color: var(--muted); font-size: 11px; }
+.relief i { width: 7px; height: 7px; border-radius: 1px; background: #5b4a3a; }
+.relief i.on { background: var(--yellow); }
+.env-about { min-height: 2.6em; margin: 6px 0 2px; }
+.phone .env-grid { display: flex; overflow-x: auto; scrollbar-width: none; }
+.phone .env-card { flex: 0 0 104px; }
 .modal-body { flex: 1; overflow: auto; padding: 12px 14px; }
 .modal-body > label { display: block; margin: 4px 0 4px; font-weight: 600; }
 .modal-body > .inp { width: 100%; }

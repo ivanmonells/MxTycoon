@@ -6,16 +6,18 @@
   const T = C.TILE;
 
   /* ground types */
-  const G = { GRASS: 0, DRY: 1, DIRT: 2, SAND: 3, ROCK: 4, FOREST: 5, GRAVEL: 6 };
-  const GROUND_NAMES = ['Césped', 'Hierba seca', 'Tierra', 'Arena', 'Roca', 'Sotobosque', 'Grava'];
+  const G = { GRASS: 0, DRY: 1, DIRT: 2, SAND: 3, ROCK: 4, FOREST: 5, GRAVEL: 6, SNOW: 7 };
+  const GROUND_NAMES = ['Césped', 'Hierba seca', 'Tierra', 'Arena', 'Roca', 'Sotobosque', 'Grava', 'Nieve'];
 
   /* path types */
   const P = { NONE: 0, GRAVEL: 1, PAVED: 2, ROAD: 3 };
   const ADDON = { NONE: 0, BENCH: 1, BIN: 2, LAMP: 3 };
 
+  let WORLD_UID = 0;
   class World {
     constructor(size) {
       const N = this.N = size || C.MAP;
+      this.uid = ++WORLD_UID; // tells caches of one world from the next
       const V = this.V = N + 1;
       this.heights = new Float32Array(V * V);
       this.ground = new Uint8Array(N * N);
@@ -105,14 +107,12 @@
     generate(seed, preset) {
       this.seed = seed >>> 0;
       this.preset = preset || 'valle';
+      /* the five starting environments (Catalog.environments) live in MX.Terrain; 'valle'
+         is the gentle valley of the first versions */
+      if (MX.Terrain && MX.Terrain.ENVS[this.preset]) { MX.Terrain.generate(this, seed, this.preset); return; }
       const N = this.N, V = this.V, rng = new U.RNG(seed);
       const s = this.seed % 100000;
-      const P0 = {
-        valle: { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0.0, lakes: 2 },
-        colinas: { amp: 7.5, scale: 18, ridge: 2.8, forest: 0.5, dry: 0.25, sand: 0.0, lakes: 1 },
-        desierto: { amp: 4.0, scale: 26, ridge: 1.5, forest: 0.12, dry: 0.75, sand: 0.35, lakes: 1 }
-      }[this.preset] || null;
-      const cfg = P0 || { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0, lakes: 2 };
+      const cfg = { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0, lakes: 2 };
       const cx = N / 2, cz = N * 0.72;
       for (let vz = 0; vz < V; vz++) {
         for (let vx = 0; vx < V; vx++) {
@@ -185,8 +185,7 @@
         if (rng.chance(p)) {
           let type;
           const r = rng.next();
-          if (this.preset === 'desierto') type = r < 0.45 ? 'bush' : r < 0.75 ? 'tree_pine' : r < 0.9 ? 'rock' : 'tree_oak';
-          else type = r < 0.42 ? 'tree_pine' : r < 0.72 ? 'tree_oak' : r < 0.84 ? 'tree_poplar' : r < 0.95 ? 'bush' : 'rock';
+          type = r < 0.42 ? 'tree_pine' : r < 0.72 ? 'tree_oak' : r < 0.84 ? 'tree_poplar' : r < 0.95 ? 'bush' : 'rock';
           this.addScenery(type, tx, tz, rng);
           if (type.startsWith('tree') && f > 0.6) this.ground[tx + tz * N] = G.FOREST;
         }

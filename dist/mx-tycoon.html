@@ -588,6 +588,23 @@ b.neg, .neg { color: #ff8a80; }
   box-shadow: 0 14px 40px rgba(0, 0, 0, .55), 0 4px 0 rgba(0, 0, 0, .4); animation: win-in .16s ease-out;
 }
 .modal-box .win-title { cursor: default; }
+.modal-box.wide { width: min(620px, 100%); }
+/* new game: the environments */
+.env-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.env-head h4 { margin: 0; }
+.env-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.env-card { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 5px; background: #3a2f26; border: 2px solid var(--ink); border-radius: 4px; text-align: left; color: var(--text); }
+.env-card:hover { background: #45372b; }
+.env-card.on { border-color: var(--yellow); background: #4e3e2a; }
+.env-card b { font: 700 14px var(--f-num); }
+.env-map { width: 100%; aspect-ratio: 1; image-rendering: pixelated; background: #2a2018; border-radius: 3px; }
+.relief { display: flex; align-items: center; gap: 2px; }
+.relief small { margin-right: 3px; color: var(--muted); font-size: 11px; }
+.relief i { width: 7px; height: 7px; border-radius: 1px; background: #5b4a3a; }
+.relief i.on { background: var(--yellow); }
+.env-about { min-height: 2.6em; margin: 6px 0 2px; }
+.phone .env-grid { display: flex; overflow-x: auto; scrollbar-width: none; }
+.phone .env-card { flex: 0 0 104px; }
 .modal-body { flex: 1; overflow: auto; padding: 12px 14px; }
 .modal-body > label { display: block; margin: 4px 0 4px; font-weight: 600; }
 .modal-body > .inp { width: 100%; }
@@ -1110,7 +1127,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     WATER_LEVEL: 3.0,
     BASE_HEIGHT: 6.0,
     MIN_HEIGHT: 0.0,
-    MAX_HEIGHT: 30.0,
+    MAX_HEIGHT: 80.0,
     HEIGHT_STEP: 0.5,
     G: 9.81,
     TRACK_DS: 0.5,        // physics sampling of the track centreline (m)
@@ -1282,6 +1299,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     tree_pine: { name: 'Pino', cost: 300, scenery: 0.6, desc: 'Da sombra y ambiente.' },
     tree_oak: { name: 'Encina', cost: 350, scenery: 0.7, desc: 'Árbol frondoso.' },
     tree_poplar: { name: 'Chopo', cost: 280, scenery: 0.5, desc: 'Alto y esbelto.' },
+    tree_fir: { name: 'Abeto', cost: 320, scenery: 0.6, desc: 'Árbol de montaña, alto y oscuro.' },
+    tree_palm: { name: 'Palmera datilera', cost: 380, scenery: 0.7, desc: 'Sombra para la playa y el oasis.' },
+    tree_cactus: { name: 'Cactus', cost: 160, scenery: 0.4, desc: 'Aguanta el sol del desierto.' },
     bush: { name: 'Arbusto', cost: 120, scenery: 0.3, desc: 'Vegetación baja.' },
     flowers: { name: 'Parterre de flores', cost: 220, scenery: 0.6, desc: 'Color para los caminos.' },
     rock: { name: 'Roca', cost: 150, scenery: 0.2, desc: 'Decoración natural.' },
@@ -1329,6 +1349,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     fs_ferris: { theme: 'festival', name: 'Noria', cost: 8000, scenery: 2.8, h: 5, desc: 'Pequeña noria con vistas al circuito.' },
     fs_tent: { theme: 'festival', name: 'Carpa de feria', cost: 1200, scenery: 1.0, h: 4.2, desc: 'Carpa de rayas con banderín.' }
   };
+  /* starting environments, from the flattest to the most mountainous (relief 1 to 5) */
+  const environments = [
+    { id: 'playa', name: 'Playa', relief: 1, desc: 'Costa llana con playa, dunas y palmeras. El mar entra por el norte del terreno.' },
+    { id: 'campo', name: 'Campo', relief: 2, desc: 'Lomas suaves entre prados, campos de cultivo, encinas y estanques.' },
+    { id: 'desierto', name: 'Desierto', relief: 3, desc: 'Dunas, mesetas de roca, cactus y un oasis. Arena por todas partes.' },
+    { id: 'colinas', name: 'Colinas', relief: 4, desc: 'Colinas verdes con bosques y lagos: subidas y bajadas de verdad.' },
+    { id: 'montana', name: 'Montaña', relief: 5, desc: 'Una ladera que sube hacia picos nevados. Mucho desnivel y más obras.' }
+  ];
   /* the packs of the decoration window, in order */
   const decorThemes = [
     { id: 'basic', name: 'Básicos', desc: 'Naturaleza, seguridad y patrocinio.' },
@@ -1746,7 +1774,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   };
 
   MX.Catalog = {
-    buildings, decor, decorThemes, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
+    buildings, decor, decorThemes, environments, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
     bikes, vehicles, brands, brandsFor, bikeModel, bikeName, staff, staffOrder, events, eventOrder, research, marketing, sponsors, objectives,
     weather, names, thoughts,
     buildingCats: [
@@ -1770,16 +1798,18 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   const T = C.TILE;
 
   /* ground types */
-  const G = { GRASS: 0, DRY: 1, DIRT: 2, SAND: 3, ROCK: 4, FOREST: 5, GRAVEL: 6 };
-  const GROUND_NAMES = ['Césped', 'Hierba seca', 'Tierra', 'Arena', 'Roca', 'Sotobosque', 'Grava'];
+  const G = { GRASS: 0, DRY: 1, DIRT: 2, SAND: 3, ROCK: 4, FOREST: 5, GRAVEL: 6, SNOW: 7 };
+  const GROUND_NAMES = ['Césped', 'Hierba seca', 'Tierra', 'Arena', 'Roca', 'Sotobosque', 'Grava', 'Nieve'];
 
   /* path types */
   const P = { NONE: 0, GRAVEL: 1, PAVED: 2, ROAD: 3 };
   const ADDON = { NONE: 0, BENCH: 1, BIN: 2, LAMP: 3 };
 
+  let WORLD_UID = 0;
   class World {
     constructor(size) {
       const N = this.N = size || C.MAP;
+      this.uid = ++WORLD_UID; // tells caches of one world from the next
       const V = this.V = N + 1;
       this.heights = new Float32Array(V * V);
       this.ground = new Uint8Array(N * N);
@@ -1869,14 +1899,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     generate(seed, preset) {
       this.seed = seed >>> 0;
       this.preset = preset || 'valle';
+      /* the five starting environments (Catalog.environments) live in MX.Terrain; 'valle'
+         is the gentle valley of the first versions */
+      if (MX.Terrain && MX.Terrain.ENVS[this.preset]) { MX.Terrain.generate(this, seed, this.preset); return; }
       const N = this.N, V = this.V, rng = new U.RNG(seed);
       const s = this.seed % 100000;
-      const P0 = {
-        valle: { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0.0, lakes: 2 },
-        colinas: { amp: 7.5, scale: 18, ridge: 2.8, forest: 0.5, dry: 0.25, sand: 0.0, lakes: 1 },
-        desierto: { amp: 4.0, scale: 26, ridge: 1.5, forest: 0.12, dry: 0.75, sand: 0.35, lakes: 1 }
-      }[this.preset] || null;
-      const cfg = P0 || { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0, lakes: 2 };
+      const cfg = { amp: 3.2, scale: 22, ridge: 1.2, forest: 0.6, dry: 0.15, sand: 0, lakes: 2 };
       const cx = N / 2, cz = N * 0.72;
       for (let vz = 0; vz < V; vz++) {
         for (let vx = 0; vx < V; vx++) {
@@ -1949,8 +1977,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (rng.chance(p)) {
           let type;
           const r = rng.next();
-          if (this.preset === 'desierto') type = r < 0.45 ? 'bush' : r < 0.75 ? 'tree_pine' : r < 0.9 ? 'rock' : 'tree_oak';
-          else type = r < 0.42 ? 'tree_pine' : r < 0.72 ? 'tree_oak' : r < 0.84 ? 'tree_poplar' : r < 0.95 ? 'bush' : 'rock';
+          type = r < 0.42 ? 'tree_pine' : r < 0.72 ? 'tree_oak' : r < 0.84 ? 'tree_poplar' : r < 0.95 ? 'bush' : 'rock';
           this.addScenery(type, tx, tz, rng);
           if (type.startsWith('tree') && f > 0.6) this.ground[tx + tz * N] = G.FOREST;
         }
@@ -2330,6 +2357,394 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   MX.World.P = P;
   MX.World.ADDON = ADDON;
   MX.World.GROUND_NAMES = GROUND_NAMES;
+})(window.MX);
+
+;
+/* ---- src/sim/terrain.js ---- */
+/* MX Tycoon - terrain generator for the five starting environments, from the flat coast
+   to the mountains (Catalog.environments): heights, water, ground types and natural
+   vegetation. The starting land keeps slopes that circuits, paths and riders can use
+   and a gentle strip along the road for the parking, the paddock and the entrance.
+   Pure simulation, deterministic for a seed. */
+(function (MX) {
+  'use strict';
+  const C = MX.C, U = MX.U;
+  const G = MX.World.G;
+  const WL = C.WATER_LEVEL;
+
+  /* centred fractal noise of about [-1, 1] at a scale in tiles */
+  const nz = (x, z, scale, seed, oct) => (U.fbm(x / scale, z / scale, seed, oct || 4) - 0.5) * 2.6;
+  /* sharp crests in [0, 1] (dunes and ridges) */
+  const ridged = (x, z, scale, seed, oct) => { const v = 1 - Math.abs(U.fbm(x / scale, z / scale, seed, oct || 4) - 0.5) * 2.6; return v < 0 ? 0 : v; };
+  const ss = U.smoothstep;
+
+  /* the career starting land (Game uses World.setupOwnership: 6 x 6 parcels on the road) */
+  function plotBox(N) {
+    const PS = C.PARCEL, PN = Math.ceil(N / PS), px0 = Math.max(0, Math.floor(PN / 2) - 3);
+    return { x0: px0 * PS, x1: Math.min(N, (px0 + 6) * PS), z0: Math.max(0, PN - 6) * PS, z1: N };
+  }
+
+  /* ---------------- the environments ---------------- */
+  /* height(x, z, k): metres at vertex (x, z); k has the seed (s), road level (road(x)),
+     the fade towards the road (fade(z, rows)) and the weight of the starting land (core).
+     caps: largest height step (m) between neighbouring vertices on the starting land, on
+     the rest of the map and on the strip along the road. */
+  const ENVS = {
+    playa: {
+      caps: { plot: 0.55, out: 1.1, shelf: 0.3 }, shelf: 6, trees: 0.35, sea: true,
+      setup(k) {
+        const N = k.N;
+        /* the shoreline crosses the north of the starting land, nearer in the east */
+        k.coast = new Float32Array(N + 1);
+        for (let x = 0; x <= N; x++) k.coast[x] = N * (0.31 + 0.12 * x / N + 0.03 * Math.sin(x / N * 6.3 + k.s % 7)) + nz(x, 0, 12, k.s + 11, 3) * 2.2;
+      },
+      height(x, z, k) {
+        const d = z - k.coast[x];
+        if (d < 0) return WL - 0.35 - Math.min(3, -d * 0.22);
+        const beach = WL - 0.35 + 1.05 * ss(0, 4, d);
+        const span = Math.max(8, k.N - k.coast[x] - 4);
+        let h = beach + (k.road(x) - beach) * ss(4, span, d);
+        /* dunes behind the beach, then a gently rolling coastal plain */
+        const band = ss(3, 6, d) * (1 - ss(14, 24, d));
+        h += band * (ridged(x * 0.8 + z * 0.6, z * 0.8 - x * 0.6, 6, k.s + 21, 3) * 1.8 - 0.3);
+        h += ss(10, 22, d) * nz(x, z, 18, k.s + 31) * 1.0 * k.fade(z, 8);
+        return h;
+      },
+      ground(t) {
+        if (t.d < 6) return G.SAND;
+        if (t.d < 15) return t.n1 > 0.25 ? G.DRY : G.SAND;
+        return t.n1 > 0.35 ? G.DRY : G.GRASS;
+      },
+      flora(t, r) {
+        if (t.d < 2) return r < 0.01 ? 'rock' : null;
+        if (t.d < 16) return r < 0.07 ? 'tree_palm' : r < 0.11 ? 'bush' : null;
+        if (t.f > 0.62) return r < 0.32 ? 'tree_pine' : r < 0.38 ? 'bush' : null;
+        return r < 0.018 ? 'tree_palm' : r < 0.035 ? 'tree_pine' : r < 0.05 ? 'bush' : null;
+      }
+    },
+    campo: {
+      caps: { plot: 0.8, out: 1.3, shelf: 0.35 }, shelf: 6, trees: 0.3, ponds: 2,
+      height(x, z, k) {
+        let h = k.road(x) + (nz(x, z, 20, k.s + 1) * 2.4 + nz(x, z, 8, k.s + 2) * 0.6) * k.fade(z, 10);
+        h += (1 - k.core) * nz(x, z, 26, k.s + 3) * 3.2;
+        h += ss(k.N * 0.38, 0, z) * (ridged(x, z, 22, k.s + 4) * 6 - 1);
+        return h;
+      },
+      ground(t) {
+        /* fields of wheat and ploughed earth outside the starting land */
+        if (t.field >= 0 && t.core < 0.5) return t.field === 0 ? G.DRY : t.field === 1 ? G.DIRT : G.GRASS;
+        return t.n1 > 0.42 ? G.DRY : G.GRASS;
+      },
+      flora(t, r) {
+        if (t.hedge && t.core < 0.5) return r < 0.22 ? 'tree_poplar' : r < 0.36 ? 'bush' : r < 0.42 ? 'tree_oak' : null;
+        if (t.field >= 0 && t.field < 2 && t.core < 0.5) return null;
+        if (t.f > 0.64) return r < 0.4 ? 'tree_oak' : r < 0.52 ? 'tree_pine' : r < 0.6 ? 'bush' : null;
+        return r < 0.025 ? 'tree_oak' : r < 0.035 ? 'tree_poplar' : r < 0.045 ? 'bush' : r < 0.05 ? 'rock' : null;
+      }
+    },
+    desierto: {
+      caps: { plot: 1.1, out: 3.8, shelf: 0.4 }, shelf: 7, trees: 0.4,
+      setup(k) {
+        const N = k.N, rng = k.rng, P = k.plot;
+        k.angle = rng.range(0, Math.PI);
+        /* flat-topped mesas around the land and one butte at its edge */
+        k.mesas = [];
+        for (let i = 0, tries = 0; i < 5 && tries < 200; tries++) {
+          const r = rng.range(5, 10), x = rng.range(4, N - 4), z = rng.range(3, N * 0.62);
+          if (x > P.x0 - 4 && x < P.x1 + 4 && z > P.z0 - 6) continue;
+          if (k.mesas.some(m => Math.hypot(m.x - x, m.z - z) < m.r + r + 4)) continue;
+          k.mesas.push({ x, z, r, h: rng.range(9, 15) }); i++;
+        }
+        const side = rng.chance(0.5) ? 1 : -1;
+        k.mesas.push({ x: (P.x0 + P.x1) / 2 + side * (P.x1 - P.x0) * 0.32, z: P.z0 + 9, r: 3.6, h: 6.5 });
+        /* the oasis, to one side of the land */
+        k.oasis = { x: side > 0 ? P.x0 - 4 : P.x1 + 4, z: P.z0 + (P.z1 - P.z0) * 0.45, r: 4.2 };
+        k.wadi = rng.range(0, 100);
+      },
+      height(x, z, k) {
+        const N = k.N, c = Math.cos(k.angle), s = Math.sin(k.angle);
+        const a = x * c + z * s, b = -x * s + z * c;
+        const dune = ridged(a + nz(x, z, 14, k.s + 5, 2) * 4, b * 0.35, 7, k.s + 6, 3);
+        let h = k.road(x) + ((dune - 0.45) * 3.6 + nz(x, z, 18, k.s + 7) * 1.6) * k.fade(z, 9);
+        h += (1 - k.core) * nz(x, z, 24, k.s + 8) * 2.5;
+        const rough = nz(x, z, 4, k.s + 9, 2) * 0.12;
+        for (const m of k.mesas) {
+          const d = Math.hypot(x - m.x, z - m.z) / m.r + rough;
+          h += m.h * ss(1.12, 0.92, d) + m.h * 0.18 * ss(1.6, 1.1, d);
+        }
+        /* a dry riverbed winding across the north */
+        const wz = N * 0.22 + Math.sin(x / N * 7 + k.wadi) * 5 + nz(x, 0, 10, k.s + 12, 2) * 2;
+        h -= 2.4 * ss(3.2, 0.6, Math.abs(z - wz));
+        return h;
+      },
+      water(H, k) { carvePond(H, k, k.oasis.x, k.oasis.z, k.oasis.r); },
+      ground(t) {
+        if (t.wadi) return t.n1 > 0.1 ? G.GRAVEL : G.DIRT;
+        if (t.mesaTop) return t.n1 > 0.2 ? G.DIRT : G.DRY;
+        if (t.oasis < 1.75) return G.GRASS;
+        return t.n1 > 0.42 ? G.DRY : G.SAND;
+      },
+      flora(t, r) {
+        if (t.oasis < 2.1) return r < 0.45 ? 'tree_palm' : r < 0.55 ? 'bush' : null;
+        if (t.wadi) return r < 0.06 ? 'bush' : r < 0.1 ? 'rock' : null;
+        if (t.steep) return r < 0.08 ? 'rock' : null;
+        return r < 0.035 ? 'tree_cactus' : r < 0.055 ? 'bush' : r < 0.07 ? 'rock' : null;
+      }
+    },
+    colinas: {
+      caps: { plot: 1.3, out: 2.6, shelf: 0.4 }, shelf: 7, trees: 0.35, ponds: 2,
+      height(x, z, k) {
+        const N = k.N;
+        let h = k.road(x) + (nz(x, z, 16, k.s + 1) * 9 + nz(x, z, 7, k.s + 2) * 1.6) * k.fade(z, 12) + 4 * ss(N - 8, N * 0.5, z);
+        h += (1 - k.core) * (ridged(x, z, 22, k.s + 3) * 12 - 4);
+        h += ss(N * 0.45, N * 0.05, z) * (6 + ridged(x, z, 16, k.s + 4) * 11);
+        return h;
+      },
+      ground(t) {
+        if (t.n1 > 0.45 && t.slope < 1.4) return G.DRY;
+        return G.GRASS;
+      },
+      flora(t, r) {
+        if (t.f > 0.58 && t.rel > -1) return r < 0.32 ? 'tree_pine' : r < 0.55 ? 'tree_oak' : r < 0.62 ? 'bush' : null;
+        return r < 0.025 ? 'tree_oak' : r < 0.04 ? 'bush' : r < 0.048 ? 'tree_poplar' : r < 0.056 ? 'rock' : null;
+      }
+    },
+    montana: {
+      caps: { plot: 1.7, out: 4.8, shelf: 0.45 }, shelf: 9, trees: 0.4, snow: 44,
+      setup(k) {
+        const N = k.N, P = k.plot, rng = k.rng;
+        k.lake = { x: rng.chance(0.5) ? P.x0 - 7 : P.x1 + 7, z: N - 15, r: 5.2 };
+        /* the peaks: a chain along the north and one on each flank */
+        k.peaks = [];
+        const n = rng.int(3, 4);
+        for (let i = 0; i < n; i++) k.peaks.push({ x: (i + 0.5) / n * N + rng.range(-6, 6), z: rng.range(2, N * 0.2), r: rng.range(16, 24), h: rng.range(18, 28) });
+        k.peaks.push({ x: rng.range(-2, 6), z: rng.range(N * 0.4, N * 0.6), r: rng.range(13, 17), h: rng.range(16, 24) });
+        k.peaks.push({ x: N - rng.range(-2, 6), z: rng.range(N * 0.4, N * 0.6), r: rng.range(13, 17), h: rng.range(16, 24) });
+      },
+      height(x, z, k) {
+        const N = k.N, t = (N - z) / N;
+        /* the valley climbs from the road towards the peaks in the north */
+        let h = k.road(x) + 30 * Math.pow(ss(0.1, 1.0, t), 1.4);
+        h += (nz(x, z, 12, k.s + 1) * 7.5 + nz(x, z, 5, k.s + 2) * 1.2) * k.fade(z, 11);
+        let m = 0;
+        for (const p of k.peaks) {
+          const d = Math.hypot(x - p.x, (z - p.z) * 1.1) / p.r;
+          if (d < 1) m = Math.max(m, p.h * Math.pow(1 - d, 1.35));
+        }
+        /* rocky ridges on the mountainsides, kept off the valley floor by the road */
+        h += m * (0.75 + ridged(x, z, 9, k.s + 3) * 0.5) * ss(3, 12, N - z);
+        h += ridged(x, z, 14, k.s + 4) * 6 * ss(0.45, 1.0, t);
+        return h;
+      },
+      water(H, k) { carvePond(H, k, k.lake.x, k.lake.z, k.lake.r); },
+      ground(t) {
+        if (t.h > t.snowLine) return G.SNOW;
+        if (t.h > t.snowLine - 6 && t.n1 > 0) return G.GRAVEL;
+        if (t.n1 > 0.48) return G.DRY;
+        return G.GRASS;
+      },
+      flora(t, r) {
+        if (t.h > t.snowLine - 3) return r < 0.04 ? 'rock' : null;
+        if (t.steep) return r < 0.1 ? 'rock' : r < 0.16 ? 'tree_fir' : null;
+        if (t.h > 9 && t.f > 0.5) return r < 0.5 ? 'tree_fir' : r < 0.6 ? 'tree_pine' : r < 0.64 ? 'rock' : null;
+        if (t.h > 9) return r < 0.06 ? 'tree_fir' : r < 0.08 ? 'rock' : r < 0.09 ? 'bush' : null;
+        return r < 0.03 ? 'tree_oak' : r < 0.05 ? 'tree_fir' : r < 0.06 ? 'bush' : null;
+      }
+    }
+  };
+
+  /* bowl dug below the water level with gentle banks */
+  function carvePond(H, k, cx, cz, r) {
+    const V = k.N + 1;
+    for (let z = 0; z < V; z++) for (let x = 0; x < V; x++) {
+      const d = Math.hypot(x - cx, (z - cz) * 1.15) / r + nz(x, z, 3, k.s + 77, 2) * 0.12;
+      if (d >= 1.7) continue;
+      const i = x + z * V;
+      H[i] = U.lerp(H[i], WL - 1.5, (1 - ss(0.25, 1.7, d)) * 0.97);
+    }
+  }
+  /* ponds and lakes in the lowest places outside the middle of the starting land */
+  function ponds(H, k, n) {
+    const N = k.N, V = N + 1, P = k.plot, rng = k.rng;
+    const spots = [];
+    for (let l = 0; l < n; l++) {
+      let best = null;
+      for (let tries = 0; tries < 60; tries++) {
+        const x = rng.range(6, N - 6), z = rng.range(5, N - 14);
+        const inMid = x > P.x0 + 3 && x < P.x1 - 3 && z > P.z0 + 3;
+        if (inMid || spots.some(s => Math.hypot(s.x - x, s.z - z) < 16)) continue;
+        const h = H[Math.round(x) + Math.round(z) * V];
+        if (!best || h < best.h) best = { x, z, h };
+      }
+      if (best) { spots.push(best); carvePond(H, k, best.x, best.z, rng.range(3.8, 6.5)); }
+    }
+  }
+
+  /* largest height step between neighbouring vertices, settled by relaxation; the road
+     and the water stay where they are */
+  function limitSlopes(H, V, cap, fixed) {
+    const D = Math.SQRT2 * 0.9;
+    const relax = (a, b, k) => {
+      const c = (cap[a] < cap[b] ? cap[a] : cap[b]) * k;
+      const d = H[a] - H[b], ad = d < 0 ? -d : d;
+      if (ad <= c) return 0;
+      const ex = ad - c, sg = d > 0 ? 1 : -1;
+      if (fixed[a] && fixed[b]) return 0;
+      if (fixed[a]) H[b] += sg * ex;
+      else if (fixed[b]) H[a] -= sg * ex;
+      else { H[a] -= sg * ex * 0.5; H[b] += sg * ex * 0.5; }
+      return ex;
+    };
+    for (let it = 0; it < 90; it++) {
+      let moved = 0;
+      const rev = it % 2 === 1;
+      for (let zz = 0; zz < V; zz++) {
+        const z = rev ? V - 1 - zz : zz;
+        for (let xx = 0; xx < V; xx++) {
+          const x = rev ? V - 1 - xx : xx, i = x + z * V;
+          if (x + 1 < V) moved += relax(i, i + 1, 1);
+          if (z + 1 < V) {
+            moved += relax(i, i + V, 1);
+            if (x + 1 < V) moved += relax(i, i + V + 1, D);
+            if (x > 0) moved += relax(i, i + V - 1, D);
+          }
+        }
+      }
+      if (moved < 0.01) break;
+    }
+  }
+
+  function generate(w, seed, id) {
+    const E = ENVS[id] || ENVS.campo;
+    const N = w.N, V = w.V, H = w.heights;
+    const s = (seed >>> 0) % 100000;
+    const rng = new U.RNG((seed ^ 0x51ed27) >>> 0);
+    const P = plotBox(N);
+    const roadH = new Float32Array(V);
+    for (let x = 0; x < V; x++) roadH[x] = C.BASE_HEIGHT + nz(x, 3.3, 30, s + 5, 2) * 0.45;
+    const k = {
+      N, V, s, rng, plot: P,
+      road: (x) => roadH[Math.max(0, Math.min(N, Math.round(x)))],
+      /* 0 on the road, 1 from `rows` vertices inland */
+      fade: (z, rows) => ss(1.5, rows, N - z),
+      core: 1
+    };
+    const coreAt = (x, z) => {
+      const dx = Math.max(P.x0 - x, 0, x - P.x1), dz = Math.max(P.z0 - z, 0, z - P.z1);
+      return 1 - ss(0, 10, Math.hypot(dx, dz));
+    };
+    if (E.setup) E.setup(k);
+    for (let z = 0; z < V; z++) for (let x = 0; x < V; x++) {
+      k.core = coreAt(x, z);
+      H[x + z * V] = E.height(x, z, k);
+    }
+    /* hollows stay dry above the water level: only the sea, ponds and lakes are water */
+    if (!E.sea) {
+      const F = WL + 1.2;
+      for (let i = 0; i < H.length; i++) if (H[i] < F) H[i] = F + (H[i] - F) * 0.08;
+    }
+    /* the road itself is level with its verge */
+    for (let x = 0; x < V; x++) for (let j = 0; j <= 2; j++) {
+      const i = x + (N - j) * V;
+      H[i] = j <= 1 ? roadH[x] : U.lerp(H[i], roadH[x], 0.5);
+    }
+    if (E.water) E.water(H, k);
+    if (E.ponds) ponds(H, k, E.ponds);
+    /* buildable slopes on the starting land, gentle ones along the road */
+    const cap = new Float32Array(V * V), fixed = new Uint8Array(V * V);
+    for (let z = 0; z < V; z++) for (let x = 0; x < V; x++) {
+      const i = x + z * V, c = coreAt(x, z);
+      let m = U.lerp(E.caps.out, E.caps.plot, c);
+      const fromRoad = N - z;
+      if (fromRoad <= E.shelf) m = Math.min(m, E.caps.shelf);
+      else if (fromRoad <= E.shelf + 4) m = Math.min(m, U.lerp(E.caps.shelf, E.caps.plot, (fromRoad - E.shelf) / 4));
+      cap[i] = m;
+      if (z >= N - 1 || H[i] < WL - 0.3) fixed[i] = 1;
+    }
+    limitSlopes(H, V, cap, fixed);
+    for (let i = 0; i < H.length; i++) H[i] = U.clamp(Math.round(H[i] * 20) / 20, C.MIN_HEIGHT + 0.5, C.MAX_HEIGHT - 2);
+
+    /* ground types */
+    const snowLine = E.snow || 999;
+    const fieldOf = (tx, tz) => {
+      if (id !== 'campo') return { field: -1, hedge: false };
+      const fx = Math.floor((tx + 3) / 7), fz = Math.floor((tz + 2) / 6);
+      const hedge = (tx + 3) % 7 === 0 || (tz + 2) % 6 === 0;
+      const r = U.hash2(fx, fz, s + 91);
+      return { field: r < 0.38 ? 0 : r < 0.66 ? 1 : 2, hedge };
+    };
+    const tileInfo = (tx, tz) => {
+      const h = w.tileCenterH(tx, tz), sl = w.tileSlope(tx, tz), cx = tx + 0.5, cz = tz + 0.5;
+      const t = {
+        h, slope: sl, steep: sl > 3.0, core: coreAt(cx, cz), snowLine: snowLine + nz(tx, tz, 6, s + 61, 2) * 2,
+        n1: nz(tx, tz, 7, s + 333, 3), f: U.fbm(tx / 8, tz / 8, s + 555, 3),
+        rel: h - (k.road(cx) || C.BASE_HEIGHT), d: k.coast ? cz - k.coast[Math.round(cx)] : 99,
+        oasis: k.oasis ? Math.hypot(cx - k.oasis.x, cz - k.oasis.z) / k.oasis.r : 99,
+        wadi: false, mesaTop: false
+      };
+      if (id === 'desierto') {
+        const wz = N * 0.22 + Math.sin(cx / N * 7 + k.wadi) * 5 + nz(cx, 0, 10, s + 12, 2) * 2;
+        t.wadi = Math.abs(cz - wz) < 1.6 && h < C.BASE_HEIGHT + 1;
+        t.mesaTop = k.mesas.some(m => Math.hypot(cx - m.x, cz - m.z) < m.r * 0.85);
+      }
+      Object.assign(t, fieldOf(tx, tz));
+      return t;
+    };
+    const info = new Array(N * N);
+    for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
+      const t = info[tx + tz * N] = tileInfo(tx, tz);
+      let g = E.ground(t);
+      if (t.slope > 3.2 && g !== G.SNOW) g = G.ROCK;
+      w.ground[tx + tz * N] = g;
+    }
+    /* the public road */
+    w.path.fill(0);
+    for (let tx = 0; tx < N; tx++) w.path[tx + w.roadRow * N] = MX.World.P.ROAD;
+    /* natural vegetation: thinner on the starting land so there is room to build */
+    w.scenery.clear(); w.scen.fill(-1); w.nextScenId = 1;
+    const count = {};
+    for (let tz = 0; tz < N - 1; tz++) for (let tx = 0; tx < N; tx++) {
+      if (w.isWater(tx, tz) || tz >= w.roadRow - 1) continue;
+      const t = info[tx + tz * N];
+      let r = rng.next();
+      r /= U.lerp(1, E.trees, t.core);
+      const type = E.flora(t, r);
+      if (!type) continue;
+      if ((count[type] || 0) >= (type.startsWith('tree') ? 1350 : 950)) continue;
+      count[type] = (count[type] || 0) + 1;
+      w.addScenery(type, tx, tz, rng);
+      if (type.startsWith('tree') && t.f > 0.6 && w.ground[tx + tz * N] === G.GRASS) w.ground[tx + tz * N] = G.FOREST;
+    }
+    w.markTerrainDirty(0, 0, N - 1, N - 1);
+    w.pathVer++; w.sceneryVer++; w.groundVer++;
+  }
+
+  /* RGBA pixels (N x N) of a world seen from above: ground colours shaded by the relief,
+     water, woods and the road; the starting land is outlined when `plot` is set */
+  const GROUND_RGB = [[86, 152, 58], [170, 162, 82], [146, 106, 66], [222, 198, 140], [140, 136, 130], [58, 96, 44], [176, 168, 150], [238, 243, 248]];
+  function preview(w, plot) {
+    const N = w.N, out = new Uint8ClampedArray(N * N * 4), P = plotBox(N);
+    for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
+      const i = tx + tz * N, o = i * 4;
+      const a = w.vh(tx, tz), b = w.vh(tx + 1, tz), c = w.vh(tx, tz + 1);
+      /* light from the north-west */
+      let k = U.clamp(1 + ((a - b) + (a - c)) * 0.16, 0.55, 1.4);
+      let col = GROUND_RGB[w.ground[i]] || GROUND_RGB[0];
+      const h = w.tileCenterH(tx, tz);
+      if (w.isWater(tx, tz)) { const dpt = U.clamp((C.WATER_LEVEL - h) / 3, 0, 1); col = [64 - dpt * 24, 136 - dpt * 40, 176 - dpt * 30]; k = 1; }
+      else {
+        k *= 0.86 + U.clamp(h / 45, 0, 1) * 0.3;
+        const sc = w.scen[i] >= 0 ? w.scenery.get(w.scen[i]) : null;
+        if (sc && sc.type.startsWith('tree')) col = sc.type === 'tree_cactus' ? [104, 150, 84] : sc.type === 'tree_palm' ? [92, 150, 70] : [40, 84, 36];
+      }
+      if (w.path[i] === MX.World.P.ROAD) { col = [70, 70, 76]; k = 1; }
+      if (plot && ((tx === P.x0 || tx === P.x1 - 1) && tz >= P.z0 || tz === P.z0 && tx >= P.x0 && tx < P.x1) && (tx + tz) % 2 === 0) { col = [255, 214, 64]; k = 1; }
+      out[o] = col[0] * k; out[o + 1] = col[1] * k; out[o + 2] = col[2] * k; out[o + 3] = 255;
+    }
+    return out;
+  }
+
+  MX.Terrain = { generate, preview, plotBox, ENVS };
 })(window.MX);
 
 ;
@@ -2991,6 +3406,18 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const i = Math.round(s / DS);
       return S.closed ? U.mod(i, S.n) : U.clamp(i, 0, S.n - 1);
     }
+    /* steepest stretch of the riding base (jumps aside) between samples i0 and i1, measured
+       like validate does: rise over 4 m */
+    steepest(i0, i1) {
+      const S = this.S;
+      let worst = 0, at = -1;
+      for (let i = Math.max(0, i0); i < Math.min(S.n, i1); i++) {
+        const a = this.sIndex((i - 2) * DS), b = this.sIndex((i + 2) * DS);
+        const sl = Math.abs(S.base[b] - S.base[a]) / (4 * DS);
+        if (sl > worst) { worst = sl; at = i; }
+      }
+      return { slope: worst, i: at };
+    }
     /* Interpolated pose at distance s and lateral offset lane (positive = left normal). */
     poseAt(s, lane, out) {
       const S = this.S;
@@ -3193,6 +3620,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const why = this._probeTiles(world, tmp);
       if (why) return fail(why);
       if (this._probeOverlap(tmp, res.closes)) return fail('Choca con el propio circuito');
+      /* the track follows the ground: on a hillside the piece adds its own grade to the hill's */
+      const n = tmp.S.n, edge = Math.round(3 / DS), st = n > 2 * edge + 2 ? tmp.steepest(edge, n - edge) : { slope: 0 };
+      if (st.slope > C.MAX_SLOPE) return fail('Demasiado empinado (' + Math.round(st.slope * 100) + ' %): prueba otra pendiente u otra dirección, o allana la ladera');
       res.cost = this._probeCost(world, tmp);
       return res;
     }
@@ -3313,7 +3743,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         const sl = (S.base[b] - S.base[a]) / (4 * DS);
         if (Math.abs(sl) > C.MAX_SLOPE) { S.bad[i] = 1; if (slopeBad < 0) slopeBad = i; }
       }
-      if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado.' }, at(slopeBad)));
+      if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado: rodea la ladera, cambia la pendiente de esas piezas o allana el terreno.' }, at(slopeBad)));
       /* self overlap via spatial hash */
       const cell = 4, grid = new Map();
       for (let i = 0; i < S.n; i += 2) {
@@ -3551,6 +3981,24 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       return true;
     };
+    /* how much the ground climbs and drops along a piece (the track follows it) */
+    const hill = (g) => {
+      const m = Math.max(2, Math.round(g.len / 3)), hs = [];
+      for (let k = 0; k <= m; k++) {
+        const t = k / m;
+        piecePoint(g, t, q);
+        piecePoint(g, t < 1 ? Math.min(1, t + 0.02) : 0.98, q2);
+        let dx = q2[0] - q[0], dz = q2[1] - q[1];
+        if (t >= 1) { dx = -dx; dz = -dz; }
+        const dl = Math.hypot(dx, dz) || 1, nx = -dz / dl, nz = dx / dl;
+        hs.push(Math.max(world.heightAt(q[0], q[1]), world.heightAt(q[0] + nx * hw, q[1] + nz * hw), world.heightAt(q[0] - nx * hw, q[1] - nz * hw)));
+      }
+      let up = 0, down = 0;
+      const step = g.len / m;
+      for (let k = 1; k < hs.length; k++) { const s = (hs[k] - hs[k - 1]) / step; if (s > up) up = s; if (s < down) down = s; }
+      return { up, down };
+    };
+    const hills = new Map();
     const OFF = 4, SZ = N + 1 + 2 * OFF;
     const pose = (x, z, h) => ((z + OFF) * SZ + (x + OFF)) * 8 + h;
     const key = (x, z, h, eh) => pose(x, z, h) * (EMAX + 1) + eh;
@@ -3604,7 +4052,11 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         let ok = clear.get(ck);
         if (ok === undefined) { ok = free(gg); clear.set(ck, ok); }
         if (!ok) continue;
+        let hl = hills.get(ck);
+        if (!hl) { hl = hill(gg); hills.set(ck, hl); }
         for (const sl of slopes) {
+          const gr = sl ? slopeDelta({ t: mv.t, slope: sl }, gg.len) / gg.len : 0;
+          if (hl.up + gr > C.MAX_SLOPE * 0.92 || hl.down + gr < -C.MAX_SLOPE * 0.92) continue;
           const ne = cur.e + (sl ? E2(slopeDelta({ t: mv.t, slope: sl }, gg.len)) : 0);
           if (ne < 0 || ne > EMAX || (cur.e > goalE && ne < goalE) || (cur.e < goalE && ne > goalE)) continue;
           const nk = key(gg.x1, gg.z1, gg.h1, ne);
@@ -6402,7 +6854,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const lv = w.footprintLevel(r.tx, r.tz, r.w, r.h);
       let mn = Infinity, mx = -Infinity;
       for (let vz = r.tz; vz <= r.tz + r.h; vz++) for (let vx = r.tx; vx <= r.tx + r.w; vx++) { const h = w.vh(vx, vz); mn = Math.min(mn, h); mx = Math.max(mx, h); }
-      if (mx - mn > 3.2) return { ok: false, reason: 'Terreno demasiado irregular', rect: r };
+      if (mx - mn > 4.8) return { ok: false, reason: 'Terreno demasiado irregular: allánalo un poco antes', rect: r };
       /* vertices shared with roads or other buildings stay put; the building keeps a plinth */
       lv.volume = 0;
       for (let vz = r.tz; vz <= r.tz + r.h; vz++) for (let vx = r.tx; vx <= r.tx + r.w; vx++) if (w.vertexEditable(vx, vz, 0xffff)) lv.volume += Math.abs(w.vh(vx, vz) - lv.target);
@@ -8608,6 +9060,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const k = Math.floor(r * gravPal.length);
       return gravPal[U.clamp(k, 0, 5)];
     }));
+    const snowPal = ['#d9e1ea', '#e1e8ef', '#e8edf3', '#eef2f6', '#f3f6f9', '#f8fafc'].map(hex);
+    layer('snow', paint((x, y) => {
+      let c = palNoise(snowPal, 12, 111)(x, y);
+      if (U.hash2(x, y, 113) > 0.994) c = hex('#bfcbd8');
+      return c;
+    }));
     /* --- track surfaces: u across width, v along the track --- */
     const trackPal = ['#7a4f2c', '#875a32', '#946538', '#a0703f', '#ab7c48', '#b88a55'].map(hex);
     const ruts = (x, y, seed, depth) => {
@@ -9820,6 +10278,57 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     mb.blob(0.5, 0.35, 0.3, 0.55, 0.45, 0.55, MB.mulCol(c, 0.9), seed + 3);
     mb.setSlot(0);
   }
+  /* mountain fir: tall and narrow, in tiers */
+  function fir(mb, seed) {
+    const trunk = MB.rgba('#5a3d26');
+    mb.setSlot(0); mb.box(-0.16, 0, -0.16, 0.16, 1.2, 0.16, { col: trunk });
+    mb.setSlot(1);
+    const g = [0.42, 0.56, 0.5];
+    for (let k = 0; k < 5; k++) {
+      const y = 0.8 + k * 1.15, r = 1.45 - k * 0.24, f = 0.82 + k * 0.05;
+      mb.cone(0, y, 0, r, 1.9 - k * 0.12, 7, [g[0] * f, g[1] * f, g[2] * f, 1], 0.2);
+    }
+    mb.setSlot(0);
+    void seed;
+  }
+  /* date palm: a leaning ringed trunk and drooping fronds */
+  function palm(mb, seed) {
+    const bark = MB.rgba('#8a6a45');
+    mb.setSlot(0);
+    let px = 0, py = 0;
+    for (let k = 0; k < 6; k++) {
+      const nx = 0.05 * k * k * 0.25, ny = (k + 1) * 0.95;
+      limb(mb, [px, py, 0], [nx, ny, 0], 0.24 - k * 0.02, 0.22 - k * 0.02, MB.mulCol(bark, k % 2 ? 0.9 : 1), 6);
+      px = nx; py = ny;
+    }
+    mb.setSlot(1);
+    const leaf = [0.6, 0.8, 0.52, 1];
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * Math.PI * 2 + seed, ca = Math.cos(a), sa = Math.sin(a);
+      const mid = [px + ca * 1.1, py + 0.35, sa * 1.1], tip = [px + ca * 2.1, py - 0.7, sa * 2.1];
+      slab(mb, [px, py, 0], mid, 0.08, 0.02, 0.36, 0.02, MB.mulCol(leaf, i % 2 ? 0.9 : 1.05), [-sa, 0, ca]);
+      slab(mb, mid, tip, 0.36, 0.02, 0.06, 0.015, MB.mulCol(leaf, i % 2 ? 0.82 : 0.95), [-sa, 0, ca]);
+    }
+    mb.setSlot(0);
+    for (let i = 0; i < 4; i++) ellipsoid(mb, [px + Math.cos(i * 1.6) * 0.2, py - 0.25, Math.sin(i * 1.6) * 0.2], 0.12, 0.14, 0.12, MB.rgba('#b8742a'), 5, 3);
+  }
+  /* desert cactus with two arms */
+  function cactus(mb, seed) {
+    mb.setSlot(1);
+    const c = [0.62, 0.86, 0.52, 1];
+    limb(mb, [0, 0, 0], [0, 3.1, 0], 0.36, 0.3, c, 8);
+    ellipsoid(mb, [0, 3.1, 0], 0.27, 0.25, 0.27, c, 8, 4);
+    const arm = (y, s, out, up) => {
+      limb(mb, [0, y, 0], [0, y + 0.2, s * out], 0.2, 0.19, MB.mulCol(c, 0.95), 7);
+      ellipsoid(mb, [0, y + 0.2, s * out], 0.2, 0.2, 0.2, MB.mulCol(c, 0.95), 7, 4);
+      limb(mb, [0, y + 0.2, s * out], [0, y + 0.2 + up, s * out], 0.19, 0.16, MB.mulCol(c, 0.95), 7);
+      ellipsoid(mb, [0, y + 0.2 + up, s * out], 0.16, 0.15, 0.16, MB.mulCol(c, 0.95), 7, 4);
+    };
+    arm(1.2, -1, 0.65, 1.0);
+    arm(1.8, 1, 0.58, 0.85);
+    mb.setSlot(0);
+    void seed;
+  }
   function rock(mb, seed) {
     mb.setSlot(1);
     mb.blob(0, 0.35, 0, 0.9, 0.6, 0.75, [0.78, 0.76, 0.72, 1], seed, 0.3);
@@ -9868,7 +10377,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     add('tractor', car('tractor').toMesh());
     add('truck', car('truck').toMesh());
     add('quad', quad().toMesh());
-    const trees = { tree_pine: pine, tree_oak: oak, tree_poplar: poplar, bush, rock };
+    const trees = { tree_pine: pine, tree_oak: oak, tree_poplar: poplar, tree_fir: fir, tree_palm: palm, tree_cactus: cactus, bush, rock };
     for (const k in trees) { const mb = new MB(2048); trees[k](mb, k.length * 7); add(k, mb); }
     return lib;
   }
@@ -9885,7 +10394,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   const C = MX.C, U = MX.U, MB = MX.MeshBuilder, Cat = MX.Catalog;
   const T = C.TILE;
   const L = () => MX.Tex.L;
-  const GROUND_LAYER = ['grass', 'dry', 'dirt', 'sand', 'rock', 'forest', 'gravel'];
+  const GROUND_LAYER = ['grass', 'dry', 'dirt', 'sand', 'rock', 'forest', 'gravel', 'snow'];
   const TRACK_LAYER = ['t_dirt', 't_sand', 't_mud', 't_hard', 't_clay', 't_loam', 't_gravel'];
   const CH = 16;
 
@@ -10577,6 +11086,8 @@ void main() {
   vec3 base = texture(uMats, vec3(vUv, layer)).rgb;
   float big = texture(uNoise, vWp.xz * 0.0035).r;
   base *= 0.9 + big * 0.2;
+  /* valleys a touch darker and heights a touch lighter, so the relief reads from above */
+  base *= 0.93 + 0.14 * clamp((vWp.y - 4.0) / 36.0, 0.0, 1.0);
   base *= 1.0 - uWet * 0.18;
   float own = texture(uOwn, vWp.xz / uMapSize).r;
   if (own < 0.25) {
@@ -11916,7 +12427,7 @@ void main() {
       this.models = {};
       for (const k in lib) {
         const m = GLU.makeMeshVAO(gl, lib[k].data, lib[k].count);
-        GLU.attachInstancing(gl, m, k.startsWith('person') || k.startsWith('tree') ? 1400 : 400);
+        GLU.attachInstancing(gl, m, k.startsWith('person') || k.startsWith('tree') ? 1400 : k === 'bush' || k === 'rock' ? 1000 : 400);
         this.models[k] = m;
       }
       MX.BuildModels && MX.BuildModels.init && MX.BuildModels.init();
@@ -12171,7 +12682,7 @@ void main() {
     }
     _buildScenery() {
       const world = this.game.world, gl = this.gl;
-      const trees = { tree_pine: [], tree_oak: [], tree_poplar: [], bush: [], rock: [] };
+      const trees = { tree_pine: [], tree_oak: [], tree_poplar: [], tree_fir: [], tree_palm: [], tree_cactus: [], bush: [], rock: [] };
       const mb = new MX.MeshBuilder(8192);
       for (const o of world.scenery.values()) {
         const x = o.tx * T + o.ox, z = o.tz * T + o.oz;
@@ -12200,8 +12711,11 @@ void main() {
       const v = o.v || 0;
       const season = this.game ? this.game.seasonTint() : 0;
       if (k === 'rock') return [200 + v * 8, 198 + v * 6, 190 + v * 5, 255];
+      if (k === 'tree_cactus') return [[160, 200, 140], [170, 210, 150], [150, 190, 135], [180, 205, 140]][v % 4];
       const base = [[150, 200, 120], [170, 215, 120], [130, 185, 110], [190, 205, 115]][v % 4];
-      return [U.clamp(base[0] + season * 60, 0, 255), U.clamp(base[1] - season * 25, 0, 255), U.clamp(base[2] - season * 35, 0, 255), 255];
+      /* evergreens (firs and palms) hardly change with the seasons */
+      const sk = k === 'tree_fir' || k === 'tree_palm' ? 0.3 : 1;
+      return [U.clamp(base[0] + season * 60 * sk, 0, 255), U.clamp(base[1] - season * 25 * sk, 0, 255), U.clamp(base[2] - season * 35 * sk, 0, 255), 255];
     }
     _writeInst(m, i, x, y, z, yaw, pitch, roll, scale, flags, a, b, c, d) {
       const f = m.if32, u8 = m.iu8, o = i * (GLU.INST_BYTES / 4), ob = i * GLU.INST_BYTES + 32;
@@ -13995,7 +14509,7 @@ void main() {
     if (w.scen[i] >= 0) return 'Ya hay algo aquí';
     return null;
   }
-  const DECOR_H = { tree_pine: 9, tree_oak: 7, tree_poplar: 11, flag: 6, banner: 4 };
+  const DECOR_H = { tree_pine: 9, tree_oak: 7, tree_poplar: 11, tree_fir: 8, tree_palm: 7, tree_cactus: 4, flag: 6, banner: 4 };
   const DecorTool = {
     name: 'decor', type: 'tree_pine', rot: 0, preview: true,
     get hint() { const d = Cat.decor[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + ' · R: girar · Esc: salir'; },
@@ -14668,10 +15182,11 @@ void main() {
       const g = this.game, w = g.world, N = w.N;
       const c = this.mini, ctx = c.getContext('2d');
       const S = c.width;
-      if (!this._miniBase || this._miniVer !== w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer) {
-        this._miniVer = w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer;
+      const ver = w.uid + ':' + w.terrainVer + ':' + w.ownerVer + ':' + w.pathVer + ':' + g.bldVer + ':' + w.groundVer;
+      if (!this._miniBase || this._miniVer !== ver) {
+        this._miniVer = ver;
         const img = ctx.createImageData(N, N);
-        const gc = [[86, 152, 58], [160, 156, 78], [140, 102, 64], [214, 190, 135], [138, 134, 128], [64, 90, 42], [176, 168, 150]];
+        const gc = [[86, 152, 58], [160, 156, 78], [140, 102, 64], [214, 190, 135], [138, 134, 128], [64, 90, 42], [176, 168, 150], [236, 241, 246]];
         const hr = w.heightRange();
         for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
           const i = tx + tz * N, o = i * 4;
@@ -15392,6 +15907,10 @@ void main() {
       return (x0, z0, x1, z1) => sum[x1 + z1 * (N + 1)] - sum[x0 + z1 * (N + 1)] - sum[x1 + z0 * (N + 1)] + sum[x0 + z0 * (N + 1)];
     };
     const areaFree = prefix(free), areaClear = prefix(clear);
+    /* steepness of the ground, so the loop goes where it is gentlest */
+    const steep = new Uint8Array(N * N);
+    for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) steep[tx + tz * N] = Math.min(255, Math.round(w.tileSlope(tx, tz) * 20));
+    const areaSteep = prefix(steep);
     const area = (x0, z0, x1, z1) => {
       const a = areaFree(x0, z0, x1, z1);
       if (a !== (x1 - x0) * (z1 - z0)) return a;
@@ -15405,23 +15924,24 @@ void main() {
     const dist = (c) => Math.hypot(c.x0 + c.w / 2 - ax, c.z0 + c.h / 2 - az);
     const cands = [];
     const big = type === 'carcross' || type === 'flat' ? 36 : type === 'kids' ? 20 : 30;
+    /* near the riders and on the gentlest ground */
+    const score = (c) => c.w + c.h - dist(c) / 3 - areaSteep(c.x0, c.z0, c.x0 + c.w, c.z0 + c.h) / (c.w * c.h) / 20 * 14;
     for (let wv = big; wv >= 14; wv -= 2) for (let hv = Math.min(big, wv); hv >= 11; hv -= 2) {
       let near = null;
       for (let z0 = 0; z0 + hv <= N; z0 += 2) for (let x0 = 0; x0 + wv <= N; x0 += 2) {
         if (area(x0, z0, x0 + wv, z0 + hv) !== wv * hv) continue;
         const c = { x0, z0, w: wv, h: hv };
-        if (!near || dist(c) < dist(near)) near = c;
+        if (!near || score(c) > score(near)) near = c;
       }
       if (near) cands.push(near);
     }
-    const score = (c) => c.w + c.h - dist(c) / 3;
     cands.sort((a, b) => score(b) - score(a) || b.w * b.h - a.w * a.h);
     if (!cands.length) { app().hud.toast('No hay un terreno libre suficientemente grande (mínimo 14 x 11 casillas)', 'bad'); return; }
     let tr = g.selectedTrack, fresh = false;
     if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length || tr.type !== type) { tr = g.newTrack(type); fresh = true; }
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     /* a loop that ends up somewhere the riders cannot use is taken down and the next spot tried */
-    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos/;
+    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente/;
     let res = null, best = null, checks = 0;
     for (const c of cands.slice(0, 16)) {
       res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface);
@@ -15463,7 +15983,7 @@ void main() {
         for (const s of [1, 2, 3, 5, 7]) sizes.append(h('button', { class: 'btn small' + (TL().Terrain.size === s ? ' on' : ''), onclick: () => { TL().Terrain.size = s; TL().Paint.size = s; if (MX.Tools.current === TL().Terrain) MX.Tools.set(TL().Terrain); WM.rebuild('terrain'); } }, s + 'x' + s));
         const paint = h('div', { class: 'row gap wrap' });
         MX.World.GROUND_NAMES.forEach((n, i) => {
-          if (i === 4) return;
+          if (i === MX.World.G.ROCK || i === MX.World.G.SNOW) return;
           paint.append(h('button', { class: 'btn small' + (MX.Tools.current === TL().Paint && TL().Paint.ground === i ? ' on' : ''), onclick: () => { TL().Paint.ground = i; MX.Tools.set(TL().Paint); WM.rebuild('terrain'); } }, n));
         });
         body.append(h('h4', null, 'Movimiento de tierras'), row, h('h4', null, 'Tamaño del pincel'), sizes,
@@ -16071,7 +16591,9 @@ void main() {
       el.append(h('h4', null, 'Qué construye tu reputación'),
         row('Satisfacción del público', rp.vis), row('Satisfacción de los pilotos', rp.rid), row('Calidad de los circuitos', rp.track), row('Instalaciones', rp.fac),
         statRow('Prestigio por eventos', '+' + Math.round(rp.prestige || 0)), statRow('Penalización (lesiones, basura)', '−' + Math.round(rp.pen || 0)));
-      el.append(h('h4', null, 'Estadísticas'), statRow('Vueltas totales', U.fmtInt(g.totals.laps || g.tracks.reduce((a, t) => a + t.totals.laps, 0))),
+      const env = Cat.environments.find(e => e.id === g.world.preset);
+      el.append(h('h4', null, 'Estadísticas'), statRow('Terreno', env ? env.name + ' · relieve ' + env.relief + ' de 5' : 'Valle verde · relieve 1 de 5'),
+        statRow('Vueltas totales', U.fmtInt(g.totals.laps || g.tracks.reduce((a, t) => a + t.totals.laps, 0))),
         statRow('Caídas · lesiones', g.totals.crashes + ' · ' + g.totals.injuries), statRow('Abonados de temporada', g.passHolders.length),
         statRow('Personal', g.staff.length), statRow('Eventos organizados', g.totals.events), statRow('Patrocinadores', g.sponsors.length));
       const byDisc = {};
@@ -17554,38 +18076,66 @@ void main() {
     },
     makeDemo() {
       this.demo = true;
-      const g = MX.Game.create({ mode: 'sandbox', seed: 777, preset: 'valle', parkName: 'MX Park Los Pinares' });
+      const g = MX.Game.create({ mode: 'sandbox', seed: 31, preset: 'colinas', parkName: 'MX Park Los Pinares' });
       try { buildDemoPark(g); } catch (e) { console.error('demo', e); }
       this.game = g;
       g.speed = 1;
       this.renderer.setGame(g);
       for (let i = 0; i < 900; i++) { if (g.fieldsDirty) g.rebuildFields(); g.step(1 / 30); }
       const cam = this.renderer.cam;
-      cam.tx = 160; cam.tz = 214; cam.ty = 6; cam.zoom = cam.targetZoom = 7.5; cam.freeYaw = true;
+      cam.tx = 160; cam.tz = 214; cam.ty = g.world.heightAt(160, 214); cam.zoom = cam.targetZoom = 7.5; cam.freeYaw = true;
       cam.follow = null;
       this.input.enabled = false;
     },
     newGameDialog(mode) {
       this.startAudio();
       const nameDefault = U.rng.pick(Cat.names.parkPrefix) + ' ' + U.rng.pick(Cat.names.parkName);
-      const st = { preset: 'valle', tut: mode === 'career' };
+      const envs = Cat.environments;
+      const st = { preset: 'colinas', seed: (Math.random() * 1e9) | 0, tut: mode === 'career' };
       const name = h('input', { id: 'ng-name', class: 'inp', value: nameDefault, maxlength: 30 });
-      const presets = h('div', { class: 'row gap wrap' });
-      const P = [['valle', 'Valle verde', 'Suave y con bosques. Ideal para empezar.'], ['colinas', 'Colinas', 'Desniveles fuertes para circuitos con subidas y bajadas.'], ['desierto', 'Desierto', 'Terreno seco y arenoso, poca vegetación.']];
-      for (const [k, n, d] of P) presets.append(h('button', { class: 'preset' + (st.preset === k ? ' on' : ''), title: d, onclick: (e) => { st.preset = k; for (const b of presets.children) b.classList.remove('on'); e.currentTarget.classList.add('on'); } }, h('b', null, n), h('small', null, d)));
+      /* one card per environment, from flat to mountainous, with a map of this seed */
+      const about = h('p', { class: 'env-about' });
+      const relief = (n) => h('span', { class: 'relief', title: 'Relieve ' + n + ' de 5' }, h('small', null, 'Relieve'), ...[1, 2, 3, 4, 5].map(i => h('i', { class: i <= n ? 'on' : null })));
+      const cards = envs.map(e => {
+        const map = h('canvas', { class: 'env-map', width: C.MAP, height: C.MAP });
+        const card = h('button', { class: 'env-card', 'data-env': e.id, title: e.desc, onclick: () => pick(e.id) }, map, h('b', null, e.name), relief(e.relief));
+        card._map = map; card._id = e.id;
+        return card;
+      });
+      const pick = (id) => {
+        st.preset = id;
+        for (const c of cards) c.classList.toggle('on', c._id === id);
+        about.textContent = envs.find(e => e.id === id).desc;
+      };
+      const draw = () => {
+        const seed = st.seed;
+        cards.forEach((c, i) => setTimeout(() => {
+          if (seed !== st.seed || !c.isConnected) return;
+          const w = new MX.World(C.MAP);
+          w.generate(seed, c._id);
+          const ctx = c._map.getContext('2d'), img = ctx.createImageData(w.N, w.N);
+          img.data.set(MX.Terrain.preview(w, mode !== 'sandbox'));
+          ctx.putImageData(img, 0, 0);
+        }, 40 + i * 30));
+      };
+      pick(st.preset);
+      draw();
+      const reroll = h('button', { class: 'btn small', title: 'Genera otro mapa de cada terreno', onclick: () => { st.seed = (Math.random() * 1e9) | 0; draw(); } }, icon('rotate'), 'Otro mapa');
       const tut = mode === 'career' ? h('label', { class: 'tog', for: 'ng-tut' }, h('input', { id: 'ng-tut', type: 'checkbox', checked: true, onchange: (e) => { st.tut = e.target.checked; } }), h('span', null, 'Jugar con tutorial')) : null;
       this.modal(mode === 'career' ? 'Nueva partida' : 'Modo sandbox', [
         h('label', { for: 'ng-name' }, 'Nombre del complejo'), name,
-        h('h4', null, 'Terreno'), presets, tut,
-        h('p', { class: 'muted small' }, mode === 'career' ? 'Empiezas con 150.000 € y un terreno pequeño. Cumple objetivos para desbloquear terrenos, competiciones y mejoras.' : 'Dinero de sobra, todo el mapa comprado y todo desbloqueado. Sin objetivos ni bancarrota.')
-      ], [{ label: 'Empezar', primary: true, fn: () => this.newGame({ mode, preset: st.preset, parkName: name.value.trim() || nameDefault, tutorial: st.tut }) }, { label: 'Cancelar' }]);
+        h('div', { class: 'env-head' }, h('h4', null, 'Terreno'), reroll),
+        h('div', { class: 'env-grid' }, ...cards), about,
+        mode !== 'sandbox' ? h('p', { class: 'muted small' }, 'El recuadro amarillo es tu terreno inicial; podrás comprar más alrededor.') : null, tut,
+        h('p', { class: 'muted small' }, mode === 'career' ? 'Empiezas con 150.000 € y un terreno pequeño. Cumple objetivos para desbloquear terrenos, competiciones y mejoras. Cuanto más relieve, más juego dan los circuitos y más cuesta allanar para construir.' : 'Dinero de sobra, todo el mapa comprado y todo desbloqueado. Sin objetivos ni bancarrota.')
+      ], [{ label: 'Empezar', primary: true, fn: () => this.newGame({ mode, preset: st.preset, seed: st.seed, parkName: name.value.trim() || nameDefault, tutorial: st.tut }) }, { label: 'Cancelar' }], { wide: true });
     },
     newGame(opts) {
       this.demo = false;
-      const g = MX.Game.create({ mode: opts.mode, preset: opts.preset, parkName: opts.parkName });
+      const g = MX.Game.create({ mode: opts.mode, preset: opts.preset, seed: opts.seed, parkName: opts.parkName });
       this.startGame(g);
       const cam = this.renderer.cam;
-      cam.tx = 160; cam.tz = 250; cam.zoom = cam.targetZoom = 7;
+      cam.tx = 160; cam.tz = 250; cam.ty = g.world.heightAt(160, 250); cam.zoom = cam.targetZoom = 7;
       if (opts.tutorial) this.tutorial.start(true);
       else if (opts.mode === 'career' && MX.Save.flag('tutorialDone') !== '1') this.hud.toast('Consejo: abre Circuitos para dibujar tu primer trazado', 'info');
     },
@@ -17688,12 +18238,12 @@ void main() {
     togglePause() { if (!this.game) return; if (this.game.speed) { this._prevSpeed = this.game.speed; this.game.speed = 0; } else this.game.speed = this._prevSpeed || 1; },
 
     /* ---------------- dialogs ---------------- */
-    modal(title, content, buttons) {
+    modal(title, content, buttons, opts) {
       const m = this.modalEl;
       clear(m);
       m.hidden = false;
       const close = () => { m.hidden = true; clear(m); };
-      const box = h('div', { class: 'modal-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      const box = h('div', { class: 'modal-box' + (opts && opts.wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
         h('div', { class: 'win-title' }, h('span', { class: 'win-t' }, title), h('span', { class: 'win-stripes' })),
         h('div', { class: 'modal-body' }, ...content),
         h('div', { class: 'modal-btns' }, ...(buttons || [{ label: 'Vale' }]).map(b => h('button', { class: 'btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : ''), onclick: () => { close(); if (b.fn) b.fn(); } }, b.label))));

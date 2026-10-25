@@ -655,6 +655,18 @@
       const i = Math.round(s / DS);
       return S.closed ? U.mod(i, S.n) : U.clamp(i, 0, S.n - 1);
     }
+    /* steepest stretch of the riding base (jumps aside) between samples i0 and i1, measured
+       like validate does: rise over 4 m */
+    steepest(i0, i1) {
+      const S = this.S;
+      let worst = 0, at = -1;
+      for (let i = Math.max(0, i0); i < Math.min(S.n, i1); i++) {
+        const a = this.sIndex((i - 2) * DS), b = this.sIndex((i + 2) * DS);
+        const sl = Math.abs(S.base[b] - S.base[a]) / (4 * DS);
+        if (sl > worst) { worst = sl; at = i; }
+      }
+      return { slope: worst, i: at };
+    }
     /* Interpolated pose at distance s and lateral offset lane (positive = left normal). */
     poseAt(s, lane, out) {
       const S = this.S;
@@ -857,6 +869,9 @@
       const why = this._probeTiles(world, tmp);
       if (why) return fail(why);
       if (this._probeOverlap(tmp, res.closes)) return fail('Choca con el propio circuito');
+      /* the track follows the ground: on a hillside the piece adds its own grade to the hill's */
+      const n = tmp.S.n, edge = Math.round(3 / DS), st = n > 2 * edge + 2 ? tmp.steepest(edge, n - edge) : { slope: 0 };
+      if (st.slope > C.MAX_SLOPE) return fail('Demasiado empinado (' + Math.round(st.slope * 100) + ' %): prueba otra pendiente u otra dirección, o allana la ladera');
       res.cost = this._probeCost(world, tmp);
       return res;
     }
@@ -977,7 +992,7 @@
         const sl = (S.base[b] - S.base[a]) / (4 * DS);
         if (Math.abs(sl) > C.MAX_SLOPE) { S.bad[i] = 1; if (slopeBad < 0) slopeBad = i; }
       }
-      if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado.' }, at(slopeBad)));
+      if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado: rodea la ladera, cambia la pendiente de esas piezas o allana el terreno.' }, at(slopeBad)));
       /* self overlap via spatial hash */
       const cell = 4, grid = new Map();
       for (let i = 0; i < S.n; i += 2) {
@@ -1215,6 +1230,24 @@
       }
       return true;
     };
+    /* how much the ground climbs and drops along a piece (the track follows it) */
+    const hill = (g) => {
+      const m = Math.max(2, Math.round(g.len / 3)), hs = [];
+      for (let k = 0; k <= m; k++) {
+        const t = k / m;
+        piecePoint(g, t, q);
+        piecePoint(g, t < 1 ? Math.min(1, t + 0.02) : 0.98, q2);
+        let dx = q2[0] - q[0], dz = q2[1] - q[1];
+        if (t >= 1) { dx = -dx; dz = -dz; }
+        const dl = Math.hypot(dx, dz) || 1, nx = -dz / dl, nz = dx / dl;
+        hs.push(Math.max(world.heightAt(q[0], q[1]), world.heightAt(q[0] + nx * hw, q[1] + nz * hw), world.heightAt(q[0] - nx * hw, q[1] - nz * hw)));
+      }
+      let up = 0, down = 0;
+      const step = g.len / m;
+      for (let k = 1; k < hs.length; k++) { const s = (hs[k] - hs[k - 1]) / step; if (s > up) up = s; if (s < down) down = s; }
+      return { up, down };
+    };
+    const hills = new Map();
     const OFF = 4, SZ = N + 1 + 2 * OFF;
     const pose = (x, z, h) => ((z + OFF) * SZ + (x + OFF)) * 8 + h;
     const key = (x, z, h, eh) => pose(x, z, h) * (EMAX + 1) + eh;
@@ -1268,7 +1301,11 @@
         let ok = clear.get(ck);
         if (ok === undefined) { ok = free(gg); clear.set(ck, ok); }
         if (!ok) continue;
+        let hl = hills.get(ck);
+        if (!hl) { hl = hill(gg); hills.set(ck, hl); }
         for (const sl of slopes) {
+          const gr = sl ? slopeDelta({ t: mv.t, slope: sl }, gg.len) / gg.len : 0;
+          if (hl.up + gr > C.MAX_SLOPE * 0.92 || hl.down + gr < -C.MAX_SLOPE * 0.92) continue;
           const ne = cur.e + (sl ? E2(slopeDelta({ t: mv.t, slope: sl }, gg.len)) : 0);
           if (ne < 0 || ne > EMAX || (cur.e > goalE && ne < goalE) || (cur.e < goalE && ne > goalE)) continue;
           const nk = key(gg.x1, gg.z1, gg.h1, ne);

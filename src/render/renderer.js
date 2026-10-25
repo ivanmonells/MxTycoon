@@ -132,7 +132,7 @@
       this.models = {};
       for (const k in lib) {
         const m = GLU.makeMeshVAO(gl, lib[k].data, lib[k].count);
-        GLU.attachInstancing(gl, m, k.startsWith('person') || k.startsWith('tree') ? 1400 : 400);
+        GLU.attachInstancing(gl, m, k.startsWith('person') || k.startsWith('tree') ? 1400 : k === 'bush' || k === 'rock' ? 1000 : 400);
         this.models[k] = m;
       }
       MX.BuildModels && MX.BuildModels.init && MX.BuildModels.init();
@@ -387,7 +387,7 @@
     }
     _buildScenery() {
       const world = this.game.world, gl = this.gl;
-      const trees = { tree_pine: [], tree_oak: [], tree_poplar: [], bush: [], rock: [] };
+      const trees = { tree_pine: [], tree_oak: [], tree_poplar: [], tree_fir: [], tree_palm: [], tree_cactus: [], bush: [], rock: [] };
       const mb = new MX.MeshBuilder(8192);
       for (const o of world.scenery.values()) {
         const x = o.tx * T + o.ox, z = o.tz * T + o.oz;
@@ -416,8 +416,11 @@
       const v = o.v || 0;
       const season = this.game ? this.game.seasonTint() : 0;
       if (k === 'rock') return [200 + v * 8, 198 + v * 6, 190 + v * 5, 255];
+      if (k === 'tree_cactus') return [[160, 200, 140], [170, 210, 150], [150, 190, 135], [180, 205, 140]][v % 4];
       const base = [[150, 200, 120], [170, 215, 120], [130, 185, 110], [190, 205, 115]][v % 4];
-      return [U.clamp(base[0] + season * 60, 0, 255), U.clamp(base[1] - season * 25, 0, 255), U.clamp(base[2] - season * 35, 0, 255), 255];
+      /* evergreens (firs and palms) hardly change with the seasons */
+      const sk = k === 'tree_fir' || k === 'tree_palm' ? 0.3 : 1;
+      return [U.clamp(base[0] + season * 60 * sk, 0, 255), U.clamp(base[1] - season * 25 * sk, 0, 255), U.clamp(base[2] - season * 35 * sk, 0, 255), 255];
     }
     _writeInst(m, i, x, y, z, yaw, pitch, roll, scale, flags, a, b, c, d) {
       const f = m.if32, u8 = m.iu8, o = i * (GLU.INST_BYTES / 4), ob = i * GLU.INST_BYTES + 32;

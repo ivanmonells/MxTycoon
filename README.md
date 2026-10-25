@@ -16,6 +16,8 @@ No necesita instalación ni servidor: abre `dist/mx-tycoon.html` en un navegador
 
 Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Continuar** (última partida guardada) y **Modo sandbox** (dinero y desbloqueos sin límite).
 
+Al empezar eliges el terreno, del más llano al más montañoso, con un mapa de cada uno: **Playa** (relieve 1, con el mar y las dunas), **Campo** (2, lomas, cultivos y estanques), **Desierto** (3, dunas, mesetas de roca y un oasis), **Colinas** (4, bosques y lagos) y **Montaña** (5, una ladera que sube hacia picos nevados). «Otro mapa» genera otro distinto de cada uno. Junto a la carretera el terreno siempre es suave para el aparcamiento, el paddock y la taquilla; tierra adentro, cuanto más relieve, más subidas y bajadas tienen los circuitos (y más valoración), pero más cuesta allanar para construir.
+
 ### Controles
 
 | Acción | Ratón y teclado | Táctil |
@@ -60,6 +62,8 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
 - `node tools/close-test.cjs` prueba el cierre de circuitos: llegar a la salida a otra altura, cerrar desde lejos, desde muy arriba y con el final encajonado.
 - `node tools/theme-test.cjs` prueba las temáticas de decoración: zonas temáticas, valoración, guardado y visitantes.
+- `node tools/env-test.cjs` genera los cinco terrenos con varias semillas y comprueba la carretera, las instalaciones junto a ella, el acceso de los pilotos, el relieve y un circuito cerrado con «Cerrar».
+- `node tools/terrain-preview.cjs <mapas.png>` dibuja desde arriba los cinco terrenos de varias semillas con sus cifras.
 - `node tools/shotpage.mjs "tools/decor.html?theme=all" <captura.png>` dibuja todas las piezas temáticas (o una temática: `theme=madmax`, `desert`, `surf`, `farm`, `mxgp`, `festival`).
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/phone.mjs <carpeta> 390 844` repite el recorrido con toques en un móvil simulado (prueba también `844 390` en horizontal).

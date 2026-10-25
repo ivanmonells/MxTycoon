@@ -144,6 +144,9 @@
     tree_pine: { name: 'Pino', cost: 300, scenery: 0.6, desc: 'Da sombra y ambiente.' },
     tree_oak: { name: 'Encina', cost: 350, scenery: 0.7, desc: 'Árbol frondoso.' },
     tree_poplar: { name: 'Chopo', cost: 280, scenery: 0.5, desc: 'Alto y esbelto.' },
+    tree_fir: { name: 'Abeto', cost: 320, scenery: 0.6, desc: 'Árbol de montaña, alto y oscuro.' },
+    tree_palm: { name: 'Palmera datilera', cost: 380, scenery: 0.7, desc: 'Sombra para la playa y el oasis.' },
+    tree_cactus: { name: 'Cactus', cost: 160, scenery: 0.4, desc: 'Aguanta el sol del desierto.' },
     bush: { name: 'Arbusto', cost: 120, scenery: 0.3, desc: 'Vegetación baja.' },
     flowers: { name: 'Parterre de flores', cost: 220, scenery: 0.6, desc: 'Color para los caminos.' },
     rock: { name: 'Roca', cost: 150, scenery: 0.2, desc: 'Decoración natural.' },
@@ -191,6 +194,14 @@
     fs_ferris: { theme: 'festival', name: 'Noria', cost: 8000, scenery: 2.8, h: 5, desc: 'Pequeña noria con vistas al circuito.' },
     fs_tent: { theme: 'festival', name: 'Carpa de feria', cost: 1200, scenery: 1.0, h: 4.2, desc: 'Carpa de rayas con banderín.' }
   };
+  /* starting environments, from the flattest to the most mountainous (relief 1 to 5) */
+  const environments = [
+    { id: 'playa', name: 'Playa', relief: 1, desc: 'Costa llana con playa, dunas y palmeras. El mar entra por el norte del terreno.' },
+    { id: 'campo', name: 'Campo', relief: 2, desc: 'Lomas suaves entre prados, campos de cultivo, encinas y estanques.' },
+    { id: 'desierto', name: 'Desierto', relief: 3, desc: 'Dunas, mesetas de roca, cactus y un oasis. Arena por todas partes.' },
+    { id: 'colinas', name: 'Colinas', relief: 4, desc: 'Colinas verdes con bosques y lagos: subidas y bajadas de verdad.' },
+    { id: 'montana', name: 'Montaña', relief: 5, desc: 'Una ladera que sube hacia picos nevados. Mucho desnivel y más obras.' }
+  ];
   /* the packs of the decoration window, in order */
   const decorThemes = [
     { id: 'basic', name: 'Básicos', desc: 'Naturaleza, seguridad y patrocinio.' },
@@ -608,7 +619,7 @@
   };
 
   MX.Catalog = {
-    buildings, decor, decorThemes, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
+    buildings, decor, decorThemes, environments, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
     bikes, vehicles, brands, brandsFor, bikeModel, bikeName, staff, staffOrder, events, eventOrder, research, marketing, sponsors, objectives,
     weather, names, thoughts,
     buildingCats: [

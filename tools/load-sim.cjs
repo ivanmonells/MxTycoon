@@ -5,7 +5,7 @@ const vm = require('vm');
 const SRC = path.join(__dirname, '..', 'src');
 const SIM_FILES = [
   'core/util.js', 'data/constants.js', 'data/catalog.js',
-  'sim/world.js', 'sim/track.js', 'sim/physics.js', 'sim/pathing.js', 'sim/economy.js',
+  'sim/world.js', 'sim/terrain.js', 'sim/track.js', 'sim/physics.js', 'sim/pathing.js', 'sim/economy.js',
   'sim/agents.js', 'sim/progression.js', 'sim/ambient.js', 'sim/competition.js', 'sim/game.js'
 ];
 function loadSim(extra) {

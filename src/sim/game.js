@@ -169,7 +169,7 @@
       const lv = w.footprintLevel(r.tx, r.tz, r.w, r.h);
       let mn = Infinity, mx = -Infinity;
       for (let vz = r.tz; vz <= r.tz + r.h; vz++) for (let vx = r.tx; vx <= r.tx + r.w; vx++) { const h = w.vh(vx, vz); mn = Math.min(mn, h); mx = Math.max(mx, h); }
-      if (mx - mn > 3.2) return { ok: false, reason: 'Terreno demasiado irregular', rect: r };
+      if (mx - mn > 4.8) return { ok: false, reason: 'Terreno demasiado irregular: allánalo un poco antes', rect: r };
       /* vertices shared with roads or other buildings stay put; the building keeps a plinth */
       lv.volume = 0;
       for (let vz = r.tz; vz <= r.tz + r.h; vz++) for (let vx = r.tx; vx <= r.tx + r.w; vx++) if (w.vertexEditable(vx, vz, 0xffff)) lv.volume += Math.abs(w.vh(vx, vz) - lv.target);

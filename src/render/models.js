@@ -662,6 +662,57 @@
     mb.blob(0.5, 0.35, 0.3, 0.55, 0.45, 0.55, MB.mulCol(c, 0.9), seed + 3);
     mb.setSlot(0);
   }
+  /* mountain fir: tall and narrow, in tiers */
+  function fir(mb, seed) {
+    const trunk = MB.rgba('#5a3d26');
+    mb.setSlot(0); mb.box(-0.16, 0, -0.16, 0.16, 1.2, 0.16, { col: trunk });
+    mb.setSlot(1);
+    const g = [0.42, 0.56, 0.5];
+    for (let k = 0; k < 5; k++) {
+      const y = 0.8 + k * 1.15, r = 1.45 - k * 0.24, f = 0.82 + k * 0.05;
+      mb.cone(0, y, 0, r, 1.9 - k * 0.12, 7, [g[0] * f, g[1] * f, g[2] * f, 1], 0.2);
+    }
+    mb.setSlot(0);
+    void seed;
+  }
+  /* date palm: a leaning ringed trunk and drooping fronds */
+  function palm(mb, seed) {
+    const bark = MB.rgba('#8a6a45');
+    mb.setSlot(0);
+    let px = 0, py = 0;
+    for (let k = 0; k < 6; k++) {
+      const nx = 0.05 * k * k * 0.25, ny = (k + 1) * 0.95;
+      limb(mb, [px, py, 0], [nx, ny, 0], 0.24 - k * 0.02, 0.22 - k * 0.02, MB.mulCol(bark, k % 2 ? 0.9 : 1), 6);
+      px = nx; py = ny;
+    }
+    mb.setSlot(1);
+    const leaf = [0.6, 0.8, 0.52, 1];
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * Math.PI * 2 + seed, ca = Math.cos(a), sa = Math.sin(a);
+      const mid = [px + ca * 1.1, py + 0.35, sa * 1.1], tip = [px + ca * 2.1, py - 0.7, sa * 2.1];
+      slab(mb, [px, py, 0], mid, 0.08, 0.02, 0.36, 0.02, MB.mulCol(leaf, i % 2 ? 0.9 : 1.05), [-sa, 0, ca]);
+      slab(mb, mid, tip, 0.36, 0.02, 0.06, 0.015, MB.mulCol(leaf, i % 2 ? 0.82 : 0.95), [-sa, 0, ca]);
+    }
+    mb.setSlot(0);
+    for (let i = 0; i < 4; i++) ellipsoid(mb, [px + Math.cos(i * 1.6) * 0.2, py - 0.25, Math.sin(i * 1.6) * 0.2], 0.12, 0.14, 0.12, MB.rgba('#b8742a'), 5, 3);
+  }
+  /* desert cactus with two arms */
+  function cactus(mb, seed) {
+    mb.setSlot(1);
+    const c = [0.62, 0.86, 0.52, 1];
+    limb(mb, [0, 0, 0], [0, 3.1, 0], 0.36, 0.3, c, 8);
+    ellipsoid(mb, [0, 3.1, 0], 0.27, 0.25, 0.27, c, 8, 4);
+    const arm = (y, s, out, up) => {
+      limb(mb, [0, y, 0], [0, y + 0.2, s * out], 0.2, 0.19, MB.mulCol(c, 0.95), 7);
+      ellipsoid(mb, [0, y + 0.2, s * out], 0.2, 0.2, 0.2, MB.mulCol(c, 0.95), 7, 4);
+      limb(mb, [0, y + 0.2, s * out], [0, y + 0.2 + up, s * out], 0.19, 0.16, MB.mulCol(c, 0.95), 7);
+      ellipsoid(mb, [0, y + 0.2 + up, s * out], 0.16, 0.15, 0.16, MB.mulCol(c, 0.95), 7, 4);
+    };
+    arm(1.2, -1, 0.65, 1.0);
+    arm(1.8, 1, 0.58, 0.85);
+    mb.setSlot(0);
+    void seed;
+  }
   function rock(mb, seed) {
     mb.setSlot(1);
     mb.blob(0, 0.35, 0, 0.9, 0.6, 0.75, [0.78, 0.76, 0.72, 1], seed, 0.3);
@@ -710,7 +761,7 @@
     add('tractor', car('tractor').toMesh());
     add('truck', car('truck').toMesh());
     add('quad', quad().toMesh());
-    const trees = { tree_pine: pine, tree_oak: oak, tree_poplar: poplar, bush, rock };
+    const trees = { tree_pine: pine, tree_oak: oak, tree_poplar: poplar, tree_fir: fir, tree_palm: palm, tree_cactus: cactus, bush, rock };
     for (const k in trees) { const mb = new MB(2048); trees[k](mb, k.length * 7); add(k, mb); }
     return lib;
   }
