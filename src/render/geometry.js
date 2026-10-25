@@ -66,13 +66,64 @@
     if (!S || S.n < 4) return null;
     const c = tr.chute && tr.chute.S ? tr.chute : null;
     const mb = new MB((S.n + (c ? c.S.n : 0)) * 40);
-    surface(mb, tr, world, opts, null);
+    /* crossings with itself and the other circuits: bridges over, tunnels under */
+    const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
+    surface(mb, tr, world, opts, null, xs.length ? crossingMarks(tr, xs) : null);
     /* the wide start straight, tucked just under the circuit where the two overlap */
-    if (c) surface(mb, c, world, opts, tr);
+    if (c) surface(mb, c, world, opts, tr, null);
+    for (const x of xs) if (x.L === tr) tunnel(mb, x, world);
     if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
   }
-  function surface(mb, tr, world, opts, parent) {
+  /* Samples of tr whose embankment becomes a wall (it is the bridge of a crossing, the
+     walls reaching far enough to keep the slopes off the path below) or is left out (it
+     goes under a bridge). */
+  function crossingMarks(tr, xs) {
+    const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = new Uint8Array(n);
+    const mark = (arr, i0, i1) => { for (let k = i0; k <= i1; k++) { const i = S.closed ? U.mod(k, n) : k; if (i >= 0 && i < n) arr[i] = 1; } };
+    for (const c of xs) {
+      if (c.U === tr) {
+        const h = Math.max(0, S.y[c.iu] - S.terr[c.iu]);
+        const m = Math.ceil((MX.Track.bankRun(h) / Math.tan(Math.max(c.ang, 0.4)) + 3) / C.TRACK_DS);
+        mark(wall, c.iu + c.u0 - m, c.iu + c.u1 + m);
+      }
+      if (c.L === tr) mark(tun, c.il + c.l0, c.il + c.l1);
+    }
+    return { wall, tun, xs: xs.filter(c => c.U === tr) };
+  }
+  const CONCRETE = [0.84, 0.83, 0.8, 1];
+  /* bottom of a bridge wall at an edge point: the deck where the path below goes through */
+  function wallFoot(marks, world, e) {
+    for (const c of marks.xs) {
+      const h = c.L.nearestS(e[0], e[2], c.il * C.TRACK_DS, 40);
+      if (h && Math.abs(h.lane) < c.L.S.w[h.i] * 0.5 + 0.6) return e[1] - MX.Track.DECK;
+    }
+    return Math.min(e[1], world.heightAt(e[0], e[2])) - 0.25;
+  }
+  function wallQuad(mb, a, b, ya, yb, mat, col) {
+    const a0 = [a[0], ya, a[2]], b0 = [b[0], yb, b[2]];
+    mb.quad4(a0, b0, b, a, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
+    mb.quad4(b0, a0, a, b, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
+  }
+  /* Tunnel walls along the lower path of crossing c, under the deck of the upper one. */
+  function tunnel(mb, c, world) {
+    const Lp = c.L, S = Lp.S, Up = c.U, n = S.n, DS = C.TRACK_DS, conc = L().concrete;
+    for (const side of [-1, 1]) {
+      let prev = null;
+      for (let k = c.il + c.l0 - 8; k <= c.il + c.l1 + 8; k += 2) {
+        const i = S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
+        const hdg = S.hdg[i], off = (S.w[i] * 0.5 + 0.5) * side;
+        const x = S.x[i] - Math.sin(hdg) * off, z = S.z[i] + Math.cos(hdg) * off;
+        const h = Up.nearestS(x, z, c.iu * DS, 40);
+        /* under the deck, and a step past its edge as a portal */
+        if (!h || Math.abs(h.lane) > Up.S.w[h.i] * 0.5 + 1) { prev = null; continue; }
+        const p = { x, z, top: Up.S.y[h.i] - MX.Track.DECK, foot: Math.min(S.y[i], world.heightAt(x, z)) - 0.3 };
+        if (prev) wallQuad(mb, [prev.x, prev.top, prev.z], [x, p.top, z], prev.foot, p.foot, conc, CONCRETE);
+        prev = p;
+      }
+    }
+  }
+  function surface(mb, tr, world, opts, parent, marks) {
     const S = tr.S;
     const step = 2;
     const n = S.n;
@@ -119,12 +170,29 @@
       for (const side of [-1, 1]) {
         const ea = side < 0 ? prev.pts[0] : prev.pts[last];
         const eb = side < 0 ? cur.pts[0] : cur.pts[last];
+        if (marks) {
+          const wa = marks.wall[prev.i], wb = marks.wall[cur.i];
+          /* a bridge: concrete walls instead of slopes, open where the path below passes */
+          if (wa || wb) {
+            wallQuad(mb, ea, eb, wallFoot(marks, world, ea), wallFoot(marks, world, eb), L().concrete, CONCRETE);
+            /* where the wall meets the slope, close the end of the slope */
+            if (wa !== wb) {
+              const e = wa ? eb : ea, cc = wa ? cur : prev, ox = cc.nx * side, oz = cc.nz * side;
+              const th = world.heightAt(e[0], e[2]), d = MX.Track.bankRun(Math.max(0, e[1] - th)) + 0.35;
+              const o = [e[0] + ox * d, world.heightAt(e[0] + ox * d, e[2] + oz * d) - 0.18, e[2] + oz * d], g = [e[0], Math.min(e[1], th) - 0.25, e[2]];
+              mb.tri(e, o, g, [[0, 0], [0.2, 0], [0, 0.2]], L().embank, col);
+              mb.tri(e, g, o, [[0, 0], [0, 0.2], [0.2, 0]], L().embank, col);
+            }
+            continue;
+          }
+          /* under a bridge the tunnel walls take its place */
+          if (marks.tun[prev.i] && marks.tun[cur.i]) continue;
+        }
         const rim = (e, c) => {
           const ox = c.nx * side, oz = c.nz * side;
           const r = [e[0] + ox * 0.35, e[1] - 0.06, e[2] + oz * 0.35];
           const th = world.heightAt(e[0], e[2]);
-          const diff = e[1] - th;
-          const d = Math.max(0.7, diff * 1.15 + 0.45);
+          const d = MX.Track.bankRun(Math.max(0, e[1] - th));
           const ox2 = e[0] + ox * (0.35 + d), oz2 = e[2] + oz * (0.35 + d);
           const o = [ox2, world.heightAt(ox2, oz2) - 0.18, oz2];
           return { r, o };

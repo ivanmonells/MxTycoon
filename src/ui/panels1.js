@@ -396,7 +396,7 @@
       /* near the start the «Cerrar» button lights up: it joins the loop by itself */
       const near = !!(e && o && !tr.closed && tr.pieces.length > 2 && Math.hypot(e.x - o.x, e.z - o.z) * C.TILE < 70 && !(pr && pr.ok && pr.closes));
       for (const b of document.querySelectorAll('#bld-auto')) b.classList.toggle('glow', near);
-      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + (pr.fix ? 'f' : '') + (near ? 'n' : '') + JSON.stringify(currentPiece()) : 'none';
+      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + (pr.fix ? 'f' : '') + (pr.cross || '') + (near ? 'n' : '') + JSON.stringify(currentPiece()) : 'none';
       if (preview._k === key) return;
       preview._k = key;
       clear(preview);
@@ -406,6 +406,7 @@
       preview.append(icon(pr.ok ? (pr.closes ? 'trophy' : 'check') : 'cross'),
         h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
           pr.ok && pr.fix ? h('em', { class: 'fix' }, 'Ajusto la pendiente para llegar a la salida a su altura') : null,
+          pr.ok && pr.cross ? h('em', { class: 'fix' }, pr.cross === 'over' ? 'Pasa por encima en un puente' : 'Pasa por debajo, por un túnel') : null,
           !pr.ok ? h('em', null, pr.reason) : null,
           near && pr.ok ? h('em', { class: 'fix' }, 'Estás cerca de la salida: pulsa «Cerrar» y lo uno yo') : null));
     };
@@ -461,7 +462,7 @@
 
   /* the wide start straight of motocross, supercross and minicross: which side of the first
      piece it runs along, or none (the riders then line up in rows on the circuit itself) */
-  const CHUTE_OPTS = [[1, 'Izquierda', 'Recta de salida ancha a la izquierda de la primera recta'], [-1, 'Derecha', 'Recta de salida ancha a la derecha de la primera recta'], [0, 'Sin recta ancha', 'Sin recta de salida: los pilotos salen en filas desde la propia pista']];
+  const CHUTE_OPTS = [[-1, 'Izquierda', 'Recta de salida ancha a la izquierda de la primera recta'], [1, 'Derecha', 'Recta de salida ancha a la derecha de la primera recta'], [0, 'Sin recta ancha', 'Sin recta de salida: los pilotos salen en filas desde la propia pista']];
   function chuteRow(el, tr) {
     if (!tr.pieces || !MX.Track.chuteWidth(tr.type)) return;
     const ui = app().trackUI, placed = !!tr.origin, editable = tr.state !== 'open';
@@ -532,6 +533,7 @@
       tr.type === 'enduro' ? statRow('Obstáculos', String(st.natural || 0)) : statRow('Saltos · rítmicos · peraltes', st.jumps + ' · ' + st.rhythm + ' · ' + st.berms),
       statRow('Curvas (cerradas)', st.corners + ' (' + st.tight + ')'),
       statRow('Desnivel', U.fmt1(st.elev) + ' m'),
+      ...(st.crossings ? [statRow('Cruces con túnel', String(st.crossings))] : []),
       statRow('Zonas de riesgo protegidas', Math.round(st.protectedRatio * 100) + '% de ' + st.hazards),
       ...(st.themes && st.themes.length ? [statRow('Zonas temáticas', st.themes.map(id => (Cat.decorThemes.find(t => t.id === id) || { name: id }).name).join(', '))] : []),
       statRow('Capacidad', st.capacity + ' pilotos a la vez'),

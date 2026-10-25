@@ -73,6 +73,7 @@
       g.parkId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
       g.rng = new U.RNG(g.seed ^ 0xabcdef);
       g.world = new MX.World(C.MAP);
+      g.world.trackList = g.tracks;
       g.world.generate(g.seed, opts.preset || 'valle');
       g.world.setupOwnership(g.mode);
       if (g.mode !== 'sandbox') g.world.setExpansionLevel(1);
@@ -539,6 +540,9 @@
       if (tr.closed) tr.validate(w);
       tr.stats = null; tr.statsTested = false;
       tr.ver++;
+      this.trackGeoVer = (this.trackGeoVer || 0) + 1;
+      /* the others may cross it: their bridges and tunnels change with it */
+      for (const o of this.tracks) if (o !== tr && o.closed && o.S) o.validate(w);
       this.fieldsDirty = true;
       this._openCache = null;
       MX.Bus.emit('track:changed', { track: tr });
@@ -604,7 +608,7 @@
       if (r.ok && pr.closes) { r.closes = true; r.adjusted = !!(pr.fix && (pr.fix.length > 1 || pr.fix[0].slope !== p.slope)); MX.Bus.emit('track:closed-loop', { track: tr }); }
       return r;
     }
-    /* move the start straight to a side of the first piece (1 left, -1 right, 0 none); auto: not the player's choice */
+    /* move the start straight to a side of the first piece (1 right, -1 left, 0 none); auto: not the player's choice */
     setChuteSide(tr, side, auto) {
       if (!tr.pieces || !tr.origin || !MX.Track.chuteWidth(tr.type)) return { ok: false, reason: 'Este circuito no tiene recta de salida' };
       if (tr.state === 'open') return { ok: false, reason: 'Cierra el circuito para modificarlo' };
@@ -802,6 +806,8 @@
       const back = Math.round(tr.state === 'building' ? Math.min(tr.paid, worth) : worth * 0.35);
       this.econ.refund('construccion', back);
       this.tracks = this.tracks.filter(t => t !== tr);
+      this.world.trackList = this.tracks;
+      this.trackGeoVer = (this.trackGeoVer || 0) + 1;
       if (this.selectedTrack === tr) this.selectedTrack = null;
       this._openCache = null; this.fieldsDirty = true;
       MX.Bus.emit('track:list');
@@ -929,8 +935,12 @@
       F.set('r_school', PF.bfs(N, srcOpen(['school']), rpass));
       F.set('r_depot', PF.bfs(N, srcOpen(['depot']), rpass));
       F.set('r_medical', PF.bfs(N, srcOpen(['medical']), rpass));
+      /* riders come onto each track where they can get to from the paddock */
+      const rp = F.get('r_paddock');
+      const reach = (e) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.inBounds(e.tx + dx, e.tz + dz) && rp.get(e.tx + dx, e.tz + dz) >= 0);
       for (const tr of this.tracks) {
         if (!tr.entry) continue;
+        if (tr.entries && tr.entries.length > 1 && !reach(tr.entry)) tr.entry = tr.entries.find(reach) || tr.entry;
         const e = tr.entry;
         F.set('r_entry_' + tr.id, PF.bfs(N, [w.idx(e.tx, e.tz)], (x, z, i) => rpass(x, z, i) || i === w.idx(e.tx, e.tz)));
       }
@@ -1763,6 +1773,7 @@
       g.rng = new U.RNG((g.seed ^ 0xabcdef) + Math.floor(g.time));
       A.setUid(d.uid || 1);
       g.world = MX.World.deserialize(d.world);
+      g.world.trackList = g.tracks;
       g.econ = MX.Economy.deserialize(d.econ);
       g.nextBld = d.nextBld || 1;
       for (const bd of d.buildings) {
@@ -1783,6 +1794,8 @@
         if (t.state !== 'building' && t.closed) MX.TrackAnalyzer.analyze(t, g.world, g);
         g.tracks.push(t);
       }
+      /* crossings with circuits loaded after them */
+      if (g.tracks.length > 1) for (const t of g.tracks) if (t.closed) t.validate(g.world);
       for (const sd of d.staff) {
         const s = new A.Staff(g, g.rng, sd.role, { name: sd.name, skill: sd.skill, salary: sd.salary, x: sd.x, z: sd.z, tx: sd.tx, tz: sd.tz, day: sd.hired });
         if (sd.cols) s.cols = sd.cols;

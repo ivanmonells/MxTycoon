@@ -2915,8 +2915,11 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   const unitLen = (h) => (h & 1 ? Math.SQRT2 : 1) * LAT;
   const KAPPA = 0.64;                          // cubic control length for a 45 degree arc
   const GRADE = [-0.2, -0.1, 0, 0.1, 0.2];     // by slope class -2..2
-  const ELEV_MAX = 8;
+  const ELEV_MAX = 12;
   const START_LEN = 36, START_GATE = 15;       // gate 15 m into the start straight: grid behind it
+  /* motocross start straight: as wide as the gate (m) for the disciplines that start
+     from a gate; it runs at an angle beside the first straight and joins it */
+  const CHUTE_W = { mx: 22, sx: 18, kids: 11 };
   /* minicross circuits use a shorter start straight (its length rides on the piece as sl) */
   const startLenFor = (type) => type === 'kids' ? 24 : START_LEN;
   const gateOff = (p) => Math.min(START_GATE, (p.sl || START_LEN) * 0.42);
@@ -2985,7 +2988,117 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
   }
 
-  let TRACK_UID = 1;
+  /* ---------- crossings ----------
+     A stretch of circuit may pass over another circuit, or over itself, if it runs at
+     least CLEAR metres higher and crosses at a fair angle: the upper one becomes a bridge
+     between walls and the lower one goes through underneath, as through a tunnel. */
+  const CLEAR = 4.5, CROSS_ANGLE = Math.PI / 6, DECK = 0.8;
+  /* jumps and rhythm sections throw riders into the air: not under a bridge */
+  const AIR_KINDS = new Set(['table', 'double', 'triple', 'stepup', 'rhythm', 'bumps']);
+  /* horizontal run of an embankment h metres high (steeper when tall) */
+  const bankRun = (h) => h <= 3 ? Math.max(0.7, h * 1.15 + 0.45) : 3.9 + (h - 3) * 0.6;
+  /* signed shortest difference between sample indices a and b on a path of n samples */
+  const idxDiff = (a, b, n, closed) => { let d = a - b; if (closed) { d = U.mod(d, n); if (d > n / 2) d -= n; } return d; };
+
+  /* Where path A meets path B (B === A: a circuit with itself). skip(i, j) leaves out the
+     sample pairs that are meant to touch (a circuit's own joints). Each meeting:
+     {ok, why: 'height' | 'angle', U, L: the upper and lower path, iu, il: their closest
+      samples, u0..u1, l0..l1: sample offsets from them where the two overlap, x, z, ang,
+      R: radius around (x, z) where their embankments may share ground} */
+  function crossingsOf(A, B, skip, clear) {
+    const SA = A.S, SB = B.S;
+    if (!SA || !SB) return [];
+    clear = clear || CLEAR;
+    const cell = 6, grid = new Map();
+    for (let j = 0; j < SB.n; j += 2) {
+      const k = Math.floor(SB.x[j] / cell) * 4096 + Math.floor(SB.z[j] / cell);
+      let l = grid.get(k);
+      if (!l) grid.set(k, l = []);
+      l.push(j);
+    }
+    const groups = [];
+    for (let i = 0; i < SA.n; i += 2) {
+      const cx = Math.floor(SA.x[i] / cell), cz = Math.floor(SA.z[i] / cell), reach = Math.ceil(((SA.w[i] + 14) * 0.5 + 0.8) / cell);
+      for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
+        const l = grid.get((cx + dx) * 4096 + cz + dz);
+        if (!l) continue;
+        for (const j of l) {
+          if (skip && skip(i, j)) continue;
+          const minD = (SA.w[i] + SB.w[j]) * 0.5 + 0.8, d2 = U.dist2(SA.x[i], SA.z[i], SB.x[j], SB.z[j]);
+          if (d2 >= minD * minD) continue;
+          /* pairs a few metres apart on both paths belong to the same meeting */
+          let q = null, di = 0, dj = 0;
+          for (const g of groups) {
+            di = idxDiff(i, g.i, SA.n, SA.closed); dj = idxDiff(j, g.j, SB.n, SB.closed);
+            if (di >= g.a0 - 12 && di <= g.a1 + 12 && dj >= g.b0 - 12 && dj <= g.b1 + 12) { q = g; break; }
+          }
+          if (!q) { groups.push(q = { i, j, a0: 0, a1: 0, b0: 0, b1: 0, dyMin: Infinity, dyMax: -Infinity, best: Infinity, ic: i, jc: j }); di = 0; dj = 0; }
+          q.a0 = Math.min(q.a0, di); q.a1 = Math.max(q.a1, di); q.b0 = Math.min(q.b0, dj); q.b1 = Math.max(q.b1, dj);
+          const dy = SA.y[i] - SB.y[j];
+          q.dyMin = Math.min(q.dyMin, dy); q.dyMax = Math.max(q.dyMax, dy);
+          if (d2 < q.best) { q.best = d2; q.ic = i; q.jc = j; }
+        }
+      }
+    }
+    /* a circuit with itself finds every meeting twice, once from each stretch: keep the
+       one seen from the upper stretch (either one when they clash) */
+    const keep = A !== B ? groups : groups.filter(q => q.dyMin >= clear || (q.dyMax > -clear && q.ic < q.jc));
+    return keep.map((q) => {
+      const aUp = q.dyMin >= clear, bUp = !aUp && q.dyMax <= -clear;
+      let ang = Math.abs(U.wrapAngle(SA.hdg[q.ic] - SB.hdg[q.jc]));
+      if (ang > Math.PI / 2) ang = Math.PI - ang;
+      const why = !(aUp || bUp) ? 'height' : ang < CROSS_ANGLE ? 'angle' : '';
+      const dic = idxDiff(q.ic, q.i, SA.n, SA.closed), djc = idxDiff(q.jc, q.j, SB.n, SB.closed);
+      const ra = [q.a0 - dic, q.a1 - dic], rb = [q.b0 - djc, q.b1 - djc];
+      const Up = bUp ? B : A, Lo = bUp ? A : B, iu = bUp ? q.jc : q.ic, il = bUp ? q.ic : q.jc;
+      const ru = bUp ? rb : ra, rl = bUp ? ra : rb;
+      const SU = Up.S, SL = Lo.S;
+      const hU = Math.max(0, SU.y[iu] - SU.terr[iu]), hL = Math.max(0, SL.y[il] - SL.terr[il]);
+      const R = (SU.w[iu] * 0.5 + bankRun(hU) + SL.w[il] * 0.5 + bankRun(hL) + 2) / Math.max(0.5, Math.sin(ang));
+      return {
+        ok: !why, why, U: Up, L: Lo, iu, il, u0: ru[0], u1: ru[1], l0: rl[0], l1: rl[1],
+        x: (SA.x[q.ic] + SB.x[q.jc]) / 2, z: (SA.z[q.ic] + SB.z[q.jc]) / 2, ang, R, dy: bUp ? -q.dyMax : q.dyMin
+      };
+    });
+  }
+  /* the lower path's jump or rhythm section under (or flying into) a bridge, if any */
+  function tunnelClash(c) {
+    const L = c.L, Ln = L.length, a = (c.il + c.l0) * DS - 16, b = (c.il + c.l1) * DS + 3;
+    for (const f of L.features) {
+      const d = Cat.features[f.type];
+      if (!d || !AIR_KINDS.has(d.kind)) continue;
+      const fs = f.s, fe = f.s + (f.len || 0);
+      for (const k of L.S && L.S.closed ? [-Ln, 0, Ln] : [0]) if (a < fe + k && fs + k < b) return f;
+    }
+    return null;
+  }
+  /* a circuit with itself: stretches close along the track are joined, not crossing */
+  const selfSkip = (S) => (i, j) => {
+    let arc = Math.abs(j - i) * DS;
+    if (S.closed) arc = Math.min(arc, S.L - arc);
+    return arc < ((S.w[i] + S.w[j]) * 0.5 + 0.8) * 2.2 + 4;
+  };
+  const XCACHE = new Map();
+  /* valid crossings of a circuit with itself and with the others, cached by version */
+  function crossingsFor(tr, tracks) {
+    const out = [];
+    if (!tr.S) return out;
+    for (const o of tracks) {
+      if (!o.S || o.isChute) continue;
+      const a = tr.inst < o.inst ? tr : o, b = a === tr ? o : tr;
+      const key = a.inst + ':' + a.ver + '|' + b.inst + ':' + b.ver;
+      let list = XCACHE.get(key);
+      if (!list) {
+        list = a === b ? crossingsOf(a, a, selfSkip(a.S), CLEAR - 0.25) : crossingsOf(a, b, null, CLEAR - 0.25);
+        if (XCACHE.size > 300) XCACHE.clear();
+        XCACHE.set(key, list);
+      }
+      for (const c of list) if (c.ok) out.push(c);
+    }
+    return out;
+  }
+
+  let TRACK_UID = 1, INSTANCE = 0;
 
   class Track {
     constructor(id, name) {
@@ -2997,6 +3110,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.pieces = null;     // piece-built circuits: [{t, n | k, dir, slope, bank, f, w, surf}]
       this.origin = null;     // lattice start pose {x, z, h}
       this.e0 = 0;            // elevation at the origin (construction probes start mid-air)
+      this.chuteSide = 0;     // side of the start straight beside the first piece (1 right, -1 left as the riders see it, 0 none)
+      this.chuteSet = false;  // chosen by the player (otherwise it moves to the outside of the first bend)
+      this.chute = null;      // its geometry as an open scratch track (see _buildChute)
       this.endPose = null;    // lattice pose after the last piece
       this.closed = false;
       this.features = [];     // {uid, type, s, len, ax, az, side}
@@ -3020,6 +3136,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.entry = null;
       this.crashMarks = [];
       this.type = 'mx';       // discipline: a key of Catalog.trackTypes
+      this.inst = ++INSTANCE; // unique per object (ids repeat when a save is loaded again)
     }
     get bit() { return 1 << this.slot; }
     get typeDef() { return Cat.trackTypes[this.type] || Cat.trackTypes.mx; }
@@ -3234,8 +3351,117 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       /* lips and jump tables */
       this._buildLips();
       this.wear = new Float32Array(Math.max(1, Math.ceil(this.length / 5)));
+      if (!this.isChute) this._buildChute(world);
       this._computeEntry(world);
       if (this.pieces) for (const f of this.features) { const i = this.sIndex(f.s); f.ax = S.x[i]; f.az = S.z[i]; }
+    }
+
+    /* ---------- motocross start straight ----------
+       Race riders line up at a gate as wide as the field, ride a start straight that
+       comes in at an angle beside the first piece and join the circuit near its end;
+       laps never come back through it. Frame: u along the first piece from the origin,
+       v towards the start straight's side. */
+    chuteFrame() {
+      const W = CHUTE_W[this.type], p0 = this.pieces && this.pieces[0];
+      if (!W || !this.chuteSide || !this.origin || !p0 || p0.t !== 'start') return null;
+      const o = this.origin, d = DIRV[o.h], dl = Math.hypot(d[0], d[1]), dx = d[0] / dl, dz = d[1] / dl;
+      const sl = p0.sl || START_LEN, w0 = p0.w || 8;
+      /* gate behind the origin, level with the run-in to the start; a parallel stretch,
+         then an S bend that narrows into the first piece two metres before its end */
+      const uG = -Math.round(sl * 0.4), vg = w0 / 2 + 3.5 + W / 2, uP = -2, uM = sl - 2;
+      return { ox: o.x * LAT, oz: o.z * LAT, dx, dz, nx: -dz * this.chuteSide, nz: dx * this.chuteSide, W, w0, sl, uG, vg, uP, uM };
+    }
+    _buildChute(world) {
+      this.chute = null;
+      const F = this.chuteFrame();
+      if (!F || !this.S) return;
+      const c = new Track(-1000 - Math.abs(this.id), 'Recta de salida');
+      c.type = this.type; c.slot = this.slot; c.isChute = true; c.parent = this; c.frame = F;
+      const surf = this.pieces[0].surf || 'dirt', e0 = this.e0 || 0;
+      const world2 = (u, v) => [F.ox + F.dx * u + F.nx * v, F.oz + F.dz * u + F.nz * v];
+      const k = (F.uM - F.uP) * 0.42;
+      const P = [[F.uP, F.vg], [F.uP + k, F.vg], [F.uM - k, 0], [F.uM, 0]];
+      const bez = (t) => {
+        const a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, cc = 3 * (1 - t) * t * t, d = t ** 3;
+        return [a * P[0][0] + b * P[1][0] + cc * P[2][0] + d * P[3][0], a * P[0][1] + b * P[1][1] + cc * P[2][1] + d * P[3][1]];
+      };
+      /* [u, v, narrowing 0..1]: pad behind the gate, the parallel stretch, the bend, and a
+         few metres on the circuit so the riders arrive lined up with it */
+      const pts = [];
+      for (let u = F.uG - 7; u < F.uP; u += 3) pts.push([u, F.vg, 0]);
+      for (let i = 0; i <= 16; i++) { const t = i / 16; pts.push(bez(t).concat([U.smoothstep(0.12, 0.9, t)])); }
+      for (const ahead of [3, 6]) pts.push([F.uM + ahead, 0, 1]);
+      for (const [u, v, q] of pts) {
+        const [x, z] = world2(u, v);
+        c.nodes.push({ x, z, w: U.lerp(F.W, F.w0, q), surf, elev: e0 });
+      }
+      c.closed = false;
+      c.moisture = this.moisture;
+      c.rebuild(world);
+      if (!c.S) return;
+      const near = (u, v) => { const [x, z] = world2(u, v); return c.nearestS(x, z); };
+      c.gateS = near(F.uG, F.vg).s;
+      c.mergeAt = near(F.uM, 0).s;
+      c.joinS = F.uM;
+      /* where it meets the circuit its surface ramps to the circuit's level, gentler the bigger the step */
+      const CS = c.S, M = this.S, R = new Float32Array(CS.n);
+      for (let j = 0; j < CS.n; j++) {
+        const u = (CS.x[j] - F.ox) * F.dx + (CS.z[j] - F.oz) * F.dz;
+        R[j] = U.clamp(Math.abs(M.y[this.sIndex(Math.max(0, u))] - CS.y[j]) * 4, 3, 10);
+      }
+      boxSmooth(R, Math.round(4 / DS), false);
+      c.rampW = R;
+      c.bankAt = chuteBank;
+      this.chute = c;
+      c.joinU = null;
+      c.joinU = this.chuteJoinU();
+    }
+    /* lateral position (v) of a world point in the start straight's frame */
+    chuteV(x, z) { const F = this.chute && this.chute.frame; return F ? (x - F.ox) * F.nx + (z - F.oz) * F.nz : 0; }
+    chuteU(x, z) { const F = this.chute && this.chute.frame; return F ? (x - F.ox) * F.dx + (z - F.oz) * F.dz : 0; }
+    /* where the start straight already overlaps the circuit, along the first piece */
+    /* first sample of path T (i0..i1) that runs into the start straight, -1 if none;
+       skip(i) leaves out the samples where the two are meant to meet */
+    chuteClash(T, i0, i1, skip) {
+      const c = this.chute;
+      if (!c) return -1;
+      const CS = c.S, joinU = this.chuteJoinU();
+      for (let i = i0; i < i1; i += 2) {
+        if (skip && skip(i)) continue;
+        for (let j = 0; j < CS.n; j += 2) {
+          if (this.chuteU(CS.x[j], CS.z[j]) > joinU) break;
+          const minD = (T.w[i] + CS.w[j]) * 0.5 + 0.6;
+          if (U.dist2(T.x[i], T.z[i], CS.x[j], CS.z[j]) < minD * minD) return i;
+        }
+      }
+      return -1;
+    }
+    chuteJoinU() {
+      const c = this.chute;
+      if (!c) return null;
+      if (c.joinU != null) return c.joinU;
+      const F = c.frame, S = c.S;
+      for (let i = 0; i < S.n; i++) {
+        const v = this.chuteV(S.x[i], S.z[i]), hdg = S.hdg[i];
+        const inner = v - S.w[i] * 0.5 * Math.abs(Math.cos(hdg - Math.atan2(F.dz, F.dx)));
+        if (inner < F.w0 / 2 + 0.6) return this.chuteU(S.x[i], S.z[i]);
+      }
+      return F.uM;
+    }
+
+    /* where the edge markers leave an opening: around the start gate, and where the start
+       straight meets the circuit (side 1 right, -1 left of the direction of travel) */
+    edgeOpen(i, side) {
+      const S = this.S, s = i * DS;
+      if (this.isChute) {
+        if (Math.abs(s - this.gateS) < 1.2 || s > this.mergeAt) return true;
+        /* the inner edge stops where it runs into the circuit */
+        const hdg = S.hdg[i], hw = S.w[i] * 0.5, P = this.parent;
+        const v = P.chuteV(S.x[i] - Math.sin(hdg) * hw * side, S.z[i] + Math.cos(hdg) * hw * side);
+        return v < P.chuteV(S.x[i], S.z[i]) && v < this.frame.w0 / 2 + 1;
+      }
+      if (this.chute) return side === this.chuteSide && s > this.chute.joinU - 1.5 && s < this.chute.frame.uM - 0.5;
+      return S.feat[i] >= 0 && Cat.features[this.features[S.feat[i]].type].kind === 'start';
     }
 
     _placeFeatureSamples(S) {
@@ -3369,34 +3595,45 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       return { vRollMax, options, res, maxAir: big ? big.air : 0, req: big ? big.req : 0 };
     }
 
+    /* Where practice riders come onto the track: beside the start, on the outside of the
+       loop. entries keeps the alternatives (the outside first) for the game to pick one
+       riders can reach from the paddock (see Game#rebuildFields). */
     _computeEntry(world) {
       const S = this.S;
-      this.entry = null;
+      this.entry = null; this.entries = [];
       if (!S) return;
       const st = this.features.find(f => f.type === 'start') || this.features.find(f => f.type === 'finish');
       let s = st ? st.s + (st.type === 'start' ? 2 : 0) : 0;
-      let i = S.closed ? U.mod(Math.round(s / DS), S.n) : U.clamp(Math.round(s / DS), 0, S.n - 1);
-      const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+      /* with a wide start straight beside the first piece, riders come in just after it joins */
+      const c = this.chute;
+      const spots = c && S.closed ? [0, 4, 8, 12, 16, 20, 26, 32, 40, 50].map(d => c.joinS + 10 + d) : [s, s + 8, s + 16, s + 24, s + 36];
       /* prefer the outer side of the loop (away from the centroid) so the entry is reachable */
       let mx = 0, mz = 0;
       for (let k = 0; k < S.n; k += 8) { mx += S.x[k]; mz += S.z[k]; }
       const cnt = Math.ceil(S.n / 8); mx /= cnt; mz /= cnt;
-      const outer = ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
-      let best = null;
-      for (const side of [outer, -outer]) {
+      const clearOfChute = (x, z) => {
+        if (!c) return true;
+        const CS = c.S;
+        for (let j = 0; j < CS.n; j += 4) if (U.dist2(x, z, CS.x[j], CS.z[j]) < (CS.w[j] * 0.5 + 3) ** 2) return false;
+        return true;
+      };
+      for (const inside of [false, true]) for (const s0 of spots) {
+        const i = S.closed ? U.mod(Math.round(s0 / DS), S.n) : U.clamp(Math.round(s0 / DS), 0, S.n - 1);
+        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+        const outer = ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
+        const side = inside ? -outer : outer;
         for (const extra of [3.5, 5.5, 8]) {
           const off = S.w[i] * 0.5 + extra;
           const x = S.x[i] + nx * off * side, z = S.z[i] + nz * off * side;
           const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
           if (!world.inBounds(tx, tz)) continue;
           const id = world.idx(tx, tz);
-          if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit)) continue;
-          if (!best) best = { x, z, tx, tz, s: i * DS, side, i };
+          if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit) || !clearOfChute(x, z)) continue;
+          this.entries.push({ x, z, tx, tz, s: i * DS, side, i });
           break;
         }
-        if (best) break;
       }
-      this.entry = best;
+      this.entry = this.entries[0] || null;
     }
 
     /* ---------- queries ---------- */
@@ -3517,6 +3754,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
             return { ok: false, reason: d.kind === 'start' ? 'La parrilla necesita una recta larga' : 'Este elemento debe ir en una recta', s0, len };
         }
       }
+      /* nothing that jumps under a bridge */
+      if (AIR_KINDS.has(d.kind) && this.tunnels) for (const [a, b] of this.tunnels) if (this._overlap(s0, len, a, b - a)) return { ok: false, reason: 'Debajo de un puente no caben saltos ni secciones rítmicas', s0, len };
       /* overlap with other features */
       for (const f of this.features) {
         if (f.uid === ignoreUid) continue;
@@ -3582,14 +3821,21 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       return this.S.seg[this.sIndex(s)];
     }
     /* Try the start straight at lattice (x, z) facing h without building it. */
-    probeStart(world, x, z, h, w, surf) {
-      const tmp = Track.probeTrack(x, z, h, 0, Track.startPiece(this.type, w, surf), this.slot, this.type);
-      tmp.rebuild(world);
-      const res = { ok: true, tmp, g: tmp.pieces[0]._g, cost: 0, reason: '' };
-      const why = this._probeTiles(world, tmp);
-      if (why) { res.ok = false; res.reason = why; }
-      else if (!Track.roomBehind(world, x, z, h, w, this.bit)) res.warn = 'Deja sitio detrás: el circuito tiene que volver a la salida por ahí';
-      res.cost = this._probeCost(world, tmp);
+    /* side: where the start straight goes (1 right, -1 left, 0 none); without it the side that fits */
+    probeStart(world, x, z, h, w, surf, side) {
+      const sides = !CHUTE_W[this.type] ? [0] : side != null ? [side] : [1, -1];
+      let res = null;
+      for (const cs of sides) {
+        const tmp = Track.probeTrack(x, z, h, 0, Track.startPiece(this.type, w, surf), this.slot, this.type, cs);
+        tmp.rebuild(world);
+        const r = { ok: true, tmp, g: tmp.pieces[0]._g, cost: 0, reason: '', chuteSide: cs };
+        const why = this._probeTiles(world, tmp);
+        if (why) { r.ok = false; r.reason = cs ? why + ' (contando la recta de salida)' : why; }
+        else if (!Track.roomBehind(world, x, z, h, w, this.bit)) r.warn = 'Deja sitio detrás: el circuito tiene que volver a la salida por ahí';
+        r.cost = this._probeCost(world, tmp);
+        if (!res || (r.ok && !res.ok)) res = r;
+        if (r.ok) break;
+      }
       return res;
     }
     /* Try the next piece without building it: geometry, cost and the first problem found. */
@@ -3619,11 +3865,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       const why = this._probeTiles(world, tmp);
       if (why) return fail(why);
-      if (this._probeOverlap(tmp, res.closes)) return fail('Choca con el propio circuito');
+      const over = this._probeOverlap(tmp, res.closes);
+      if (over) return fail(over);
+      if (this.chuteClash(tmp.S, 0, tmp.S.n, res.closes ? (i) => i * DS > tmp.length - 8 : null) >= 0) return fail('Choca con la recta de salida: llévalo por el otro lado o cambia la salida de lado');
       /* the track follows the ground: on a hillside the piece adds its own grade to the hill's */
       const n = tmp.S.n, edge = Math.round(3 / DS), st = n > 2 * edge + 2 ? tmp.steepest(edge, n - edge) : { slope: 0 };
       if (st.slope > C.MAX_SLOPE) return fail('Demasiado empinado (' + Math.round(st.slope * 100) + ' %): prueba otra pendiente u otra dirección, o allana la ladera');
       res.cost = this._probeCost(world, tmp);
+      res.cross = tmp.crossNote || null;
       return res;
     }
     _probeTiles(world, tmp) {
@@ -3634,6 +3883,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       tmp.computeFootprint(world);
       let r = null;
+      const shared = [];
       for (const t of tmp.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         if (world.owned[t] !== 1) return 'Fuera de tu terreno';
@@ -3641,26 +3891,56 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
         else if (world.path[t]) r = 'Hay un camino o una carretera en medio';
         else if (world.isWater(tx, tz)) r = 'No se puede construir sobre el agua';
-        else if (world.trackOcc[t] & ~this.bit) r = 'Choca con otro circuito';
+        else if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
-      return r;
+      if (r || !shared.length) return r;
+      const x = this._crossOthers(world, tmp, shared, CLEAR);
+      return x ? x.reason : null;
     }
+    /* Ground shared with other circuits (tiles) is fine only around a crossing over or
+       under them; path is this circuit or a piece of it. The first problem {reason, t}. */
+    _crossOthers(world, path, tiles, clear) {
+      const list = world.trackList || [], cache = new Map();
+      for (const t of tiles) {
+        let bits = world.trackOcc[t] & ~this.bit;
+        const x = (t % world.N + 0.5) * C.TILE, z = (((t / world.N) | 0) + 0.5) * C.TILE;
+        /* a start straight has no bridges */
+        if (path.isChute) return { reason: 'Choca con otro circuito', t };
+        for (const o of list) {
+          if (o === this || !(bits & o.bit)) continue;
+          bits &= ~o.bit;
+          if (!o.S) return { reason: 'Choca con otro circuito', t };
+          if (!cache.has(o)) cache.set(o, crossingsOf(path, o, null, clear));
+          const xs = cache.get(o);
+          const bad = xs.find(c => !c.ok);
+          if (bad) return { reason: bad.why === 'height' ? 'Choca con otro circuito: para cruzarlo por encima o por debajo hace falta ' + U.fmt1(CLEAR) + ' m de diferencia de altura' : 'Choca con otro circuito: crúzalo en ángulo, no en paralelo', t };
+          if (xs.some(c => tunnelClash(c))) return { reason: 'Debajo del puente no caben saltos ni secciones rítmicas: los pilotos chocarían con él', t };
+          if (!xs.some(c => U.dist2(x, z, c.x, c.z) < c.R * c.R)) return { reason: 'Choca con otro circuito', t };
+          if (path !== this) for (const c of xs) path.crossNote = c.U === path ? 'over' : 'under';
+        }
+        if (bits) return { reason: 'Choca con otro circuito', t };
+      }
+      return null;
+    }
+    /* the next piece against the circuit so far: crossing over or under it is fine with
+       enough height and angle, and nothing that jumps under a bridge (reason or null) */
     _probeOverlap(tmp, closes) {
       const S = this.S, T2 = tmp.S;
-      if (!S) return false;
+      if (!S) return null;
       const L = this.length, Ln = tmp.length;
-      for (let i = 0; i < T2.n; i += 2) {
-        const sn = i * DS;
-        for (let j = 0; j < S.n; j += 2) {
-          const sj = j * DS;
-          const minD = (T2.w[i] + S.w[j]) * 0.5 + 0.8;
-          let arc = (L - sj) + sn;
-          if (closes) arc = Math.min(arc, (Ln - sn) + sj);
-          if (arc < minD * 2.2 + 4) continue;
-          if (U.dist2(T2.x[i], T2.z[i], S.x[j], S.z[j]) < minD * minD) return true;
-        }
+      const skip = (i, j) => {
+        const sn = i * DS, sj = j * DS, minD = (T2.w[i] + S.w[j]) * 0.5 + 0.8;
+        let arc = (L - sj) + sn;
+        if (closes) arc = Math.min(arc, (Ln - sn) + sj);
+        return arc < minD * 2.2 + 4;
+      };
+      for (const c of crossingsOf(tmp, this, skip, CLEAR)) {
+        if (c.why === 'height') return 'Choca con el propio circuito: para pasar por encima o por debajo hace falta ' + U.fmt1(CLEAR) + ' m de diferencia de altura';
+        if (c.why) return 'Choca con el propio circuito: crúzalo en ángulo, no en paralelo';
+        if (tunnelClash(c)) return 'Debajo del puente no caben saltos ni secciones rítmicas: los pilotos chocarían con él';
+        tmp.crossNote = c.U === tmp ? 'over' : 'under';
       }
-      return false;
+      return null;
     }
     _probeCost(world, tmp) {
       if (!tmp.tiles.length) tmp.computeFootprint(world);
@@ -3677,20 +3957,26 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const S = this.S;
       const set = new Set();
       if (!S) { this.tiles = []; return this.tiles; }
-      for (let i = 0; i < S.n; i += 2) {
-        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
-        const hw = S.w[i] * 0.5;
-        for (const side of [-1, 1]) {
-          const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
-          const eh = S.y[i] + this.bankAt(i, hw * side) - world.heightAt(ex, ez);
-          const ext = 0.9 + U.clamp(eh * 1.25, 0, 7);
-          for (let o = 0; o <= hw + ext; o += 0.9) {
-            const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
-            const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
-            if (tx >= 0 && tz >= 0 && tx < world.N && tz < world.N) set.add(tx + tz * world.N);
+      const add = (t) => {
+        const S = t.S;
+        for (let i = 0; i < S.n; i += 2) {
+          const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+          const hw = S.w[i] * 0.5;
+          for (const side of [-1, 1]) {
+            const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
+            const eh = S.y[i] + t.bankAt(i, hw * side) - world.heightAt(ex, ez);
+            /* as wide as ever for the heights old saves use, wider only for the new tall ones */
+            const ext = Math.max(0.9 + U.clamp(eh * 1.25, 0, 7), 0.35 + bankRun(Math.max(0, eh)));
+            for (let o = 0; o <= hw + ext; o += 0.9) {
+              const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
+              const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
+              if (tx >= 0 && tz >= 0 && tx < world.N && tz < world.N) set.add(tx + tz * world.N);
+            }
           }
         }
-      }
+      };
+      add(this);
+      if (this.chute) add(this.chute);
       this.tiles = Array.from(set);
       return this.tiles;
     }
@@ -3711,6 +3997,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         const sd = Cat.surfaces[Cat.surfaceOrder[S.surf[i]]];
         c += DS * sd.cost * (S.w[i] / 8) + DS * S.w[i] * Math.max(0, S.elev[i]) * 6;
       }
+      /* the start straight is flat graded dirt: half the price of shaped track */
+      if (this.chute) c += this.chute.geometryCost() * 0.5;
       return Math.round(c);
     }
     featureCost() {
@@ -3744,45 +4032,40 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (Math.abs(sl) > C.MAX_SLOPE) { S.bad[i] = 1; if (slopeBad < 0) slopeBad = i; }
       }
       if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado: rodea la ladera, cambia la pendiente de esas piezas o allana el terreno.' }, at(slopeBad)));
-      /* self overlap via spatial hash */
-      const cell = 4, grid = new Map();
-      for (let i = 0; i < S.n; i += 2) {
-        const k = Math.floor(S.x[i] / cell) + ',' + Math.floor(S.z[i] / cell);
-        if (!grid.has(k)) grid.set(k, []);
-        grid.get(k).push(i);
+      /* the circuit over itself: only as a bridge, high enough and at an angle */
+      let overlapAt = -1, lowAt = -1;
+      const crossings = [];
+      for (const c of crossingsOf(this, this, selfSkip(S), CLEAR - 0.25)) {
+        if (c.ok) { crossings.push(c); continue; }
+        S.bad[c.iu] = 1; S.bad[c.il] = 1;
+        if (c.why === 'height') { if (lowAt < 0) lowAt = c.iu; } else if (overlapAt < 0) overlapAt = c.iu;
       }
-      let overlapAt = -1;
-      for (let i = 0; i < S.n; i += 2) {
-        const cx = Math.floor(S.x[i] / cell), cz = Math.floor(S.z[i] / cell);
-        const reach = Math.ceil((S.w[i] + 2) / cell);
-        for (let dz = -reach; dz <= reach && !S.bad[i]; dz++) for (let dx = -reach; dx <= reach; dx++) {
-          const list = grid.get((cx + dx) + ',' + (cz + dz));
-          if (!list) continue;
-          for (const j of list) {
-            let arc = Math.abs(i - j) * DS;
-            if (S.closed) arc = Math.min(arc, S.L - arc);
-            const minD = (S.w[i] + S.w[j]) * 0.5 + 0.8;
-            if (arc < minD * 2.2 + 4) continue;
-            if (U.dist2(S.x[i], S.z[i], S.x[j], S.z[j]) < minD * minD) { S.bad[i] = 1; S.bad[j] = 1; if (overlapAt < 0) overlapAt = i; break; }
-          }
-        }
-      }
-      if (overlapAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se cruza o se pisa consigo mismo.' }, at(overlapAt)));
+      if (overlapAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se pisa consigo mismo: si se cruza, que sea en ángulo.' }, at(overlapAt)));
+      if (lowAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se cruza consigo mismo: para pasar por debajo, un tramo tiene que ir al menos ' + U.fmt1(CLEAR) + ' m más alto que el otro.' }, at(lowAt)));
+      const chuteHit = this.chuteClash(S, 0, S.n, (j) => j * DS < this.chute.joinS + 12 || j * DS > S.L - 8);
+      if (chuteHit >= 0) { S.bad[chuteHit] = 1; issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por la recta de salida: cambia la salida de lado o aleja el trazado de ella.' }, at(chuteHit))); }
       /* footprint conflicts */
       this.computeFootprint(world);
       let notOwned = null, blocked = null, water = null, otherTrack = null;
+      const shared = [];
       for (const t of this.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         const c = { x: (tx + 0.5) * C.TILE, z: (tz + 0.5) * C.TILE };
         if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
         if (world.bld[t] >= 0 || world.path[t]) blocked = blocked || c;
         if (world.isWater(tx, tz)) water = water || c;
-        if (world.trackOcc[t] & ~this.bit) otherTrack = otherTrack || c;
+        if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
+      const xo = shared.length ? this._crossOthers(world, this, shared, CLEAR - 0.25) : null;
+      if (xo) otherTrack = { x: (xo.t % world.N + 0.5) * C.TILE, z: (((xo.t / world.N) | 0) + 0.5) * C.TILE, msg: xo.reason + '.' };
+      for (const o of world.trackList || []) if (o !== this && o.bit !== this.bit && o.S && !o.isChute) for (const c of crossingsOf(this, o, null, CLEAR - 0.25)) if (c.ok) crossings.push(c);
+      /* stretches under a bridge (and the run-up into it): no jumps there (see checkFeature) */
+      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]);
+      this.crossings = crossings.length;
       if (notOwned) issues.push(Object.assign({ level: 'error', msg: 'Parte del circuito está fuera de tu terreno.' }, notOwned));
       if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o caminos.' }, blocked));
       if (water) issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por el agua.' }, water));
-      if (otherTrack) issues.push(Object.assign({ level: 'error', msg: 'Se solapa con otro circuito.' }, otherTrack));
+      if (otherTrack) issues.push({ level: 'error', msg: otherTrack.msg.replace(/^Choca con otro circuito/, 'Se solapa con otro circuito'), x: otherTrack.x, z: otherTrack.z });
       /* features */
       const start = this.features.find(f => f.type === 'start');
       const finish = this.features.find(f => f.type === 'finish');
@@ -3852,7 +4135,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         origin: this.origin ? [this.origin.x, this.origin.z, this.origin.h] : null,
         features: this.features.map(f => [f.type, +f.s.toFixed(2), +(f.len || 0).toFixed(2), +f.ax.toFixed(2), +f.az.toFixed(2), f.side || 0, f.pin != null ? f.pin : -1, f.off || 0, f.auto || '']),
         paid: this.paid, featPaid: this.featPaid, records: this.records, totals: this.totals,
-        moisture: this.moisture, statsTested: this.statsTested,
+        moisture: this.moisture, statsTested: this.statsTested, cs: this.chuteSide || 0, cf: this.chuteSet ? 1 : 0,
         wear: Array.from(this.wear, v => Math.round(v * 1000) / 1000)
       };
     }
@@ -3879,6 +4162,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       t.paid = d.paid || 0; t.featPaid = d.featPaid || 0;
       t.records = d.records || t.records; t.totals = d.totals || t.totals;
       t.moisture = d.moisture || 0; t.statsTested = !!d.statsTested;
+      t.chuteSide = d.cs || 0; t.chuteSet = !!d.cf;
       t.rebuild(world);
       if (d.wear && d.wear.length === t.wear.length) t.wear.set(d.wear);
       t.computeFootprint(world);
@@ -3886,11 +4170,24 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
   }
 
+  /* surface height of a start straight across its width (as Track#bankAt): its own level,
+     and the circuit's where the two meet */
+  function chuteBank(i, lane) {
+    const S = this.S, F = this.frame, P = this.parent;
+    const hdg = S.hdg[i], x = S.x[i] - Math.sin(hdg) * lane, z = S.z[i] + Math.cos(hdg) * lane;
+    const v = (x - F.ox) * F.nx + (z - F.oz) * F.nz;
+    const k = 1 - U.smoothstep(F.w0 / 2, F.w0 / 2 + this.rampW[i], v);
+    if (k <= 0) return 0;
+    const u = (x - F.ox) * F.dx + (z - F.oz) * F.dz;
+    return k * (P.S.y[P.sIndex(Math.max(0, u))] - S.y[i]);
+  }
+
   /* A one-piece scratch track used to preview and check the next piece. */
-  Track.probeTrack = function (x, z, h, e, p, slot, type) {
+  Track.probeTrack = function (x, z, h, e, p, slot, type, chuteSide) {
     const t = new Track(-1, 'tmp');
     t.slot = slot || 0;
     t.type = type || 'mx';
+    t.chuteSide = chuteSide || 0;
     t.pieces = [Object.assign({}, p)];
     t.origin = { x, z, h }; t.e0 = e || 0;
     if (p.t === 'start') t.pinFeature('start', 0, gateOff(p));
@@ -3945,6 +4242,20 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     for (let i = 0; i < N * N; i++) {
       const tx = i % N, tz = (i / N) | 0;
       if (world.owned[i] !== 1 || world.bld[i] >= 0 || world.path[i] || (world.trackOcc[i] & ~tr.bit) || world.isWater(tx, tz)) blocked[i] = 1;
+    }
+    /* the start straight (up to where it bends in) is in the way like a building */
+    if (tr.chute) {
+      const CS = tr.chute.S, joinU = tr.chuteJoinU();
+      for (let j = 0; j < CS.n; j += 2) {
+        if (tr.chuteU(CS.x[j], CS.z[j]) > joinU) break;
+        const R = CS.w[j] * 0.5 + 0.2;
+        const x0 = Math.max(0, Math.floor((CS.x[j] - R) / T)), x1 = Math.min(N - 1, Math.floor((CS.x[j] + R) / T));
+        const z0 = Math.max(0, Math.floor((CS.z[j] - R) / T)), z1 = Math.min(N - 1, Math.floor((CS.z[j] + R) / T));
+        for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
+          const cx = (tx + 0.5) * T, cz = (tz + 0.5) * T;
+          if ((cx - CS.x[j]) ** 2 + (cz - CS.z[j]) ** 2 < R * R) blocked[tx + tz * N] = 1;
+        }
+      }
     }
     /* tiles too close to the part of the track that stays (the two joints are left free) */
     const near = new Uint8Array(N * N);
@@ -4129,6 +4440,13 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   Track.ELEV_MAX = ELEV_MAX;
   Track.START_GATE = START_GATE;
   Track.gateOff = gateOff;
+  Track.chuteWidth = (type) => CHUTE_W[type] || 0;
+  Track.CLEAR = CLEAR;
+  Track.DECK = DECK;
+  Track.bankRun = bankRun;
+  Track.crossingsFor = crossingsFor;
+  /* places at a start gate of width w */
+  Track.gateSlots = (w) => Math.max(4, Math.floor(w / 0.95));
   Track.startPiece = (type, w, surf) => { const p = { t: 'start', slope: 0, bank: 0, w, surf }; if (startLenFor(type) !== START_LEN) p.sl = startLenFor(type); return p; };
   Track.SPECIAL_OFF = SPECIAL_OFF;
   Track.SURF_IDX = SURF_IDX;
@@ -4151,7 +4469,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     return {
       s: 0, v: 0, y: 0, vy: 0, air: false, airT: 0, airMax: 0, lane: 0, laneT: 0, laneBias: 0, personal: (Math.random() - 0.5) * 1.6,
       pitch: 0, roll: 0, hdg: 0, x: 0, z: 0, gy: 0,
-      crash: null, plans: new Map(), stam: 1, lap: 0, lapStart: 0, lastLap: 0, bestLap: 0, laps: 0,
+      crash: null, chute: null, plans: new Map(), stam: 1, lap: 0, lapStart: 0, lastLap: 0, bestLap: 0, laps: 0,
       attr, bike, bikeCond: 1, throttle: 0, lastS: 0, lapTime: 0, fear: 0, airtimeLap: 0, totalAir: 0,
       cleanJumps: 0, hardLandings: 0, crashes: 0, flagSlow: 0, finishedLaps: 0, vt: 0
     };
@@ -4233,6 +4551,16 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         const vw = fd.vb + fd.vs * Math.pow(m.attr.skill / 100, 1.3);
         const l2 = Math.sqrt(vw * vw + 2 * b * d);
         if (l2 < vt) vt = l2;
+      }
+    }
+    /* on the start straight the circuit it joins is ahead too: brake for its first corner */
+    const nx = ctx.next;
+    if (nx) {
+      const d0 = Math.max(0, nx.at - m.s);
+      for (let d = 0; d0 + d <= look; d += 2) {
+        const vc = cornerSpeed(m, nx.track, nx.track.sIndex(nx.s + d));
+        const lim = Math.sqrt(vc * vc + 2 * b * (d0 + d));
+        if (lim < vt) vt = lim;
       }
     }
     /* lips ahead */
@@ -4632,6 +4960,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       rating -= desc.longestStraight > (type === 'kids' ? 60 : 130) ? 0.6 : 0;
       rating -= (desc.tight > desc.corners * 0.7 && desc.corners > 3 && type !== 'sx') ? 0.4 : 0;
     }
+    /* passing over or under itself or another circuit is a show */
+    const crossings = game && game.tracks ? MX.Track.crossingsFor(track, game.tracks).length : 0;
+    rating += Math.min(1, crossings * 0.5);
     /* what the riding asks for, before the surroundings (see surroundings and rescore) */
     const base = {
       rating,
@@ -4648,7 +4979,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       maxSpeed: pro.maxV, avgSpeed: pro.avgV, airPro: pro.air, airMid: mid.air, airBeg: runs[0].air,
       jumps: jumpCount, rhythm: rhythmCount, corners: desc.corners, tight: desc.tight, berms: desc.berms,
       elev: desc.elevRange, width: desc.avgW, longest: desc.longestStraight, hazards: env.hazards,
-      protectedRatio: env.protectedRatio, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: env.scen, themes: env.themes, base
+      protectedRatio: env.protectedRatio, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: env.scen, themes: env.themes, base, crossings
     };
     track.stats = stats;
     return stats;
@@ -5482,7 +5813,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (!tr || !tr.S || (tr.state !== 'open' && !this.race && tr.state !== 'testing')) { this.leaveTrack(g, tr); return; }
       const m = this.m;
       const before = m.laps;
-      MX.RiderPhysics.step(m, tr, dt, g.physCtx(this, tr));
+      /* a race starts on the wide start straight and joins the circuit where it merges */
+      const c = m.chute;
+      if (c) {
+        MX.RiderPhysics.step(m, c, dt, g.physCtx(this, c, { track: tr, s: c.joinS, at: c.mergeAt }));
+        if (!m.crash && m.s >= c.mergeAt) this.joinFromChute(tr);
+      } else MX.RiderPhysics.step(m, tr, dt, g.physCtx(this, tr));
       this.x = m.x; this.z = m.z; this.y = m.y; this.yaw = m.hdg;
       this.bikeCond = m.bikeCond;
       if (m.laps !== before && m.laps > 1) this.onLap(g, tr, rng);
@@ -5494,6 +5830,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
           if (d > 0.5 && d < 6) this.leaveTrack(g, tr);
         }
       }
+    }
+    /* off the start straight onto the circuit: same heading and lane where they meet */
+    joinFromChute(tr) {
+      const m = this.m, c = m.chute;
+      m.chute = null;
+      m.s = tr.wrapS(c.joinS + (m.s - c.mergeAt));
+      const hw = tr.S.w[tr.sIndex(m.s)] * 0.5 - 0.6;
+      m.lane = U.clamp(m.lane, -hw, hw);
     }
     onLap(g, tr, rng) {
       const m = this.m;
@@ -6495,6 +6839,24 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
     placeGrid() {
       const tr = this.tr, S = tr.S;
+      /* motocross: the whole field side by side behind the gate of the wide start straight */
+      const c = this.def.format !== 'crono' && tr.chute && tr.chute.S ? tr.chute : null;
+      this.chute = !!c;
+      if (c) {
+        const cw = c.S.w[c.sIndex(c.gateS)], slots = MX.Track.gateSlots(cw), gw = cw / slots;
+        /* places of a row spread over the gate, handed out from the middle (the fastest first) */
+        const order = (n) => Array.from({ length: n }, (_, i) => i).sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2) || a - b);
+        this.riders.forEach((r, k) => {
+          const row = Math.floor(k / slots), col = k % slots, inRow = Math.min(slots, this.riders.length - row * slots);
+          const slot = Math.round((order(inRow)[col] + 0.5) * slots / inRow - 0.5);
+          const s = Math.max(0.5, c.gateS - 1.2 - row * 2.8);
+          const lane = (slot + 0.5) * gw - cw / 2;
+          const p = c.poseAt(s, lane, {});
+          r.gridS = s; r.gridLane = lane;
+          r.x = p.x; r.z = p.z; r.y = p.yRide; r.yaw = p.hdg;
+        });
+        return;
+      }
       const i0 = tr.sIndex(tr.startS);
       const w = S.w[i0];
       const half = (Cat.vehicles[tr.typeDef.vehicle] || Cat.vehicles.mx).half;
@@ -6521,7 +6883,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (this.t > 9) {
           this.phase = 'race'; this.t = 0; this.tr.gateDown = true;
           this.startT = g.time;
-          this.finishOffset = U.mod(this.tr.finishS - this.tr.startS, this.tr.length);
+          this.finishOffset = U.mod(this.tr.finishS - (this.chute ? this.tr.chute.joinS : this.tr.startS), this.tr.length);
           if (this.def.format === 'crono') {
             /* time trial: one rider every few seconds from the start line */
             this.riders.forEach((r, k) => { r.cronoAt = k * 6; });
@@ -6540,6 +6902,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
     launch(r, s, lane) {
       r.joinTrack(this.g, this.tr, s, lane, 0.3);
+      if (this.chute && this.def.format !== 'crono') r.m.chute = this.tr.chute;
       r.raceDist = 0; r.lastS = s; r.laps = 0; r.lapT0 = null; r.raceLaps = [];
       r.startedT = this.g.time;
     }
@@ -6552,9 +6915,18 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       for (const r of this.riders) {
         if (!r.m || r.done) continue;
-        const ds = U.mod(r.m.s - r.lastS, L);
-        if (ds < L / 2) r.raceDist += ds;
-        r.lastS = r.m.s;
+        /* on the start straight the distance counts up to where it joins the circuit */
+        const c = r.m.chute;
+        if (c) { r.raceDist = r.m.s - c.mergeAt; r.lastS = null; }
+        else {
+          if (r.lastS == null) {
+            r.raceDist = 0; r.lastS = this.tr.chute ? this.tr.chute.joinS : r.m.s;
+            if (!this.holeshot) { this.holeshot = r; this.pushFeed('Holeshot para ' + r.name); }
+          }
+          const ds = U.mod(r.m.s - r.lastS, L);
+          if (ds < L / 2) r.raceDist += ds;
+          r.lastS = r.m.s;
+        }
         /* crossing the finish line */
         const k = Math.floor((r.raceDist - this.finishOffset) / L);
         if (r.raceDist >= this.finishOffset && k >= 0 && k !== r.lastK) {
@@ -6758,6 +7130,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       g.parkId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
       g.rng = new U.RNG(g.seed ^ 0xabcdef);
       g.world = new MX.World(C.MAP);
+      g.world.trackList = g.tracks;
       g.world.generate(g.seed, opts.preset || 'valle');
       g.world.setupOwnership(g.mode);
       if (g.mode !== 'sandbox') g.world.setExpansionLevel(1);
@@ -7188,7 +7561,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (tr.state === 'testing') this.endTest(tr);
       const snap = {
         nodes: tr.nodes.map(n => Object.assign({}, n)), features: tr.features.map(f => Object.assign({}, f)), closed: tr.closed,
-        pieces: tr.pieces ? tr.pieces.map(p => Object.assign({}, p)) : null, origin: tr.origin ? Object.assign({}, tr.origin) : null
+        pieces: tr.pieces ? tr.pieces.map(p => Object.assign({}, p)) : null, origin: tr.origin ? Object.assign({}, tr.origin) : null, chuteSide: tr.chuteSide
       };
       const oldLen = tr.length;
       const oldCost = tr.geometryCost() + tr.featureCost();
@@ -7202,7 +7575,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       for (const t of tr.tiles) if (this.world.scen[t] >= 0 && this.world.owned[t]) { const o = this.world.scenery.get(this.world.scen[t]); if (this.world.isTree(o)) trees++; }
       const delta = newCost - oldCost + trees * C.TREE_CLEAR_COST;
       if (delta > 0 && !this.canAfford(delta)) {
-        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed; tr.pieces = snap.pieces; tr.origin = snap.origin;
+        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed; tr.pieces = snap.pieces; tr.origin = snap.origin; tr.chuteSide = snap.chuteSide;
         tr.rebuild(this.world); tr.computeFootprint(this.world);
         return { ok: false, reason: 'No tienes suficiente dinero', cost: delta };
       }
@@ -7224,6 +7597,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (tr.closed) tr.validate(w);
       tr.stats = null; tr.statsTested = false;
       tr.ver++;
+      this.trackGeoVer = (this.trackGeoVer || 0) + 1;
+      /* the others may cross it: their bridges and tunnels change with it */
+      for (const o of this.tracks) if (o !== tr && o.closed && o.S) o.validate(w);
       this.fieldsDirty = true;
       this._openCache = null;
       MX.Bus.emit('track:changed', { track: tr });
@@ -7254,14 +7630,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
 
     /* ---------------- piece-by-piece construction ---------------- */
-    placeStart(tr, x, z, h, w, surf) {
+    placeStart(tr, x, z, h, w, surf, side) {
       if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
       if (tr.pieces.length) return { ok: false, reason: 'La parrilla de salida ya está colocada' };
-      const pr = tr.probeStart(this.world, x, z, h, w, surf);
+      const pr = tr.probeStart(this.world, x, z, h, w, surf, side);
       if (!pr.ok) return pr;
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
       return this.editTrack(tr, (t) => {
-        t.origin = { x, z, h }; t.e0 = 0; t.closed = false;
+        t.origin = { x, z, h }; t.e0 = 0; t.closed = false; t.chuteSide = pr.chuteSide || 0; t.chuteSet = side != null;
         t.pieces = [MX.Track.startPiece(t.type, w, surf)];
         t.features = [];
         t.pinFeature('start', 0, MX.Track.gateOff(t.pieces[0]));
@@ -7275,6 +7651,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (p.t === 'special' && !this.isUnlocked(Cat.features[p.f])) return { ok: false, reason: 'Bloqueado: necesitas investigarlo' };
       if (p.t === 'curve' && p.bank === 2 && !this.isUnlocked(Cat.features.berm_big)) return { ok: false, reason: 'El peralte grande necesita investigación' };
       if (!this.isUnlocked(Cat.surfaces[p.surf])) return { ok: false, reason: 'Superficie bloqueada: investígala' };
+      /* the first bend shows where the infield is: the start straight moves to the outside */
+      if (tr.chuteSide && !tr.chuteSet && p.t === 'curve' && tr.chuteSide === p.dir && !tr.pieces.some(q => q.t === 'curve')) this.setChuteSide(tr, -tr.chuteSide, true);
       const pr = tr.probePiece(this.world, p);
       if (!pr.ok) return pr;
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero', cost: pr.cost };
@@ -7285,6 +7663,20 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (pr.closes) t.closed = true;
       });
       if (r.ok && pr.closes) { r.closes = true; r.adjusted = !!(pr.fix && (pr.fix.length > 1 || pr.fix[0].slope !== p.slope)); MX.Bus.emit('track:closed-loop', { track: tr }); }
+      return r;
+    }
+    /* move the start straight to a side of the first piece (1 right, -1 left, 0 none); auto: not the player's choice */
+    setChuteSide(tr, side, auto) {
+      if (!tr.pieces || !tr.origin || !MX.Track.chuteWidth(tr.type)) return { ok: false, reason: 'Este circuito no tiene recta de salida' };
+      if (tr.state === 'open') return { ok: false, reason: 'Cierra el circuito para modificarlo' };
+      const copy = MX.Track.deserialize(tr.serialize(), this.world);
+      copy.chuteSide = side;
+      copy.rebuild(this.world);
+      const why = tr._probeTiles(this.world, copy);
+      if (why) return { ok: false, reason: 'La recta de salida no cabe en ese lado: ' + why.charAt(0).toLowerCase() + why.slice(1) };
+      if (copy.chuteClash(copy.S, 0, copy.S.n, (j) => j * C.TRACK_DS < copy.chute.joinS + 12 || (copy.closed && j * C.TRACK_DS > copy.S.L - 8)) >= 0) return { ok: false, reason: 'En ese lado la recta de salida choca con el circuito' };
+      const r = this.editTrack(tr, (t) => { t.chuteSide = side; });
+      if (r.ok && !auto) tr.chuteSet = true;
       return r;
     }
     removeLastPiece(tr) {
@@ -7340,17 +7732,25 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       return r;
     }
     /* Rounded-rectangle loop with a few elements inside rect {x0, z0, w, h} (tiles). */
-    suggestLoop(tr, rect, w, surf) {
+    /* opts.chute: false leaves out the wide start straight (it goes outside the loop) */
+    suggestLoop(tr, rect, w, surf, opts) {
       if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
       const m = Math.ceil((w * 0.5 + 2.5) / C.TILE);
       const startP = MX.Track.startPiece(tr.type, w, surf);
       const startU = MX.Track.pieceUnits(startP, 0);
       const plan = SUGGEST[tr.type] || SUGGEST.mx;
-      let k = plan.k, a = rect.w - 2 * m - 6 * k - startU, b = rect.h - 2 * m - 6 * k;
-      if (plan.maxB) b = Math.min(b, plan.maxB);
-      if (plan.maxA) a = Math.min(a, plan.maxA);
-      while ((a < 0 || b < 2) && k > 1) { k--; a = rect.w - 2 * m - 6 * k - startU; b = rect.h - 2 * m - 6 * k; if (plan.maxB) b = Math.min(b, plan.maxB); if (plan.maxA) a = Math.min(a, plan.maxA); }
-      if (a < 0 || b < 2) return { ok: false, short: true, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      /* the wide start straight runs outside the first leg: room for it above the loop if the area allows */
+      const CW = opts && opts.chute === false ? 0 : MX.Track.chuteWidth(tr.type);
+      const fit = (top) => {
+        let k = plan.k;
+        const dims = () => { let a = rect.w - 2 * m - 6 * k - startU, b = rect.h - m - top - 6 * k; if (plan.maxB) b = Math.min(b, plan.maxB); if (plan.maxA) a = Math.min(a, plan.maxA); return [a, b]; };
+        let [a, b] = dims();
+        while ((a < 0 || b < 2) && k > 1) { k--; [a, b] = dims(); }
+        return a < 0 || b < 2 ? null : { k, a, b, top };
+      };
+      const lay = (CW && fit(Math.ceil((w * 0.5 + 5 + CW) / C.TILE))) || fit(m);
+      if (!lay) return { ok: false, short: true, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      const { k, a, b } = lay;
       const P = (o) => Object.assign({ slope: 0, bank: 0, w, surf }, o);
       const unlocked = (f) => this.isUnlocked(Cat.features[f]);
       const leg = (units, specials) => {
@@ -7368,7 +7768,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const L = plan.legs;
       const pieces = [startP]
         .concat(leg(a, L[0]), turn(1), leg(b, L[1]), turn(0), leg(startU + a, ['finish'].concat(L[2])), turn(1), leg(b, L[3]), turn(0));
-      const ox = rect.x0 + m + 3 * k, oz = rect.z0 + m;
+      const ox = rect.x0 + m + 3 * k, oz = rect.z0 + lay.top;
       let x = ox, z = oz, h = 0, len = 0;
       for (const p of pieces) { const g = MX.Track.pieceGeom(p, x, z, h, 0); x = g.x1; z = g.z1; h = g.h1; len += g.len; }
       if (x !== ox || z !== oz || h !== 0) return { ok: false, reason: 'No se pudo cerrar el trazado sugerido' };
@@ -7376,11 +7776,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (len < minLen + 4) return { ok: false, short: true, reason: 'No cabe un circuito de ' + tr.typeDef.name.toLowerCase() + ' de al menos ' + minLen + ' m en el terreno libre' };
       return this.editTrack(tr, (t) => {
         t.origin = { x: ox, z: oz, h: 0 }; t.e0 = 0; t.closed = true;
+        t.chuteSide = CW ? -1 : 0;
         t.pieces = pieces; t.features = [];
         pieces.forEach((p, i) => {
           if (p.t === 'start') t.pinFeature('start', i, MX.Track.gateOff(p));
           else if (p.t === 'special') t.pinFeature(p.f, i, MX.Track.SPECIAL_OFF);
         });
+        /* without room for the start straight the riders start on the circuit itself */
+        if (t.chuteSide) { t.rebuild(this.world); if (!t.chute || t._probeTiles(this.world, t.chute)) t.chuteSide = 0; }
       });
     }
     validateTrack(tr) {
@@ -7460,6 +7863,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const back = Math.round(tr.state === 'building' ? Math.min(tr.paid, worth) : worth * 0.35);
       this.econ.refund('construccion', back);
       this.tracks = this.tracks.filter(t => t !== tr);
+      this.world.trackList = this.tracks;
+      this.trackGeoVer = (this.trackGeoVer || 0) + 1;
       if (this.selectedTrack === tr) this.selectedTrack = null;
       this._openCache = null; this.fieldsDirty = true;
       MX.Bus.emit('track:list');
@@ -7587,8 +7992,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       F.set('r_school', PF.bfs(N, srcOpen(['school']), rpass));
       F.set('r_depot', PF.bfs(N, srcOpen(['depot']), rpass));
       F.set('r_medical', PF.bfs(N, srcOpen(['medical']), rpass));
+      /* riders come onto each track where they can get to from the paddock */
+      const rp = F.get('r_paddock');
+      const reach = (e) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.inBounds(e.tx + dx, e.tz + dz) && rp.get(e.tx + dx, e.tz + dz) >= 0);
       for (const tr of this.tracks) {
         if (!tr.entry) continue;
+        if (tr.entries && tr.entries.length > 1 && !reach(tr.entry)) tr.entry = tr.entries.find(reach) || tr.entry;
         const e = tr.entry;
         F.set('r_entry_' + tr.id, PF.bfs(N, [w.idx(e.tx, e.tz)], (x, z, i) => rpass(x, z, i) || i === w.idx(e.tx, e.tz)));
       }
@@ -7763,13 +8172,15 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
 
     /* ---------------- physics context and events from riders ---------------- */
-    physCtx(rider, tr) {
+    /* next: on a start straight, the circuit it joins {track, s, at} */
+    physCtx(rider, tr, next) {
       const c = this._ctx || (this._ctx = { emit: (t, m, d) => this.onRiderEvent(t, m, d) });
-      c.rng = this.rng; c.time = this.time; c.race = !!rider.race; c.cap = rider.capV != null ? rider.capV : null; c.track = tr;
+      c.rng = this.rng; c.time = this.time; c.race = !!rider.race; c.cap = rider.capV != null ? rider.capV : null; c.track = tr; c.next = next || null;
       return c;
     }
     onRiderEvent(type, m, d) {
-      const r = m.rider, tr = this._ctx.track;
+      /* events on a start straight count for its circuit (wear stays on the straight) */
+      const r = m.rider, ts = this._ctx.track, tr = ts && ts.parent || ts;
       if (!r) return;
       if (type === 'takeoff' && d.planned) {
         this.addExcite(m.x, m.z, 0.6);
@@ -7783,7 +8194,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
           this.addExcite(m.x, m.z, 0.5 + d.air * 0.4);
         } else if (d.quality === 'hard') {
           if (this.rng.chance(0.3)) r.think(this, 'cased');
-          if (tr) tr.addWearAt(m.s, 0.01);
+          if (ts) ts.addWearAt(m.s, 0.01);
         }
         MX.Bus.emit('land', { x: m.x, z: m.z, q: d.quality, air: d.air });
       } else if (type === 'crash') {
@@ -7802,8 +8213,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         /* marshals wave yellow flags upstream */
         let flagged = false;
         for (const s of this.staff) if (s.role === 'marshal' && U.dist2(s.x, s.z, m.x, m.z) < 70 * 70) { s.flagT = 6; flagged = true; }
-        if (flagged && tr) for (const o of this.riders) if (o.m && o.trackId === tr.id && o !== r) {
-          const dd = U.mod(m.s - o.m.s, tr.length);
+        if (flagged && tr) for (const o of this.riders) if (o.m && o.trackId === tr.id && o !== r && o.m.chute === m.chute) {
+          const dd = U.mod(m.s - o.m.s, ts.length);
           if (dd < 60) o.m.flagSlow = 4.5;
         }
         this.lastCrashT = this.time;
@@ -7845,7 +8256,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
           if (X < 0 || Z < 0 || X >= n || Z >= n) continue;
           g.base[X + Z * n] += val / (1 + (dx * dx + dz * dz) * 0.4);
         }
-        const tr = this.trackById(r.trackId);
+        const tr = r.m.chute || this.trackById(r.trackId);
         if (tr && !r.m.air && r.m.v > 6) {
           const sd = Cat.surfaces[Cat.surfaceOrder[tr.S.surf[tr.sIndex(r.m.s)]]];
           const k = sd.dust * (1 - tr.moisture) * (this.wateringUnlocked() && this.staff.some(s => s.role === 'crew') ? 0.55 : 1);
@@ -7900,7 +8311,11 @@ html.phone { --tbh: 44px; --tbb: 66px; }
           const lateral = Math.abs(om.lane - m.lane);
           if (om.crash) {
             if (gap < 9 * wide && lateral < 1.6 * wide) { m.laneBias += (m.lane >= om.lane ? 1 : -1) * 0.3; }
-            if (gap < 1.4 * wide && lateral < 0.9 * wide && m.v > 5 && !m.air && this.rng.chance(m.flagSlow > 0 ? 0.05 : 0.25)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this._ctx.emit, 'pileup');
+            /* running into a rider who is down: one chance per fallen rider, not per frame */
+            if (gap < 1.4 * wide && lateral < 0.9 * wide && m.v > 5 && !m.air && m.dodged !== om) {
+              m.dodged = om;
+              if (this.rng.chance(m.flagSlow > 0 ? 0.04 : 0.2)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this.physCtx(r, tr).emit, 'pileup');
+            }
             continue;
           }
           if (lateral < 1.5 * wide && gap < 6 * wide) {
@@ -8227,13 +8642,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         while (this.spawnAccRent >= 1) { this.spawnAccRent -= 1; this.spawnRentalRider(); }
       }
       if (this.comp) this.comp.update(dt);
-      /* traffic per track */
+      /* traffic per track (riders still on a start straight among themselves) */
       const byTrack = new Map();
       for (const r of this.riders) if (r.state === 'ride' && r.m) {
-        if (!byTrack.has(r.trackId)) byTrack.set(r.trackId, []);
-        byTrack.get(r.trackId).push(r);
+        const k = r.m.chute || r.trackId;
+        if (!byTrack.has(k)) byTrack.set(k, []);
+        byTrack.get(k).push(r);
       }
-      for (const [id, list] of byTrack) { const tr = this.trackById(id); if (tr) this.updateTraffic(tr, list); }
+      for (const [k, list] of byTrack) { const tr = typeof k === 'number' ? this.trackById(k) : k; if (tr && tr.S) this.updateTraffic(tr, list); }
       const rng = this.rng;
       for (let i = 0; i < this.riders.length; i++) this.riders[i].update(this, dt, rng);
       for (let i = 0; i < this.visitors.length; i++) this.visitors[i].update(this, dt, rng);
@@ -8293,6 +8709,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (!tr.S) continue;
         const prevM = tr.moisture;
         tr.moisture = U.clamp(tr.moisture + (w.rain * 0.012 - (1 - w.rain) * w.dry * 0.004) * dt, 0, 1);
+        if (tr.chute) tr.chute.moisture = tr.moisture;
         const riding = this.ridersOn(tr);
         tr.dust = U.clamp((tr.dust || 0) + (riding * 0.002 * (1 - tr.moisture) - 0.003) * dt, 0, 1);
         if (Math.abs(prevM - tr.moisture) > 0.0001 && Math.floor(prevM * 10) !== Math.floor(tr.moisture * 10)) tr.visualVer = (tr.visualVer || 0) + 1;
@@ -8413,6 +8830,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       g.rng = new U.RNG((g.seed ^ 0xabcdef) + Math.floor(g.time));
       A.setUid(d.uid || 1);
       g.world = MX.World.deserialize(d.world);
+      g.world.trackList = g.tracks;
       g.econ = MX.Economy.deserialize(d.econ);
       g.nextBld = d.nextBld || 1;
       for (const bd of d.buildings) {
@@ -8433,6 +8851,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (t.state !== 'building' && t.closed) MX.TrackAnalyzer.analyze(t, g.world, g);
         g.tracks.push(t);
       }
+      /* crossings with circuits loaded after them */
+      if (g.tracks.length > 1) for (const t of g.tracks) if (t.closed) t.validate(g.world);
       for (const sd of d.staff) {
         const s = new A.Staff(g, g.rng, sd.role, { name: sd.name, skill: sd.skill, salary: sd.salary, x: sd.x, z: sd.z, tx: sd.tx, tz: sd.tz, day: sd.hired });
         if (sd.cols) s.cols = sd.cols;
@@ -10453,17 +10873,83 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     opts = opts || {};
     const S = tr.S;
     if (!S || S.n < 4) return null;
-    const mb = new MB(S.n * 40);
+    const c = tr.chute && tr.chute.S ? tr.chute : null;
+    const mb = new MB((S.n + (c ? c.S.n : 0)) * 40);
+    /* crossings with itself and the other circuits: bridges over, tunnels under */
+    const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
+    surface(mb, tr, world, opts, null, xs.length ? crossingMarks(tr, xs) : null);
+    /* the wide start straight, tucked just under the circuit where the two overlap */
+    if (c) surface(mb, c, world, opts, tr, null);
+    for (const x of xs) if (x.L === tr) tunnel(mb, x, world);
+    if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
+    return mb.build();
+  }
+  /* Samples of tr whose embankment becomes a wall (it is the bridge of a crossing, the
+     walls reaching far enough to keep the slopes off the path below) or is left out (it
+     goes under a bridge). */
+  function crossingMarks(tr, xs) {
+    const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = new Uint8Array(n);
+    const mark = (arr, i0, i1) => { for (let k = i0; k <= i1; k++) { const i = S.closed ? U.mod(k, n) : k; if (i >= 0 && i < n) arr[i] = 1; } };
+    for (const c of xs) {
+      if (c.U === tr) {
+        const h = Math.max(0, S.y[c.iu] - S.terr[c.iu]);
+        const m = Math.ceil((MX.Track.bankRun(h) / Math.tan(Math.max(c.ang, 0.4)) + 3) / C.TRACK_DS);
+        mark(wall, c.iu + c.u0 - m, c.iu + c.u1 + m);
+      }
+      if (c.L === tr) mark(tun, c.il + c.l0, c.il + c.l1);
+    }
+    return { wall, tun, xs: xs.filter(c => c.U === tr) };
+  }
+  const CONCRETE = [0.84, 0.83, 0.8, 1];
+  /* bottom of a bridge wall at an edge point: the deck where the path below goes through */
+  function wallFoot(marks, world, e) {
+    for (const c of marks.xs) {
+      const h = c.L.nearestS(e[0], e[2], c.il * C.TRACK_DS, 40);
+      if (h && Math.abs(h.lane) < c.L.S.w[h.i] * 0.5 + 0.6) return e[1] - MX.Track.DECK;
+    }
+    return Math.min(e[1], world.heightAt(e[0], e[2])) - 0.25;
+  }
+  function wallQuad(mb, a, b, ya, yb, mat, col) {
+    const a0 = [a[0], ya, a[2]], b0 = [b[0], yb, b[2]];
+    mb.quad4(a0, b0, b, a, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
+    mb.quad4(b0, a0, a, b, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
+  }
+  /* Tunnel walls along the lower path of crossing c, under the deck of the upper one. */
+  function tunnel(mb, c, world) {
+    const Lp = c.L, S = Lp.S, Up = c.U, n = S.n, DS = C.TRACK_DS, conc = L().concrete;
+    for (const side of [-1, 1]) {
+      let prev = null;
+      for (let k = c.il + c.l0 - 8; k <= c.il + c.l1 + 8; k += 2) {
+        const i = S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
+        const hdg = S.hdg[i], off = (S.w[i] * 0.5 + 0.5) * side;
+        const x = S.x[i] - Math.sin(hdg) * off, z = S.z[i] + Math.cos(hdg) * off;
+        const h = Up.nearestS(x, z, c.iu * DS, 40);
+        /* under the deck, and a step past its edge as a portal */
+        if (!h || Math.abs(h.lane) > Up.S.w[h.i] * 0.5 + 1) { prev = null; continue; }
+        const p = { x, z, top: Up.S.y[h.i] - MX.Track.DECK, foot: Math.min(S.y[i], world.heightAt(x, z)) - 0.3 };
+        if (prev) wallQuad(mb, [prev.x, prev.top, prev.z], [x, p.top, z], prev.foot, p.foot, conc, CONCRETE);
+        prev = p;
+      }
+    }
+  }
+  function surface(mb, tr, world, opts, parent, marks) {
+    const S = tr.S;
     const step = 2;
     const n = S.n;
-    const lastI = S.closed ? n : n - 1;
-    const lanes = [-1, -0.5, 0, 0.5, 1];
+    const lastI = parent ? Math.min(n - 1, tr.sIndex(tr.mergeAt) + step) : S.closed ? n : n - 1;
+    /* the start straight is wide and ramps down to the circuit: finer across */
+    const lanes = parent ? [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1] : [-1, -0.5, 0, 0.5, 1];
+    const last = lanes.length - 1;
+    const w0 = parent ? tr.frame.w0 * 0.5 + 0.5 : 0;
     const cross = (i) => {
       const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
       const hw = S.w[i] * 0.5;
       const pts = lanes.map((f) => {
         const l = f * hw;
-        return [S.x[i] + nx * l, S.y[i] + tr.bankAt(i, l), S.z[i] + nz * l];
+        const p = [S.x[i] + nx * l, S.y[i] + tr.bankAt(i, l), S.z[i] + nz * l];
+        /* just under the circuit where it lies on it */
+        if (parent && parent.chuteV(p[0], p[2]) < w0) p[1] -= 0.06;
+        return p;
       });
       return { pts, nx, nz, hw, i };
     };
@@ -10483,7 +10969,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const mat = L()[TRACK_LAYER[S.surf[i]]];
       const col = tint(i);
       const v0 = (k - step) * C.TRACK_DS / 16, v1 = k * C.TRACK_DS / 16;
-      for (let q = 0; q < 4; q++) {
+      for (let q = 0; q < last; q++) {
         const a = prev.pts[q], b = prev.pts[q + 1], c = cur.pts[q + 1], d = cur.pts[q];
         const u0 = (lanes[q] + 1) * prev.hw / 16, u1 = (lanes[q + 1] + 1) * prev.hw / 16;
         /* order chosen so the normal points up for a track heading +X with left normal +Z */
@@ -10491,14 +10977,31 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       /* embankments on both sides */
       for (const side of [-1, 1]) {
-        const ea = side < 0 ? prev.pts[0] : prev.pts[4];
-        const eb = side < 0 ? cur.pts[0] : cur.pts[4];
+        const ea = side < 0 ? prev.pts[0] : prev.pts[last];
+        const eb = side < 0 ? cur.pts[0] : cur.pts[last];
+        if (marks) {
+          const wa = marks.wall[prev.i], wb = marks.wall[cur.i];
+          /* a bridge: concrete walls instead of slopes, open where the path below passes */
+          if (wa || wb) {
+            wallQuad(mb, ea, eb, wallFoot(marks, world, ea), wallFoot(marks, world, eb), L().concrete, CONCRETE);
+            /* where the wall meets the slope, close the end of the slope */
+            if (wa !== wb) {
+              const e = wa ? eb : ea, cc = wa ? cur : prev, ox = cc.nx * side, oz = cc.nz * side;
+              const th = world.heightAt(e[0], e[2]), d = MX.Track.bankRun(Math.max(0, e[1] - th)) + 0.35;
+              const o = [e[0] + ox * d, world.heightAt(e[0] + ox * d, e[2] + oz * d) - 0.18, e[2] + oz * d], g = [e[0], Math.min(e[1], th) - 0.25, e[2]];
+              mb.tri(e, o, g, [[0, 0], [0.2, 0], [0, 0.2]], L().embank, col);
+              mb.tri(e, g, o, [[0, 0], [0, 0.2], [0.2, 0]], L().embank, col);
+            }
+            continue;
+          }
+          /* under a bridge the tunnel walls take its place */
+          if (marks.tun[prev.i] && marks.tun[cur.i]) continue;
+        }
         const rim = (e, c) => {
           const ox = c.nx * side, oz = c.nz * side;
           const r = [e[0] + ox * 0.35, e[1] - 0.06, e[2] + oz * 0.35];
           const th = world.heightAt(e[0], e[2]);
-          const diff = e[1] - th;
-          const d = Math.max(0.7, diff * 1.15 + 0.45);
+          const d = MX.Track.bankRun(Math.max(0, e[1] - th));
           const ox2 = e[0] + ox * (0.35 + d), oz2 = e[2] + oz * (0.35 + d);
           const o = [ox2, world.heightAt(ox2, oz2) - 0.18, oz2];
           return { r, o };
@@ -10516,8 +11019,6 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       prev = cur;
     }
-    if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
-    return mb.build();
   }
 
   /* ---------------- track decoration: edges, finish arch and obstacles ----------------
@@ -10525,10 +11026,6 @@ html.phone { --tbh: 44px; --tbb: 66px; }
      styled by discipline: tape stakes (motocross), small coloured stakes (minicross),
      stadium walls (supercross), a white rail (dirt track), tape in the woods (enduro)
      and tyre walls (car cross). */
-  function skipStart(tr, i) {
-    const S = tr.S;
-    return S.feat[i] >= 0 && Cat.features[tr.features[S.feat[i]].type].kind === 'start';
-  }
   function edgeAt(tr, world, i, side, extra) {
     const S = tr.S, hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
     const hw = S.w[i] * 0.5 + extra;
@@ -10546,13 +11043,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       return ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
     };
   }
+  /* fn(i, k, open): open(side) is true where that edge is left open (start gate, start straight) */
   function eachEdge(tr, every, fn) {
     const S = tr.S, n = S.n, lastI = S.closed ? n : n - 1;
     const step = Math.max(1, Math.round(every / C.TRACK_DS));
     let k0 = 0;
     for (let k = 0; k <= lastI; k += step, k0++) {
       const i = S.closed ? k % n : Math.min(k, n - 1);
-      fn(i, k0, skipStart(tr, i));
+      fn(i, k0, (side) => tr.edgeOpen(i, side));
     }
   }
   /* a tape (or solid band) between two posts, seen from both sides */
@@ -10563,9 +11061,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   }
   function stakes(mb, tr, world, o) {
     const last = { '-1': null, '1': null };
-    eachEdge(tr, o.every, (i, k, skip) => {
+    eachEdge(tr, o.every, (i, k, open) => {
       for (const side of [-1, 1]) {
-        if (skip) { last[side] = null; continue; }
+        if (open(side)) { last[side] = null; continue; }
         const e = edgeAt(tr, world, i, side, o.extra);
         mb.box(e.x - o.t, e.y, e.z - o.t, e.x + o.t, e.y + o.h, e.z + o.t, { col: k % 2 ? o.colA : o.colB });
         const p = last[side];
@@ -10585,9 +11083,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     const last = { '-1': null, '1': null };
     const logos = Cat.sponsors.map(sp => 'logo_' + sp.id).concat(['logo_mxt', 'sign_sx']);
     const H = 0.75, TH = 0.3;
-    eachEdge(tr, 2, (i, k, skip) => {
+    eachEdge(tr, 2, (i, k, open) => {
       for (const side of [-1, 1]) {
-        if (skip) { last[side] = null; continue; }
+        if (open(side)) { last[side] = null; continue; }
         const e = edgeAt(tr, world, i, side, 0.35);
         const p = last[side];
         if (p && U.dist2(p.x, p.z, e.x, e.z) < 16) {
@@ -10618,9 +11116,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     const S = tr.S, outer = outerSide(S);
     let lastO = null, lastI = null;
     const white = MB.rgba('#f4f4f2'), pad = MB.rgba('#1e88e5'), line = MB.rgba('#fafafa');
-    eachEdge(tr, 3, (i, k, skip) => {
+    eachEdge(tr, 3, (i, k, open) => {
       const so = outer(i);
-      if (skip) { lastO = null; lastI = null; return; }
+      if (open(so) || open(-so)) { lastO = null; lastI = null; return; }
       const e = edgeAt(tr, world, i, so, 0.7);
       const corner = Math.abs(S.curv[i]) > 1 / 30;
       if (corner) mb.box(e.x - 0.3, e.y, e.z - 0.3, e.x + 0.3, e.y + 1.1, e.z + 0.3, { col: k % 2 ? pad : white });
@@ -10642,9 +11140,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   /* minicross: low plastic barrier blocks in bright colours */
   function blocks(mb, tr, world) {
     const cols = ['#29b6f6', '#fdd835', '#29b6f6', '#ef5350'].map(c => MB.rgba(c));
-    eachEdge(tr, 1.6, (i, k, skip) => {
-      if (skip) return;
+    eachEdge(tr, 1.6, (i, k, open) => {
       for (const side of [-1, 1]) {
+        if (open(side)) continue;
         const e = edgeAt(tr, world, i, side, 0.45);
         mb.push(); mb.translate(e.x, e.y, e.z); mb.rotateY(e.hdg);
         mb.box(-0.68, 0, -0.17, 0.68, 0.42, 0.17, { col: cols[k % cols.length] });
@@ -10673,9 +11171,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   /* car cross: stacked tyre walls */
   function tyres(mb, tr, world) {
     const black = MB.rgba('#1d1d1f'), red = MB.rgba('#e53935'), white = MB.rgba('#f2f2f2');
-    eachEdge(tr, 3, (i, k, skip) => {
-      if (skip) return;
+    eachEdge(tr, 3, (i, k, open) => {
       for (const side of [-1, 1]) {
+        if (open(side)) continue;
         const e = edgeAt(tr, world, i, side, 0.8);
         mb.cylinder(e.x, e.y, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, black);
         mb.cylinder(e.x, e.y + 0.26, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, k % 4 === 0 ? (side > 0 ? red : white) : black);
@@ -10725,16 +11223,21 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     const S = tr.S;
     if (!S || S.n < 4) return null;
     const mb = into || new MB(S.n * 24);
+    edges(mb, tr, world);
+    if (tr.chute && tr.chute.S) edges(mb, tr.chute, world);
+    if (tr.typeDef.edge === 'sxwall') floodlights(mb, tr, world);
+    obstacles(mb, tr, world);
+    finishArch(mb, tr, world);
+    return into ? null : mb.build();
+  }
+  function edges(mb, tr, world) {
     const style = tr.typeDef.edge;
-    if (style === 'sxwall') { walls(mb, tr, world); floodlights(mb, tr, world); }
+    if (style === 'sxwall') walls(mb, tr, world);
     else if (style === 'rails') rails(mb, tr, world);
     else if (style === 'tyres') tyres(mb, tr, world);
     else if (style === 'kids') blocks(mb, tr, world);
     else if (style === 'tape') stakes(mb, tr, world, { every: 9, h: 1.0, t: 0.04, extra: 0.35, colA: MB.rgba('#e53935'), colB: MB.rgba('#f5f5f5'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1], arrows: true });
     else stakes(mb, tr, world, { every: 6, h: 0.95, t: 0.06, extra: 0.55, colA: MB.rgba('#ff6a13'), colB: MB.rgba('#f2f2f2'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1] });
-    obstacles(mb, tr, world);
-    finishArch(mb, tr, world);
-    return into ? null : mb.build();
   }
   function finishArch(mb, tr, world) {
     const S = tr.S;
@@ -10773,9 +11276,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   /* Start of the circuit, styled by discipline. */
   function startGate(tr, world, down) {
     const S = tr.S;
-    if (!S || tr.startS == null) return null;
+    if (!S) return null;
+    /* with a wide start straight the gate stands across it */
+    if (tr.chute && tr.chute.S) return gateStart(tr.chute, tr.chute.gateS, world, down);
+    if (tr.startS == null) return null;
     const style = tr.typeDef.start;
-    if (style === 'gate') return gateStart(tr, world, down);
+    if (style === 'gate') return gateStart(tr, tr.startS, world, down);
     const mb = new MB(4096);
     const m = tr.sIndex(tr.startS);
     const hdg = S.hdg[m], hw = S.w[m] * 0.5, baseY = S.y[m];
@@ -10826,10 +11332,10 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     return mb.build();
   }
   /* Motocross start gate: static frame plus gates up or down. */
-  function gateStart(tr, world, down) {
+  function gateStart(tr, s, world, down) {
     const S = tr.S;
-    const mb = new MB(4096);
-    const m = tr.sIndex(tr.startS);
+    const mb = new MB(8192);
+    const m = tr.sIndex(s);
     const hdg = S.hdg[m], nx = -Math.sin(hdg), nz = Math.cos(hdg), tx = Math.cos(hdg), tz = Math.sin(hdg);
     const hw = S.w[m] * 0.5;
     const baseY = S.y[m];
@@ -10846,7 +11352,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     mb.box(-0.25, 0, -hw - 0.4, 0.1, 0.3, hw + 0.4, { col: dark });
     mb.box(-0.2, 0, -hw - 0.6, 0.2, 1.6, -hw - 0.3, { col: metal });
     mb.box(-0.2, 0, hw + 0.3, 0.2, 1.6, hw + 0.6, { col: metal });
-    const nGates = Math.max(4, Math.floor(S.w[m] / 0.95));
+    const nGates = MX.Track.gateSlots(S.w[m]);
     const gw = (2 * hw) / nGates;
     for (let g = 0; g < nGates; g++) {
       const z0 = -hw + g * gw + 0.05, z1 = z0 + gw - 0.1;
@@ -12633,10 +13139,11 @@ void main() {
       for (const tr of game.tracks) {
         live.add(tr.id);
         let tm = this.trackMeshes.get(tr.id);
-        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0);
+        /* crossings depend on the other circuits too */
+        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0);
         if (!tm || tm.key !== key || tr._meshVer === -1) {
           if (!tm) { tm = { main: null, gate: null, decor: null, decorKey: null }; this.trackMeshes.set(tr.id, tm); }
-          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false });
+          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false, tracks: game.tracks });
           if (g) tm.main = GLU.makeMeshVAO(gl, g.data, g.count, tm.main); else if (tm.main) tm.main.count = 0;
           const gg = MX.Geom.startGate(tr, world, tr.gateDown);
           if (gg) tm.gate = GLU.makeMeshVAO(gl, gg.data, gg.count, tm.gate); else if (tm.gate) tm.gate.count = 0;
@@ -13818,7 +14325,7 @@ void main() {
       const l = this.lat, tr = this.tr;
       if (!l || !tr || !tr.pieces) return;
       const ui = app().trackUI;
-      this.probe = tr.probeStart(game().world, l.x, l.z, l.h, ui.width, ui.surface);
+      this.probe = tr.probeStart(game().world, l.x, l.z, l.h, ui.width, ui.surface, ui.chute);
       const m = probeMesh(this.probe.tmp);
       if (m) R().setGhostMesh(m.data, m.count, this.probe.ok ? (this.probe.warn ? GHOST_CLOSE : GHOST_OK) : GHOST_BAD, GHOST_DITHER);
     },
@@ -13843,7 +14350,7 @@ void main() {
       const l = this.lat, tr = this.tr;
       if (!l || !tr) return;
       const ui = app().trackUI;
-      if (result(game().placeStart(tr, l.x, l.z, l.h, ui.width, ui.surface))) {
+      if (result(game().placeStart(tr, l.x, l.z, l.h, ui.width, ui.surface, ui.chute))) {
         sfx('build');
         app().fx.burst((l.x + MX.Track.DIRV[l.h][0] * 4) * T, null, (l.z + MX.Track.DIRV[l.h][1] * 4) * T, 'dirt');
         Tools.set(TrackBuild);
@@ -13858,7 +14365,8 @@ void main() {
       const pr = this.probe;
       if (!pr || !pr.tmp || !pr.tmp.S) return [];
       const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.gateOff(pr.tmp.pieces[0]) / C.TRACK_DS));
-      return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
+      const side = pr.chuteSide ? ' · recta de salida a la ' + (pr.chuteSide > 0 ? 'derecha' : 'izquierda') : '';
+      return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida' + side + ' · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
     }
   };
 
@@ -14337,7 +14845,7 @@ void main() {
       const i = TrackEdit.nodeAt.call({ tr }, this.cursor);
       if (i < 0) { toast('Haz clic sobre un punto del trazado', 'info'); return; }
       if (tr.state === 'open') { toast('Cierra el circuito para modificarlo', 'info'); return; }
-      const v = U.clamp(tr.nodes[i].elev + dir * 0.5, 0, 6);
+      const v = U.clamp(tr.nodes[i].elev + dir * 0.5, 0, MX.Track.ELEV_MAX);
       if (v === tr.nodes[i].elev) return;
       if (result(game().editTrack(tr, (t) => { t.nodes[i].elev = v; }))) sfx(dir > 0 ? 'raise' : 'lower');
       this.refresh();
@@ -15217,6 +15725,12 @@ void main() {
         for (let i = 0; i < tr.S.n; i += 6) { const x = tr.S.x[i] * k, z = tr.S.z[i] * k; i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }
         if (tr.closed) ctx.closePath();
         ctx.stroke();
+        const c = tr.chute;
+        if (c && c.S) {
+          ctx.beginPath();
+          for (let i = 0; i <= c.sIndex(c.mergeAt); i += 6) { const x = c.S.x[i] * k, z = c.S.z[i] * k; i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }
+          ctx.stroke();
+        }
       }
       ctx.fillStyle = '#ffffff';
       for (const r of g.riders) if (r.state === 'ride') ctx.fillRect(r.x * k - 1, r.z * k - 1, 2, 2);
@@ -15497,6 +16011,7 @@ void main() {
           toolBtn('track', 'Colocar la salida', TL().TrackStart),
           h('button', { class: 'btn', title: 'Girar la parrilla 45 grados (R)', onclick: () => { if (MX.Tools.current !== TL().TrackStart) MX.Tools.set(TL().TrackStart); TL().TrackStart.rotate(); } }, icon('rotate'), 'Girar'),
           h('button', { class: 'btn danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar')));
+      chuteRow(el, tr);
       widthSurface(el, tr, true);
       return;
     }
@@ -15547,6 +16062,7 @@ void main() {
         h('p', { class: 'muted small' }, 'Para cambiar el trazado, quita piezas desde el final y vuelve a construir. La primera pieza que quites abre el circuito.'),
         h('div', { class: 'row gap wrap' },
           h('button', { class: 'btn', disabled: !editable, onclick: () => { const r = g.removeLastPiece(tr); if (r.ok) { MX.Audio.sfx('demolish'); MX.Tools.set(TL().TrackBuild); WM.rebuild('tracks'); } else app().hud.toast(r.reason, 'bad'); } }, icon('demolish'), 'Quitar la última pieza')));
+      chuteRow(sec, tr);
     } else if (ui.section === 'shape') {
       sec.append(h('div', { class: 'row gap wrap' },
         toolBtn('track', 'Editar puntos', TL().TrackEdit),
@@ -15720,6 +16236,7 @@ void main() {
         h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
     }
     box.append(h('h4', null, td.specials.length > 1 ? 'Pieza especial' : 'Línea de meta'), sp);
+    chuteRow(box, tr);
     widthSurface(box, tr, true);
     box.append(preview,
       h('div', { class: 'row gap wrap bld-actions' },
@@ -15744,7 +16261,7 @@ void main() {
       /* near the start the «Cerrar» button lights up: it joins the loop by itself */
       const near = !!(e && o && !tr.closed && tr.pieces.length > 2 && Math.hypot(e.x - o.x, e.z - o.z) * C.TILE < 70 && !(pr && pr.ok && pr.closes));
       for (const b of document.querySelectorAll('#bld-auto')) b.classList.toggle('glow', near);
-      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + (pr.fix ? 'f' : '') + (near ? 'n' : '') + JSON.stringify(currentPiece()) : 'none';
+      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + (pr.fix ? 'f' : '') + (pr.cross || '') + (near ? 'n' : '') + JSON.stringify(currentPiece()) : 'none';
       if (preview._k === key) return;
       preview._k = key;
       clear(preview);
@@ -15754,6 +16271,7 @@ void main() {
       preview.append(icon(pr.ok ? (pr.closes ? 'trophy' : 'check') : 'cross'),
         h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
           pr.ok && pr.fix ? h('em', { class: 'fix' }, 'Ajusto la pendiente para llegar a la salida a su altura') : null,
+          pr.ok && pr.cross ? h('em', { class: 'fix' }, pr.cross === 'over' ? 'Pasa por encima en un puente' : 'Pasa por debajo, por un túnel') : null,
           !pr.ok ? h('em', null, pr.reason) : null,
           near && pr.ok ? h('em', { class: 'fix' }, 'Estás cerca de la salida: pulsa «Cerrar» y lo uno yo') : null));
     };
@@ -15803,10 +16321,31 @@ void main() {
           h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
       }
       box.append(sp);
-    } else if (b.more === 'ws') widthSurface(box, tr, true);
+    } else if (b.more === 'ws') { chuteRow(box, tr); widthSurface(box, tr, true); }
     el._upd = constructorStatus(tr, status, preview);
   }
 
+  /* the wide start straight of motocross, supercross and minicross: which side of the first
+     piece it runs along, or none (the riders then line up in rows on the circuit itself) */
+  const CHUTE_OPTS = [[-1, 'Izquierda', 'Recta de salida ancha a la izquierda de la primera recta'], [1, 'Derecha', 'Recta de salida ancha a la derecha de la primera recta'], [0, 'Sin recta ancha', 'Sin recta de salida: los pilotos salen en filas desde la propia pista']];
+  function chuteRow(el, tr) {
+    if (!tr.pieces || !MX.Track.chuteWidth(tr.type)) return;
+    const ui = app().trackUI, placed = !!tr.origin, editable = tr.state !== 'open';
+    const row = h('div', { class: 'row gap wrap' });
+    const cur = placed ? tr.chuteSide : ui.chute;
+    const opts = placed ? CHUTE_OPTS : [[null, 'Automática', 'El lado que quepa (se pasa al exterior de la primera curva)']].concat(CHUTE_OPTS);
+    for (const [v, label, tip] of opts) {
+      row.append(h('button', { class: 'btn small' + (cur === v ? ' on' : ''), title: tip, disabled: !editable, onmousedown: (e) => e.preventDefault(), onclick: () => {
+        if (!placed) { ui.chute = v; WM.rebuild('tracks'); if (MX.Tools.current === TL().TrackStart) TL().TrackStart.refresh(); return; }
+        if (tr.chuteSide === v) return;
+        const r = game().setChuteSide(tr, v);
+        if (!r.ok) { app().hud.toast(r.reason, 'bad'); return; }
+        MX.Audio.sfx('build'); WM.rebuild('tracks');
+        if (MX.Tools.current === TL().TrackBuild) TL().TrackBuild.refresh();
+      } }, label));
+    }
+    el.append(h('h4', null, 'Recta de salida'), row);
+  }
   function widthSurface(el, tr, beforeClose) {
     const g = game(), ui = app().trackUI;
     const editable = tr.state !== 'open';
@@ -15859,6 +16398,7 @@ void main() {
       tr.type === 'enduro' ? statRow('Obstáculos', String(st.natural || 0)) : statRow('Saltos · rítmicos · peraltes', st.jumps + ' · ' + st.rhythm + ' · ' + st.berms),
       statRow('Curvas (cerradas)', st.corners + ' (' + st.tight + ')'),
       statRow('Desnivel', U.fmt1(st.elev) + ' m'),
+      ...(st.crossings ? [statRow('Cruces con túnel', String(st.crossings))] : []),
       statRow('Zonas de riesgo protegidas', Math.round(st.protectedRatio * 100) + '% de ' + st.hazards),
       ...(st.themes && st.themes.length ? [statRow('Zonas temáticas', st.themes.map(id => (Cat.decorThemes.find(t => t.id === id) || { name: id }).name).join(', '))] : []),
       statRow('Capacidad', st.capacity + ' pilotos a la vez'),
@@ -15941,15 +16481,20 @@ void main() {
     if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length || tr.type !== type) { tr = g.newTrack(type); fresh = true; }
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     /* a loop that ends up somewhere the riders cannot use is taken down and the next spot tried */
-    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente/;
-    let res = null, best = null, checks = 0;
-    for (const c of cands.slice(0, 16)) {
-      res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface);
-      if (!res.ok) { if (res.short) continue; break; }
-      const bad = checks++ < 6 ? g.validateTrack(tr).find(i => i.level === 'error' && WHERE.test(i.msg)) : null;
-      if (!bad) { best = c; break; }
-      g.editTrack(tr, (t) => { t.pieces = []; t.features = []; t.closed = false; t.origin = null; });
-      res = { ok: false, reason: bad.msg };
+    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente|recta de salida/;
+    let res = null, best = null;
+    /* with the wide start straight outside the loop first, then without it */
+    for (const chute of MX.Track.chuteWidth(type) ? [true, false] : [false]) {
+      let checks = 0;
+      for (const c of cands.slice(0, 16)) {
+        res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface, { chute });
+        if (!res.ok) { if (res.short) continue; break; }
+        const bad = checks++ < 6 ? g.validateTrack(tr).find(i => i.level === 'error' && WHERE.test(i.msg)) : null;
+        if (!bad) { best = c; break; }
+        g.editTrack(tr, (t) => { t.pieces = []; t.features = []; t.closed = false; t.origin = null; t.chuteSide = 0; });
+        res = { ok: false, reason: bad.msg };
+      }
+      if (best) break;
     }
     if (!res.ok) {
       if (fresh) { g.deleteTrack(tr); g.selectedTrack = g.tracks[0] || null; WM.rebuild('tracks'); }
@@ -16792,6 +17337,8 @@ void main() {
         body.append(h('h4', null, 'Cómo empezar'), h('ol', { class: 'steps' },
           h('li', null, 'Pulsa Circuitos → Nuevo circuito y coloca la parrilla de salida en tu terreno.'),
           h('li', null, 'Construye pieza a pieza eligiendo dirección y pendiente, mete saltos y la meta desde «Pieza especial» y vuelve hasta la salida para cerrar el circuito.'),
+          h('li', null, 'En motocross, supercross y minicross la salida tiene una recta ancha con la valla: elige en el constructor si va a la izquierda, a la derecha o si prefieres no ponerla.'),
+          h('li', null, 'Puedes subir el trazado hasta 12 m sobre el terreno. Un tramo a 4,5 m o más por encima de otro pasa sobre él en un puente, y el de abajo cruza por un túnel (del mismo circuito o de otro). Bajo un puente no caben saltos.'),
           h('li', null, 'Construye un paddock y un aparcamiento tocando la carretera, una taquilla, baños y caminos.'),
           h('li', null, 'Valida, prueba y abre el circuito. Llegarán pilotos y espectadores.'),
           h('li', null, 'Contrata personal, ajusta precios, organiza eventos y cumple objetivos.')));
@@ -18420,7 +18967,7 @@ void main() {
         }
       }
       /* dust trails */
-      if (zoom > 2.5 && g.speed > 0) for (const a of g.riders) if (a.m && a.trackId != null) { const t = tr(a.trackId); if (t) this.fx.riderTrail(a, t, 1 / 60 * Math.min(2, g.speed)); }
+      if (zoom > 2.5 && g.speed > 0) for (const a of g.riders) if (a.m && a.trackId != null) { const t = a.m.chute || tr(a.trackId); if (t) this.fx.riderTrail(a, t, 1 / 60 * Math.min(2, g.speed)); }
     },
     pushMarkers() {
       const r = this.renderer, g = this.game;

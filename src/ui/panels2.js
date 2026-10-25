@@ -676,6 +676,8 @@
         body.append(h('h4', null, 'Cómo empezar'), h('ol', { class: 'steps' },
           h('li', null, 'Pulsa Circuitos → Nuevo circuito y coloca la parrilla de salida en tu terreno.'),
           h('li', null, 'Construye pieza a pieza eligiendo dirección y pendiente, mete saltos y la meta desde «Pieza especial» y vuelve hasta la salida para cerrar el circuito.'),
+          h('li', null, 'En motocross, supercross y minicross la salida tiene una recta ancha con la valla: elige en el constructor si va a la izquierda, a la derecha o si prefieres no ponerla.'),
+          h('li', null, 'Puedes subir el trazado hasta 12 m sobre el terreno. Un tramo a 4,5 m o más por encima de otro pasa sobre él en un puente, y el de abajo cruza por un túnel (del mismo circuito o de otro). Bajo un puente no caben saltos.'),
           h('li', null, 'Construye un paddock y un aparcamiento tocando la carretera, una taquilla, baños y caminos.'),
           h('li', null, 'Valida, prueba y abre el circuito. Llegarán pilotos y espectadores.'),
           h('li', null, 'Contrata personal, ajusta precios, organiza eventos y cumple objetivos.')));

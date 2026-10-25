@@ -229,7 +229,7 @@
       const pr = this.probe;
       if (!pr || !pr.tmp || !pr.tmp.S) return [];
       const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.gateOff(pr.tmp.pieces[0]) / C.TRACK_DS));
-      const side = pr.chuteSide ? ' · recta de salida a la ' + (pr.chuteSide > 0 ? 'izquierda' : 'derecha') : '';
+      const side = pr.chuteSide ? ' · recta de salida a la ' + (pr.chuteSide > 0 ? 'derecha' : 'izquierda') : '';
       return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida' + side + ' · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
     }
   };
@@ -709,7 +709,7 @@
       const i = TrackEdit.nodeAt.call({ tr }, this.cursor);
       if (i < 0) { toast('Haz clic sobre un punto del trazado', 'info'); return; }
       if (tr.state === 'open') { toast('Cierra el circuito para modificarlo', 'info'); return; }
-      const v = U.clamp(tr.nodes[i].elev + dir * 0.5, 0, 6);
+      const v = U.clamp(tr.nodes[i].elev + dir * 0.5, 0, MX.Track.ELEV_MAX);
       if (v === tr.nodes[i].elev) return;
       if (result(game().editTrack(tr, (t) => { t.nodes[i].elev = v; }))) sfx(dir > 0 ? 'raise' : 'lower');
       this.refresh();

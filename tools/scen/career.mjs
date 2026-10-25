@@ -10,6 +10,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await install(ev);
   await shot('game-start');
   await step('start');
+  logs.push('map ' + await ev(() => MX.App.game.world.preset + ' seed ' + MX.App.game.seed));
   await clickText(page, '#tutorial .btn', 'Empezar');
   /* camera: wheel zoom + keyboard pan */
   await page.mouse.move(900, 300);
@@ -113,6 +114,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await shot('validate');
   const val = await ev(() => (MX.App.game.tracks[0].fullIssues || []).map(i => i.level + ':' + i.msg));
   logs.push('validation ' + JSON.stringify(val));
+  logs.push('entry ' + await ev(() => { const t = MX.App.game.tracks[0]; return JSON.stringify({ side: t.chuteSide, entry: t.entry && [t.entry.tx, t.entry.tz, Math.round(t.entry.s)], origin: t.origin, pieces: t.pieces.map(p => p.t[0] + (p.k || p.n || p.f || '') + (p.dir || '')).join(' ') }); }));
   await clickText(page, '.win .btn', 'Abrir al público'); await wait(800);
   await step('opened');
   const st = await ev(() => MX.App.game.tracks[0].state);

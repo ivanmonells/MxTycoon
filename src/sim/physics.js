@@ -502,6 +502,9 @@
       rating -= desc.longestStraight > (type === 'kids' ? 60 : 130) ? 0.6 : 0;
       rating -= (desc.tight > desc.corners * 0.7 && desc.corners > 3 && type !== 'sx') ? 0.4 : 0;
     }
+    /* passing over or under itself or another circuit is a show */
+    const crossings = game && game.tracks ? MX.Track.crossingsFor(track, game.tracks).length : 0;
+    rating += Math.min(1, crossings * 0.5);
     /* what the riding asks for, before the surroundings (see surroundings and rescore) */
     const base = {
       rating,
@@ -518,7 +521,7 @@
       maxSpeed: pro.maxV, avgSpeed: pro.avgV, airPro: pro.air, airMid: mid.air, airBeg: runs[0].air,
       jumps: jumpCount, rhythm: rhythmCount, corners: desc.corners, tight: desc.tight, berms: desc.berms,
       elev: desc.elevRange, width: desc.avgW, longest: desc.longestStraight, hazards: env.hazards,
-      protectedRatio: env.protectedRatio, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: env.scen, themes: env.themes, base
+      protectedRatio: env.protectedRatio, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: env.scen, themes: env.themes, base, crossings
     };
     track.stats = stats;
     return stats;

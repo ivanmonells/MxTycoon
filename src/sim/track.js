@@ -164,7 +164,7 @@
   const unitLen = (h) => (h & 1 ? Math.SQRT2 : 1) * LAT;
   const KAPPA = 0.64;                          // cubic control length for a 45 degree arc
   const GRADE = [-0.2, -0.1, 0, 0.1, 0.2];     // by slope class -2..2
-  const ELEV_MAX = 8;
+  const ELEV_MAX = 12;
   const START_LEN = 36, START_GATE = 15;       // gate 15 m into the start straight: grid behind it
   /* motocross start straight: as wide as the gate (m) for the disciplines that start
      from a gate; it runs at an angle beside the first straight and joins it */
@@ -237,7 +237,117 @@
     }
   }
 
-  let TRACK_UID = 1;
+  /* ---------- crossings ----------
+     A stretch of circuit may pass over another circuit, or over itself, if it runs at
+     least CLEAR metres higher and crosses at a fair angle: the upper one becomes a bridge
+     between walls and the lower one goes through underneath, as through a tunnel. */
+  const CLEAR = 4.5, CROSS_ANGLE = Math.PI / 6, DECK = 0.8;
+  /* jumps and rhythm sections throw riders into the air: not under a bridge */
+  const AIR_KINDS = new Set(['table', 'double', 'triple', 'stepup', 'rhythm', 'bumps']);
+  /* horizontal run of an embankment h metres high (steeper when tall) */
+  const bankRun = (h) => h <= 3 ? Math.max(0.7, h * 1.15 + 0.45) : 3.9 + (h - 3) * 0.6;
+  /* signed shortest difference between sample indices a and b on a path of n samples */
+  const idxDiff = (a, b, n, closed) => { let d = a - b; if (closed) { d = U.mod(d, n); if (d > n / 2) d -= n; } return d; };
+
+  /* Where path A meets path B (B === A: a circuit with itself). skip(i, j) leaves out the
+     sample pairs that are meant to touch (a circuit's own joints). Each meeting:
+     {ok, why: 'height' | 'angle', U, L: the upper and lower path, iu, il: their closest
+      samples, u0..u1, l0..l1: sample offsets from them where the two overlap, x, z, ang,
+      R: radius around (x, z) where their embankments may share ground} */
+  function crossingsOf(A, B, skip, clear) {
+    const SA = A.S, SB = B.S;
+    if (!SA || !SB) return [];
+    clear = clear || CLEAR;
+    const cell = 6, grid = new Map();
+    for (let j = 0; j < SB.n; j += 2) {
+      const k = Math.floor(SB.x[j] / cell) * 4096 + Math.floor(SB.z[j] / cell);
+      let l = grid.get(k);
+      if (!l) grid.set(k, l = []);
+      l.push(j);
+    }
+    const groups = [];
+    for (let i = 0; i < SA.n; i += 2) {
+      const cx = Math.floor(SA.x[i] / cell), cz = Math.floor(SA.z[i] / cell), reach = Math.ceil(((SA.w[i] + 14) * 0.5 + 0.8) / cell);
+      for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
+        const l = grid.get((cx + dx) * 4096 + cz + dz);
+        if (!l) continue;
+        for (const j of l) {
+          if (skip && skip(i, j)) continue;
+          const minD = (SA.w[i] + SB.w[j]) * 0.5 + 0.8, d2 = U.dist2(SA.x[i], SA.z[i], SB.x[j], SB.z[j]);
+          if (d2 >= minD * minD) continue;
+          /* pairs a few metres apart on both paths belong to the same meeting */
+          let q = null, di = 0, dj = 0;
+          for (const g of groups) {
+            di = idxDiff(i, g.i, SA.n, SA.closed); dj = idxDiff(j, g.j, SB.n, SB.closed);
+            if (di >= g.a0 - 12 && di <= g.a1 + 12 && dj >= g.b0 - 12 && dj <= g.b1 + 12) { q = g; break; }
+          }
+          if (!q) { groups.push(q = { i, j, a0: 0, a1: 0, b0: 0, b1: 0, dyMin: Infinity, dyMax: -Infinity, best: Infinity, ic: i, jc: j }); di = 0; dj = 0; }
+          q.a0 = Math.min(q.a0, di); q.a1 = Math.max(q.a1, di); q.b0 = Math.min(q.b0, dj); q.b1 = Math.max(q.b1, dj);
+          const dy = SA.y[i] - SB.y[j];
+          q.dyMin = Math.min(q.dyMin, dy); q.dyMax = Math.max(q.dyMax, dy);
+          if (d2 < q.best) { q.best = d2; q.ic = i; q.jc = j; }
+        }
+      }
+    }
+    /* a circuit with itself finds every meeting twice, once from each stretch: keep the
+       one seen from the upper stretch (either one when they clash) */
+    const keep = A !== B ? groups : groups.filter(q => q.dyMin >= clear || (q.dyMax > -clear && q.ic < q.jc));
+    return keep.map((q) => {
+      const aUp = q.dyMin >= clear, bUp = !aUp && q.dyMax <= -clear;
+      let ang = Math.abs(U.wrapAngle(SA.hdg[q.ic] - SB.hdg[q.jc]));
+      if (ang > Math.PI / 2) ang = Math.PI - ang;
+      const why = !(aUp || bUp) ? 'height' : ang < CROSS_ANGLE ? 'angle' : '';
+      const dic = idxDiff(q.ic, q.i, SA.n, SA.closed), djc = idxDiff(q.jc, q.j, SB.n, SB.closed);
+      const ra = [q.a0 - dic, q.a1 - dic], rb = [q.b0 - djc, q.b1 - djc];
+      const Up = bUp ? B : A, Lo = bUp ? A : B, iu = bUp ? q.jc : q.ic, il = bUp ? q.ic : q.jc;
+      const ru = bUp ? rb : ra, rl = bUp ? ra : rb;
+      const SU = Up.S, SL = Lo.S;
+      const hU = Math.max(0, SU.y[iu] - SU.terr[iu]), hL = Math.max(0, SL.y[il] - SL.terr[il]);
+      const R = (SU.w[iu] * 0.5 + bankRun(hU) + SL.w[il] * 0.5 + bankRun(hL) + 2) / Math.max(0.5, Math.sin(ang));
+      return {
+        ok: !why, why, U: Up, L: Lo, iu, il, u0: ru[0], u1: ru[1], l0: rl[0], l1: rl[1],
+        x: (SA.x[q.ic] + SB.x[q.jc]) / 2, z: (SA.z[q.ic] + SB.z[q.jc]) / 2, ang, R, dy: bUp ? -q.dyMax : q.dyMin
+      };
+    });
+  }
+  /* the lower path's jump or rhythm section under (or flying into) a bridge, if any */
+  function tunnelClash(c) {
+    const L = c.L, Ln = L.length, a = (c.il + c.l0) * DS - 16, b = (c.il + c.l1) * DS + 3;
+    for (const f of L.features) {
+      const d = Cat.features[f.type];
+      if (!d || !AIR_KINDS.has(d.kind)) continue;
+      const fs = f.s, fe = f.s + (f.len || 0);
+      for (const k of L.S && L.S.closed ? [-Ln, 0, Ln] : [0]) if (a < fe + k && fs + k < b) return f;
+    }
+    return null;
+  }
+  /* a circuit with itself: stretches close along the track are joined, not crossing */
+  const selfSkip = (S) => (i, j) => {
+    let arc = Math.abs(j - i) * DS;
+    if (S.closed) arc = Math.min(arc, S.L - arc);
+    return arc < ((S.w[i] + S.w[j]) * 0.5 + 0.8) * 2.2 + 4;
+  };
+  const XCACHE = new Map();
+  /* valid crossings of a circuit with itself and with the others, cached by version */
+  function crossingsFor(tr, tracks) {
+    const out = [];
+    if (!tr.S) return out;
+    for (const o of tracks) {
+      if (!o.S || o.isChute) continue;
+      const a = tr.inst < o.inst ? tr : o, b = a === tr ? o : tr;
+      const key = a.inst + ':' + a.ver + '|' + b.inst + ':' + b.ver;
+      let list = XCACHE.get(key);
+      if (!list) {
+        list = a === b ? crossingsOf(a, a, selfSkip(a.S), CLEAR - 0.25) : crossingsOf(a, b, null, CLEAR - 0.25);
+        if (XCACHE.size > 300) XCACHE.clear();
+        XCACHE.set(key, list);
+      }
+      for (const c of list) if (c.ok) out.push(c);
+    }
+    return out;
+  }
+
+  let TRACK_UID = 1, INSTANCE = 0;
 
   class Track {
     constructor(id, name) {
@@ -249,7 +359,7 @@
       this.pieces = null;     // piece-built circuits: [{t, n | k, dir, slope, bank, f, w, surf}]
       this.origin = null;     // lattice start pose {x, z, h}
       this.e0 = 0;            // elevation at the origin (construction probes start mid-air)
-      this.chuteSide = 0;     // side of the start straight beside the first piece (1 left, -1 right, 0 none)
+      this.chuteSide = 0;     // side of the start straight beside the first piece (1 right, -1 left as the riders see it, 0 none)
       this.chuteSet = false;  // chosen by the player (otherwise it moves to the outside of the first bend)
       this.chute = null;      // its geometry as an open scratch track (see _buildChute)
       this.endPose = null;    // lattice pose after the last piece
@@ -275,6 +385,7 @@
       this.entry = null;
       this.crashMarks = [];
       this.type = 'mx';       // discipline: a key of Catalog.trackTypes
+      this.inst = ++INSTANCE; // unique per object (ids repeat when a save is loaded again)
     }
     get bit() { return 1 << this.slot; }
     get typeDef() { return Cat.trackTypes[this.type] || Cat.trackTypes.mx; }
@@ -588,7 +699,7 @@
     }
 
     /* where the edge markers leave an opening: around the start gate, and where the start
-       straight meets the circuit (side 1 left, -1 right of the direction of travel) */
+       straight meets the circuit (side 1 right, -1 left of the direction of travel) */
     edgeOpen(i, side) {
       const S = this.S, s = i * DS;
       if (this.isChute) {
@@ -733,15 +844,18 @@
       return { vRollMax, options, res, maxAir: big ? big.air : 0, req: big ? big.req : 0 };
     }
 
+    /* Where practice riders come onto the track: beside the start, on the outside of the
+       loop. entries keeps the alternatives (the outside first) for the game to pick one
+       riders can reach from the paddock (see Game#rebuildFields). */
     _computeEntry(world) {
       const S = this.S;
-      this.entry = null;
+      this.entry = null; this.entries = [];
       if (!S) return;
       const st = this.features.find(f => f.type === 'start') || this.features.find(f => f.type === 'finish');
       let s = st ? st.s + (st.type === 'start' ? 2 : 0) : 0;
       /* with a wide start straight beside the first piece, riders come in just after it joins */
       const c = this.chute;
-      const spots = c && S.closed ? [0, 4, 8, 12, 16, 20, 26, 32, 40, 50].map(d => c.joinS + 10 + d) : [s];
+      const spots = c && S.closed ? [0, 4, 8, 12, 16, 20, 26, 32, 40, 50].map(d => c.joinS + 10 + d) : [s, s + 8, s + 16, s + 24, s + 36];
       /* prefer the outer side of the loop (away from the centroid) so the entry is reachable */
       let mx = 0, mz = 0;
       for (let k = 0; k < S.n; k += 8) { mx += S.x[k]; mz += S.z[k]; }
@@ -752,23 +866,23 @@
         for (let j = 0; j < CS.n; j += 4) if (U.dist2(x, z, CS.x[j], CS.z[j]) < (CS.w[j] * 0.5 + 3) ** 2) return false;
         return true;
       };
-      for (const s0 of spots) {
+      for (const inside of [false, true]) for (const s0 of spots) {
         const i = S.closed ? U.mod(Math.round(s0 / DS), S.n) : U.clamp(Math.round(s0 / DS), 0, S.n - 1);
         const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
         const outer = ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
-        for (const side of [outer, -outer]) {
-          for (const extra of [3.5, 5.5, 8]) {
-            const off = S.w[i] * 0.5 + extra;
-            const x = S.x[i] + nx * off * side, z = S.z[i] + nz * off * side;
-            const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
-            if (!world.inBounds(tx, tz)) continue;
-            const id = world.idx(tx, tz);
-            if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit) || !clearOfChute(x, z)) continue;
-            this.entry = { x, z, tx, tz, s: i * DS, side, i };
-            return;
-          }
+        const side = inside ? -outer : outer;
+        for (const extra of [3.5, 5.5, 8]) {
+          const off = S.w[i] * 0.5 + extra;
+          const x = S.x[i] + nx * off * side, z = S.z[i] + nz * off * side;
+          const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
+          if (!world.inBounds(tx, tz)) continue;
+          const id = world.idx(tx, tz);
+          if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit) || !clearOfChute(x, z)) continue;
+          this.entries.push({ x, z, tx, tz, s: i * DS, side, i });
+          break;
         }
       }
+      this.entry = this.entries[0] || null;
     }
 
     /* ---------- queries ---------- */
@@ -889,6 +1003,8 @@
             return { ok: false, reason: d.kind === 'start' ? 'La parrilla necesita una recta larga' : 'Este elemento debe ir en una recta', s0, len };
         }
       }
+      /* nothing that jumps under a bridge */
+      if (AIR_KINDS.has(d.kind) && this.tunnels) for (const [a, b] of this.tunnels) if (this._overlap(s0, len, a, b - a)) return { ok: false, reason: 'Debajo de un puente no caben saltos ni secciones rítmicas', s0, len };
       /* overlap with other features */
       for (const f of this.features) {
         if (f.uid === ignoreUid) continue;
@@ -954,7 +1070,7 @@
       return this.S.seg[this.sIndex(s)];
     }
     /* Try the start straight at lattice (x, z) facing h without building it. */
-    /* side: where the start straight goes (1 left, -1 right, 0 none); without it the side that fits */
+    /* side: where the start straight goes (1 right, -1 left, 0 none); without it the side that fits */
     probeStart(world, x, z, h, w, surf, side) {
       const sides = !CHUTE_W[this.type] ? [0] : side != null ? [side] : [1, -1];
       let res = null;
@@ -998,12 +1114,14 @@
       }
       const why = this._probeTiles(world, tmp);
       if (why) return fail(why);
-      if (this._probeOverlap(tmp, res.closes)) return fail('Choca con el propio circuito');
+      const over = this._probeOverlap(tmp, res.closes);
+      if (over) return fail(over);
       if (this.chuteClash(tmp.S, 0, tmp.S.n, res.closes ? (i) => i * DS > tmp.length - 8 : null) >= 0) return fail('Choca con la recta de salida: llévalo por el otro lado o cambia la salida de lado');
       /* the track follows the ground: on a hillside the piece adds its own grade to the hill's */
       const n = tmp.S.n, edge = Math.round(3 / DS), st = n > 2 * edge + 2 ? tmp.steepest(edge, n - edge) : { slope: 0 };
       if (st.slope > C.MAX_SLOPE) return fail('Demasiado empinado (' + Math.round(st.slope * 100) + ' %): prueba otra pendiente u otra dirección, o allana la ladera');
       res.cost = this._probeCost(world, tmp);
+      res.cross = tmp.crossNote || null;
       return res;
     }
     _probeTiles(world, tmp) {
@@ -1014,6 +1132,7 @@
       }
       tmp.computeFootprint(world);
       let r = null;
+      const shared = [];
       for (const t of tmp.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         if (world.owned[t] !== 1) return 'Fuera de tu terreno';
@@ -1021,26 +1140,56 @@
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
         else if (world.path[t]) r = 'Hay un camino o una carretera en medio';
         else if (world.isWater(tx, tz)) r = 'No se puede construir sobre el agua';
-        else if (world.trackOcc[t] & ~this.bit) r = 'Choca con otro circuito';
+        else if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
-      return r;
+      if (r || !shared.length) return r;
+      const x = this._crossOthers(world, tmp, shared, CLEAR);
+      return x ? x.reason : null;
     }
+    /* Ground shared with other circuits (tiles) is fine only around a crossing over or
+       under them; path is this circuit or a piece of it. The first problem {reason, t}. */
+    _crossOthers(world, path, tiles, clear) {
+      const list = world.trackList || [], cache = new Map();
+      for (const t of tiles) {
+        let bits = world.trackOcc[t] & ~this.bit;
+        const x = (t % world.N + 0.5) * C.TILE, z = (((t / world.N) | 0) + 0.5) * C.TILE;
+        /* a start straight has no bridges */
+        if (path.isChute) return { reason: 'Choca con otro circuito', t };
+        for (const o of list) {
+          if (o === this || !(bits & o.bit)) continue;
+          bits &= ~o.bit;
+          if (!o.S) return { reason: 'Choca con otro circuito', t };
+          if (!cache.has(o)) cache.set(o, crossingsOf(path, o, null, clear));
+          const xs = cache.get(o);
+          const bad = xs.find(c => !c.ok);
+          if (bad) return { reason: bad.why === 'height' ? 'Choca con otro circuito: para cruzarlo por encima o por debajo hace falta ' + U.fmt1(CLEAR) + ' m de diferencia de altura' : 'Choca con otro circuito: crúzalo en ángulo, no en paralelo', t };
+          if (xs.some(c => tunnelClash(c))) return { reason: 'Debajo del puente no caben saltos ni secciones rítmicas: los pilotos chocarían con él', t };
+          if (!xs.some(c => U.dist2(x, z, c.x, c.z) < c.R * c.R)) return { reason: 'Choca con otro circuito', t };
+          if (path !== this) for (const c of xs) path.crossNote = c.U === path ? 'over' : 'under';
+        }
+        if (bits) return { reason: 'Choca con otro circuito', t };
+      }
+      return null;
+    }
+    /* the next piece against the circuit so far: crossing over or under it is fine with
+       enough height and angle, and nothing that jumps under a bridge (reason or null) */
     _probeOverlap(tmp, closes) {
       const S = this.S, T2 = tmp.S;
-      if (!S) return false;
+      if (!S) return null;
       const L = this.length, Ln = tmp.length;
-      for (let i = 0; i < T2.n; i += 2) {
-        const sn = i * DS;
-        for (let j = 0; j < S.n; j += 2) {
-          const sj = j * DS;
-          const minD = (T2.w[i] + S.w[j]) * 0.5 + 0.8;
-          let arc = (L - sj) + sn;
-          if (closes) arc = Math.min(arc, (Ln - sn) + sj);
-          if (arc < minD * 2.2 + 4) continue;
-          if (U.dist2(T2.x[i], T2.z[i], S.x[j], S.z[j]) < minD * minD) return true;
-        }
+      const skip = (i, j) => {
+        const sn = i * DS, sj = j * DS, minD = (T2.w[i] + S.w[j]) * 0.5 + 0.8;
+        let arc = (L - sj) + sn;
+        if (closes) arc = Math.min(arc, (Ln - sn) + sj);
+        return arc < minD * 2.2 + 4;
+      };
+      for (const c of crossingsOf(tmp, this, skip, CLEAR)) {
+        if (c.why === 'height') return 'Choca con el propio circuito: para pasar por encima o por debajo hace falta ' + U.fmt1(CLEAR) + ' m de diferencia de altura';
+        if (c.why) return 'Choca con el propio circuito: crúzalo en ángulo, no en paralelo';
+        if (tunnelClash(c)) return 'Debajo del puente no caben saltos ni secciones rítmicas: los pilotos chocarían con él';
+        tmp.crossNote = c.U === tmp ? 'over' : 'under';
       }
-      return false;
+      return null;
     }
     _probeCost(world, tmp) {
       if (!tmp.tiles.length) tmp.computeFootprint(world);
@@ -1065,7 +1214,8 @@
           for (const side of [-1, 1]) {
             const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
             const eh = S.y[i] + t.bankAt(i, hw * side) - world.heightAt(ex, ez);
-            const ext = 0.9 + U.clamp(eh * 1.25, 0, 7);
+            /* as wide as ever for the heights old saves use, wider only for the new tall ones */
+            const ext = Math.max(0.9 + U.clamp(eh * 1.25, 0, 7), 0.35 + bankRun(Math.max(0, eh)));
             for (let o = 0; o <= hw + ext; o += 0.9) {
               const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
               const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
@@ -1131,47 +1281,40 @@
         if (Math.abs(sl) > C.MAX_SLOPE) { S.bad[i] = 1; if (slopeBad < 0) slopeBad = i; }
       }
       if (slopeBad >= 0) issues.push(Object.assign({ level: 'error', msg: 'Pendiente excesiva en el trazado: rodea la ladera, cambia la pendiente de esas piezas o allana el terreno.' }, at(slopeBad)));
-      /* self overlap via spatial hash */
-      const cell = 4, grid = new Map();
-      for (let i = 0; i < S.n; i += 2) {
-        const k = Math.floor(S.x[i] / cell) + ',' + Math.floor(S.z[i] / cell);
-        if (!grid.has(k)) grid.set(k, []);
-        grid.get(k).push(i);
+      /* the circuit over itself: only as a bridge, high enough and at an angle */
+      let overlapAt = -1, lowAt = -1;
+      const crossings = [];
+      for (const c of crossingsOf(this, this, selfSkip(S), CLEAR - 0.25)) {
+        if (c.ok) { crossings.push(c); continue; }
+        S.bad[c.iu] = 1; S.bad[c.il] = 1;
+        if (c.why === 'height') { if (lowAt < 0) lowAt = c.iu; } else if (overlapAt < 0) overlapAt = c.iu;
       }
-      let overlapAt = -1;
-      for (let i = 0; i < S.n; i += 2) {
-        const cx = Math.floor(S.x[i] / cell), cz = Math.floor(S.z[i] / cell);
-        const reach = Math.ceil((S.w[i] + 2) / cell);
-        for (let dz = -reach; dz <= reach && !S.bad[i]; dz++) for (let dx = -reach; dx <= reach; dx++) {
-          const list = grid.get((cx + dx) + ',' + (cz + dz));
-          if (!list) continue;
-          for (const j of list) {
-            let arc = Math.abs(i - j) * DS;
-            if (S.closed) arc = Math.min(arc, S.L - arc);
-            const minD = (S.w[i] + S.w[j]) * 0.5 + 0.8;
-            if (arc < minD * 2.2 + 4) continue;
-            if (U.dist2(S.x[i], S.z[i], S.x[j], S.z[j]) < minD * minD) { S.bad[i] = 1; S.bad[j] = 1; if (overlapAt < 0) overlapAt = i; break; }
-          }
-        }
-      }
-      if (overlapAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se cruza o se pisa consigo mismo.' }, at(overlapAt)));
+      if (overlapAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se pisa consigo mismo: si se cruza, que sea en ángulo.' }, at(overlapAt)));
+      if (lowAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se cruza consigo mismo: para pasar por debajo, un tramo tiene que ir al menos ' + U.fmt1(CLEAR) + ' m más alto que el otro.' }, at(lowAt)));
       const chuteHit = this.chuteClash(S, 0, S.n, (j) => j * DS < this.chute.joinS + 12 || j * DS > S.L - 8);
       if (chuteHit >= 0) { S.bad[chuteHit] = 1; issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por la recta de salida: cambia la salida de lado o aleja el trazado de ella.' }, at(chuteHit))); }
       /* footprint conflicts */
       this.computeFootprint(world);
       let notOwned = null, blocked = null, water = null, otherTrack = null;
+      const shared = [];
       for (const t of this.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         const c = { x: (tx + 0.5) * C.TILE, z: (tz + 0.5) * C.TILE };
         if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
         if (world.bld[t] >= 0 || world.path[t]) blocked = blocked || c;
         if (world.isWater(tx, tz)) water = water || c;
-        if (world.trackOcc[t] & ~this.bit) otherTrack = otherTrack || c;
+        if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
+      const xo = shared.length ? this._crossOthers(world, this, shared, CLEAR - 0.25) : null;
+      if (xo) otherTrack = { x: (xo.t % world.N + 0.5) * C.TILE, z: (((xo.t / world.N) | 0) + 0.5) * C.TILE, msg: xo.reason + '.' };
+      for (const o of world.trackList || []) if (o !== this && o.bit !== this.bit && o.S && !o.isChute) for (const c of crossingsOf(this, o, null, CLEAR - 0.25)) if (c.ok) crossings.push(c);
+      /* stretches under a bridge (and the run-up into it): no jumps there (see checkFeature) */
+      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]);
+      this.crossings = crossings.length;
       if (notOwned) issues.push(Object.assign({ level: 'error', msg: 'Parte del circuito está fuera de tu terreno.' }, notOwned));
       if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o caminos.' }, blocked));
       if (water) issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por el agua.' }, water));
-      if (otherTrack) issues.push(Object.assign({ level: 'error', msg: 'Se solapa con otro circuito.' }, otherTrack));
+      if (otherTrack) issues.push({ level: 'error', msg: otherTrack.msg.replace(/^Choca con otro circuito/, 'Se solapa con otro circuito'), x: otherTrack.x, z: otherTrack.z });
       /* features */
       const start = this.features.find(f => f.type === 'start');
       const finish = this.features.find(f => f.type === 'finish');
@@ -1547,6 +1690,10 @@
   Track.START_GATE = START_GATE;
   Track.gateOff = gateOff;
   Track.chuteWidth = (type) => CHUTE_W[type] || 0;
+  Track.CLEAR = CLEAR;
+  Track.DECK = DECK;
+  Track.bankRun = bankRun;
+  Track.crossingsFor = crossingsFor;
   /* places at a start gate of width w */
   Track.gateSlots = (w) => Math.max(4, Math.floor(w / 0.95));
   Track.startPiece = (type, w, surf) => { const p = { t: 'start', slope: 0, bank: 0, w, surf }; if (startLenFor(type) !== START_LEN) p.sl = startLenFor(type); return p; };

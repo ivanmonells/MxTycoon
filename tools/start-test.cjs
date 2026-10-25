@@ -84,7 +84,7 @@ const facilities = (g) => {
   check('a start placed without it', pl.ok && t2.chuteSide === 0 && !t2.chute, pl.reason);
   const t3 = g.newTrack('mx');
   const pl3 = g.placeStart(t3, 60, 25, 2, 8, 'dirt', 1);
-  check('a start placed with it on the left', pl3.ok && t3.chuteSide === 1 && t3.chuteSet && !!t3.chute, pl3.reason);
+  check('a start placed with it on the right', pl3.ok && t3.chuteSide === 1 && t3.chuteSet && !!t3.chute, pl3.reason);
 }
 
 /* disciplines: gate starts get one sized to them, the others none */

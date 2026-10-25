@@ -338,10 +338,11 @@
       for (const tr of game.tracks) {
         live.add(tr.id);
         let tm = this.trackMeshes.get(tr.id);
-        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0);
+        /* crossings depend on the other circuits too */
+        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0);
         if (!tm || tm.key !== key || tr._meshVer === -1) {
           if (!tm) { tm = { main: null, gate: null, decor: null, decorKey: null }; this.trackMeshes.set(tr.id, tm); }
-          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false });
+          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false, tracks: game.tracks });
           if (g) tm.main = GLU.makeMeshVAO(gl, g.data, g.count, tm.main); else if (tm.main) tm.main.count = 0;
           const gg = MX.Geom.startGate(tr, world, tr.gateDown);
           if (gg) tm.gate = GLU.makeMeshVAO(gl, gg.data, gg.count, tm.gate); else if (tm.gate) tm.gate.count = 0;
