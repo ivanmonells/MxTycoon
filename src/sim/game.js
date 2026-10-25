@@ -503,7 +503,7 @@
       if (tr.state === 'testing') this.endTest(tr);
       const snap = {
         nodes: tr.nodes.map(n => Object.assign({}, n)), features: tr.features.map(f => Object.assign({}, f)), closed: tr.closed,
-        pieces: tr.pieces ? tr.pieces.map(p => Object.assign({}, p)) : null, origin: tr.origin ? Object.assign({}, tr.origin) : null
+        pieces: tr.pieces ? tr.pieces.map(p => Object.assign({}, p)) : null, origin: tr.origin ? Object.assign({}, tr.origin) : null, chuteSide: tr.chuteSide
       };
       const oldLen = tr.length;
       const oldCost = tr.geometryCost() + tr.featureCost();
@@ -517,7 +517,7 @@
       for (const t of tr.tiles) if (this.world.scen[t] >= 0 && this.world.owned[t]) { const o = this.world.scenery.get(this.world.scen[t]); if (this.world.isTree(o)) trees++; }
       const delta = newCost - oldCost + trees * C.TREE_CLEAR_COST;
       if (delta > 0 && !this.canAfford(delta)) {
-        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed; tr.pieces = snap.pieces; tr.origin = snap.origin;
+        tr.nodes = snap.nodes; tr.features = snap.features; tr.closed = snap.closed; tr.pieces = snap.pieces; tr.origin = snap.origin; tr.chuteSide = snap.chuteSide;
         tr.rebuild(this.world); tr.computeFootprint(this.world);
         return { ok: false, reason: 'No tienes suficiente dinero', cost: delta };
       }
@@ -569,14 +569,14 @@
     }
 
     /* ---------------- piece-by-piece construction ---------------- */
-    placeStart(tr, x, z, h, w, surf) {
+    placeStart(tr, x, z, h, w, surf, side) {
       if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
       if (tr.pieces.length) return { ok: false, reason: 'La parrilla de salida ya está colocada' };
-      const pr = tr.probeStart(this.world, x, z, h, w, surf);
+      const pr = tr.probeStart(this.world, x, z, h, w, surf, side);
       if (!pr.ok) return pr;
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
       return this.editTrack(tr, (t) => {
-        t.origin = { x, z, h }; t.e0 = 0; t.closed = false;
+        t.origin = { x, z, h }; t.e0 = 0; t.closed = false; t.chuteSide = pr.chuteSide || 0; t.chuteSet = side != null;
         t.pieces = [MX.Track.startPiece(t.type, w, surf)];
         t.features = [];
         t.pinFeature('start', 0, MX.Track.gateOff(t.pieces[0]));
@@ -590,6 +590,8 @@
       if (p.t === 'special' && !this.isUnlocked(Cat.features[p.f])) return { ok: false, reason: 'Bloqueado: necesitas investigarlo' };
       if (p.t === 'curve' && p.bank === 2 && !this.isUnlocked(Cat.features.berm_big)) return { ok: false, reason: 'El peralte grande necesita investigación' };
       if (!this.isUnlocked(Cat.surfaces[p.surf])) return { ok: false, reason: 'Superficie bloqueada: investígala' };
+      /* the first bend shows where the infield is: the start straight moves to the outside */
+      if (tr.chuteSide && !tr.chuteSet && p.t === 'curve' && tr.chuteSide === p.dir && !tr.pieces.some(q => q.t === 'curve')) this.setChuteSide(tr, -tr.chuteSide, true);
       const pr = tr.probePiece(this.world, p);
       if (!pr.ok) return pr;
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero', cost: pr.cost };
@@ -600,6 +602,20 @@
         if (pr.closes) t.closed = true;
       });
       if (r.ok && pr.closes) { r.closes = true; r.adjusted = !!(pr.fix && (pr.fix.length > 1 || pr.fix[0].slope !== p.slope)); MX.Bus.emit('track:closed-loop', { track: tr }); }
+      return r;
+    }
+    /* move the start straight to a side of the first piece (1 left, -1 right, 0 none); auto: not the player's choice */
+    setChuteSide(tr, side, auto) {
+      if (!tr.pieces || !tr.origin || !MX.Track.chuteWidth(tr.type)) return { ok: false, reason: 'Este circuito no tiene recta de salida' };
+      if (tr.state === 'open') return { ok: false, reason: 'Cierra el circuito para modificarlo' };
+      const copy = MX.Track.deserialize(tr.serialize(), this.world);
+      copy.chuteSide = side;
+      copy.rebuild(this.world);
+      const why = tr._probeTiles(this.world, copy);
+      if (why) return { ok: false, reason: 'La recta de salida no cabe en ese lado: ' + why.charAt(0).toLowerCase() + why.slice(1) };
+      if (copy.chuteClash(copy.S, 0, copy.S.n, (j) => j * C.TRACK_DS < copy.chute.joinS + 12 || (copy.closed && j * C.TRACK_DS > copy.S.L - 8)) >= 0) return { ok: false, reason: 'En ese lado la recta de salida choca con el circuito' };
+      const r = this.editTrack(tr, (t) => { t.chuteSide = side; });
+      if (r.ok && !auto) tr.chuteSet = true;
       return r;
     }
     removeLastPiece(tr) {
@@ -655,17 +671,25 @@
       return r;
     }
     /* Rounded-rectangle loop with a few elements inside rect {x0, z0, w, h} (tiles). */
-    suggestLoop(tr, rect, w, surf) {
+    /* opts.chute: false leaves out the wide start straight (it goes outside the loop) */
+    suggestLoop(tr, rect, w, surf, opts) {
       if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
       const m = Math.ceil((w * 0.5 + 2.5) / C.TILE);
       const startP = MX.Track.startPiece(tr.type, w, surf);
       const startU = MX.Track.pieceUnits(startP, 0);
       const plan = SUGGEST[tr.type] || SUGGEST.mx;
-      let k = plan.k, a = rect.w - 2 * m - 6 * k - startU, b = rect.h - 2 * m - 6 * k;
-      if (plan.maxB) b = Math.min(b, plan.maxB);
-      if (plan.maxA) a = Math.min(a, plan.maxA);
-      while ((a < 0 || b < 2) && k > 1) { k--; a = rect.w - 2 * m - 6 * k - startU; b = rect.h - 2 * m - 6 * k; if (plan.maxB) b = Math.min(b, plan.maxB); if (plan.maxA) a = Math.min(a, plan.maxA); }
-      if (a < 0 || b < 2) return { ok: false, short: true, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      /* the wide start straight runs outside the first leg: room for it above the loop if the area allows */
+      const CW = opts && opts.chute === false ? 0 : MX.Track.chuteWidth(tr.type);
+      const fit = (top) => {
+        let k = plan.k;
+        const dims = () => { let a = rect.w - 2 * m - 6 * k - startU, b = rect.h - m - top - 6 * k; if (plan.maxB) b = Math.min(b, plan.maxB); if (plan.maxA) a = Math.min(a, plan.maxA); return [a, b]; };
+        let [a, b] = dims();
+        while ((a < 0 || b < 2) && k > 1) { k--; [a, b] = dims(); }
+        return a < 0 || b < 2 ? null : { k, a, b, top };
+      };
+      const lay = (CW && fit(Math.ceil((w * 0.5 + 5 + CW) / C.TILE))) || fit(m);
+      if (!lay) return { ok: false, short: true, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      const { k, a, b } = lay;
       const P = (o) => Object.assign({ slope: 0, bank: 0, w, surf }, o);
       const unlocked = (f) => this.isUnlocked(Cat.features[f]);
       const leg = (units, specials) => {
@@ -683,7 +707,7 @@
       const L = plan.legs;
       const pieces = [startP]
         .concat(leg(a, L[0]), turn(1), leg(b, L[1]), turn(0), leg(startU + a, ['finish'].concat(L[2])), turn(1), leg(b, L[3]), turn(0));
-      const ox = rect.x0 + m + 3 * k, oz = rect.z0 + m;
+      const ox = rect.x0 + m + 3 * k, oz = rect.z0 + lay.top;
       let x = ox, z = oz, h = 0, len = 0;
       for (const p of pieces) { const g = MX.Track.pieceGeom(p, x, z, h, 0); x = g.x1; z = g.z1; h = g.h1; len += g.len; }
       if (x !== ox || z !== oz || h !== 0) return { ok: false, reason: 'No se pudo cerrar el trazado sugerido' };
@@ -691,11 +715,14 @@
       if (len < minLen + 4) return { ok: false, short: true, reason: 'No cabe un circuito de ' + tr.typeDef.name.toLowerCase() + ' de al menos ' + minLen + ' m en el terreno libre' };
       return this.editTrack(tr, (t) => {
         t.origin = { x: ox, z: oz, h: 0 }; t.e0 = 0; t.closed = true;
+        t.chuteSide = CW ? -1 : 0;
         t.pieces = pieces; t.features = [];
         pieces.forEach((p, i) => {
           if (p.t === 'start') t.pinFeature('start', i, MX.Track.gateOff(p));
           else if (p.t === 'special') t.pinFeature(p.f, i, MX.Track.SPECIAL_OFF);
         });
+        /* without room for the start straight the riders start on the circuit itself */
+        if (t.chuteSide) { t.rebuild(this.world); if (!t.chute || t._probeTiles(this.world, t.chute)) t.chuteSide = 0; }
       });
     }
     validateTrack(tr) {
@@ -1078,13 +1105,15 @@
     }
 
     /* ---------------- physics context and events from riders ---------------- */
-    physCtx(rider, tr) {
+    /* next: on a start straight, the circuit it joins {track, s, at} */
+    physCtx(rider, tr, next) {
       const c = this._ctx || (this._ctx = { emit: (t, m, d) => this.onRiderEvent(t, m, d) });
-      c.rng = this.rng; c.time = this.time; c.race = !!rider.race; c.cap = rider.capV != null ? rider.capV : null; c.track = tr;
+      c.rng = this.rng; c.time = this.time; c.race = !!rider.race; c.cap = rider.capV != null ? rider.capV : null; c.track = tr; c.next = next || null;
       return c;
     }
     onRiderEvent(type, m, d) {
-      const r = m.rider, tr = this._ctx.track;
+      /* events on a start straight count for its circuit (wear stays on the straight) */
+      const r = m.rider, ts = this._ctx.track, tr = ts && ts.parent || ts;
       if (!r) return;
       if (type === 'takeoff' && d.planned) {
         this.addExcite(m.x, m.z, 0.6);
@@ -1098,7 +1127,7 @@
           this.addExcite(m.x, m.z, 0.5 + d.air * 0.4);
         } else if (d.quality === 'hard') {
           if (this.rng.chance(0.3)) r.think(this, 'cased');
-          if (tr) tr.addWearAt(m.s, 0.01);
+          if (ts) ts.addWearAt(m.s, 0.01);
         }
         MX.Bus.emit('land', { x: m.x, z: m.z, q: d.quality, air: d.air });
       } else if (type === 'crash') {
@@ -1117,8 +1146,8 @@
         /* marshals wave yellow flags upstream */
         let flagged = false;
         for (const s of this.staff) if (s.role === 'marshal' && U.dist2(s.x, s.z, m.x, m.z) < 70 * 70) { s.flagT = 6; flagged = true; }
-        if (flagged && tr) for (const o of this.riders) if (o.m && o.trackId === tr.id && o !== r) {
-          const dd = U.mod(m.s - o.m.s, tr.length);
+        if (flagged && tr) for (const o of this.riders) if (o.m && o.trackId === tr.id && o !== r && o.m.chute === m.chute) {
+          const dd = U.mod(m.s - o.m.s, ts.length);
           if (dd < 60) o.m.flagSlow = 4.5;
         }
         this.lastCrashT = this.time;
@@ -1160,7 +1189,7 @@
           if (X < 0 || Z < 0 || X >= n || Z >= n) continue;
           g.base[X + Z * n] += val / (1 + (dx * dx + dz * dz) * 0.4);
         }
-        const tr = this.trackById(r.trackId);
+        const tr = r.m.chute || this.trackById(r.trackId);
         if (tr && !r.m.air && r.m.v > 6) {
           const sd = Cat.surfaces[Cat.surfaceOrder[tr.S.surf[tr.sIndex(r.m.s)]]];
           const k = sd.dust * (1 - tr.moisture) * (this.wateringUnlocked() && this.staff.some(s => s.role === 'crew') ? 0.55 : 1);
@@ -1215,7 +1244,11 @@
           const lateral = Math.abs(om.lane - m.lane);
           if (om.crash) {
             if (gap < 9 * wide && lateral < 1.6 * wide) { m.laneBias += (m.lane >= om.lane ? 1 : -1) * 0.3; }
-            if (gap < 1.4 * wide && lateral < 0.9 * wide && m.v > 5 && !m.air && this.rng.chance(m.flagSlow > 0 ? 0.05 : 0.25)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this._ctx.emit, 'pileup');
+            /* running into a rider who is down: one chance per fallen rider, not per frame */
+            if (gap < 1.4 * wide && lateral < 0.9 * wide && m.v > 5 && !m.air && m.dodged !== om) {
+              m.dodged = om;
+              if (this.rng.chance(m.flagSlow > 0 ? 0.04 : 0.2)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this.physCtx(r, tr).emit, 'pileup');
+            }
             continue;
           }
           if (lateral < 1.5 * wide && gap < 6 * wide) {
@@ -1542,13 +1575,14 @@
         while (this.spawnAccRent >= 1) { this.spawnAccRent -= 1; this.spawnRentalRider(); }
       }
       if (this.comp) this.comp.update(dt);
-      /* traffic per track */
+      /* traffic per track (riders still on a start straight among themselves) */
       const byTrack = new Map();
       for (const r of this.riders) if (r.state === 'ride' && r.m) {
-        if (!byTrack.has(r.trackId)) byTrack.set(r.trackId, []);
-        byTrack.get(r.trackId).push(r);
+        const k = r.m.chute || r.trackId;
+        if (!byTrack.has(k)) byTrack.set(k, []);
+        byTrack.get(k).push(r);
       }
-      for (const [id, list] of byTrack) { const tr = this.trackById(id); if (tr) this.updateTraffic(tr, list); }
+      for (const [k, list] of byTrack) { const tr = typeof k === 'number' ? this.trackById(k) : k; if (tr && tr.S) this.updateTraffic(tr, list); }
       const rng = this.rng;
       for (let i = 0; i < this.riders.length; i++) this.riders[i].update(this, dt, rng);
       for (let i = 0; i < this.visitors.length; i++) this.visitors[i].update(this, dt, rng);
@@ -1608,6 +1642,7 @@
         if (!tr.S) continue;
         const prevM = tr.moisture;
         tr.moisture = U.clamp(tr.moisture + (w.rain * 0.012 - (1 - w.rain) * w.dry * 0.004) * dt, 0, 1);
+        if (tr.chute) tr.chute.moisture = tr.moisture;
         const riding = this.ridersOn(tr);
         tr.dust = U.clamp((tr.dust || 0) + (riding * 0.002 * (1 - tr.moisture) - 0.003) * dt, 0, 1);
         if (Math.abs(prevM - tr.moisture) > 0.0001 && Math.floor(prevM * 10) !== Math.floor(tr.moisture * 10)) tr.visualVer = (tr.visualVer || 0) + 1;

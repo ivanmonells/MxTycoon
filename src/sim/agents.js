@@ -523,7 +523,12 @@
       if (!tr || !tr.S || (tr.state !== 'open' && !this.race && tr.state !== 'testing')) { this.leaveTrack(g, tr); return; }
       const m = this.m;
       const before = m.laps;
-      MX.RiderPhysics.step(m, tr, dt, g.physCtx(this, tr));
+      /* a race starts on the wide start straight and joins the circuit where it merges */
+      const c = m.chute;
+      if (c) {
+        MX.RiderPhysics.step(m, c, dt, g.physCtx(this, c, { track: tr, s: c.joinS, at: c.mergeAt }));
+        if (!m.crash && m.s >= c.mergeAt) this.joinFromChute(tr);
+      } else MX.RiderPhysics.step(m, tr, dt, g.physCtx(this, tr));
       this.x = m.x; this.z = m.z; this.y = m.y; this.yaw = m.hdg;
       this.bikeCond = m.bikeCond;
       if (m.laps !== before && m.laps > 1) this.onLap(g, tr, rng);
@@ -535,6 +540,14 @@
           if (d > 0.5 && d < 6) this.leaveTrack(g, tr);
         }
       }
+    }
+    /* off the start straight onto the circuit: same heading and lane where they meet */
+    joinFromChute(tr) {
+      const m = this.m, c = m.chute;
+      m.chute = null;
+      m.s = tr.wrapS(c.joinS + (m.s - c.mergeAt));
+      const hw = tr.S.w[tr.sIndex(m.s)] * 0.5 - 0.6;
+      m.lane = U.clamp(m.lane, -hw, hw);
     }
     onLap(g, tr, rng) {
       const m = this.m;

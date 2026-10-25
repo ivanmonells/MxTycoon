@@ -193,6 +193,24 @@
     }
     placeGrid() {
       const tr = this.tr, S = tr.S;
+      /* motocross: the whole field side by side behind the gate of the wide start straight */
+      const c = this.def.format !== 'crono' && tr.chute && tr.chute.S ? tr.chute : null;
+      this.chute = !!c;
+      if (c) {
+        const cw = c.S.w[c.sIndex(c.gateS)], slots = MX.Track.gateSlots(cw), gw = cw / slots;
+        /* places of a row spread over the gate, handed out from the middle (the fastest first) */
+        const order = (n) => Array.from({ length: n }, (_, i) => i).sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2) || a - b);
+        this.riders.forEach((r, k) => {
+          const row = Math.floor(k / slots), col = k % slots, inRow = Math.min(slots, this.riders.length - row * slots);
+          const slot = Math.round((order(inRow)[col] + 0.5) * slots / inRow - 0.5);
+          const s = Math.max(0.5, c.gateS - 1.2 - row * 2.8);
+          const lane = (slot + 0.5) * gw - cw / 2;
+          const p = c.poseAt(s, lane, {});
+          r.gridS = s; r.gridLane = lane;
+          r.x = p.x; r.z = p.z; r.y = p.yRide; r.yaw = p.hdg;
+        });
+        return;
+      }
       const i0 = tr.sIndex(tr.startS);
       const w = S.w[i0];
       const half = (Cat.vehicles[tr.typeDef.vehicle] || Cat.vehicles.mx).half;
@@ -219,7 +237,7 @@
         if (this.t > 9) {
           this.phase = 'race'; this.t = 0; this.tr.gateDown = true;
           this.startT = g.time;
-          this.finishOffset = U.mod(this.tr.finishS - this.tr.startS, this.tr.length);
+          this.finishOffset = U.mod(this.tr.finishS - (this.chute ? this.tr.chute.joinS : this.tr.startS), this.tr.length);
           if (this.def.format === 'crono') {
             /* time trial: one rider every few seconds from the start line */
             this.riders.forEach((r, k) => { r.cronoAt = k * 6; });
@@ -238,6 +256,7 @@
     }
     launch(r, s, lane) {
       r.joinTrack(this.g, this.tr, s, lane, 0.3);
+      if (this.chute && this.def.format !== 'crono') r.m.chute = this.tr.chute;
       r.raceDist = 0; r.lastS = s; r.laps = 0; r.lapT0 = null; r.raceLaps = [];
       r.startedT = this.g.time;
     }
@@ -250,9 +269,18 @@
       }
       for (const r of this.riders) {
         if (!r.m || r.done) continue;
-        const ds = U.mod(r.m.s - r.lastS, L);
-        if (ds < L / 2) r.raceDist += ds;
-        r.lastS = r.m.s;
+        /* on the start straight the distance counts up to where it joins the circuit */
+        const c = r.m.chute;
+        if (c) { r.raceDist = r.m.s - c.mergeAt; r.lastS = null; }
+        else {
+          if (r.lastS == null) {
+            r.raceDist = 0; r.lastS = this.tr.chute ? this.tr.chute.joinS : r.m.s;
+            if (!this.holeshot) { this.holeshot = r; this.pushFeed('Holeshot para ' + r.name); }
+          }
+          const ds = U.mod(r.m.s - r.lastS, L);
+          if (ds < L / 2) r.raceDist += ds;
+          r.lastS = r.m.s;
+        }
         /* crossing the finish line */
         const k = Math.floor((r.raceDist - this.finishOffset) / L);
         if (r.raceDist >= this.finishOffset && k >= 0 && k !== r.lastK) {

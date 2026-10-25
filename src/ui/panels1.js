@@ -146,6 +146,7 @@
           toolBtn('track', 'Colocar la salida', TL().TrackStart),
           h('button', { class: 'btn', title: 'Girar la parrilla 45 grados (R)', onclick: () => { if (MX.Tools.current !== TL().TrackStart) MX.Tools.set(TL().TrackStart); TL().TrackStart.rotate(); } }, icon('rotate'), 'Girar'),
           h('button', { class: 'btn danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar')));
+      chuteRow(el, tr);
       widthSurface(el, tr, true);
       return;
     }
@@ -196,6 +197,7 @@
         h('p', { class: 'muted small' }, 'Para cambiar el trazado, quita piezas desde el final y vuelve a construir. La primera pieza que quites abre el circuito.'),
         h('div', { class: 'row gap wrap' },
           h('button', { class: 'btn', disabled: !editable, onclick: () => { const r = g.removeLastPiece(tr); if (r.ok) { MX.Audio.sfx('demolish'); MX.Tools.set(TL().TrackBuild); WM.rebuild('tracks'); } else app().hud.toast(r.reason, 'bad'); } }, icon('demolish'), 'Quitar la última pieza')));
+      chuteRow(sec, tr);
     } else if (ui.section === 'shape') {
       sec.append(h('div', { class: 'row gap wrap' },
         toolBtn('track', 'Editar puntos', TL().TrackEdit),
@@ -369,6 +371,7 @@
         h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
     }
     box.append(h('h4', null, td.specials.length > 1 ? 'Pieza especial' : 'Línea de meta'), sp);
+    chuteRow(box, tr);
     widthSurface(box, tr, true);
     box.append(preview,
       h('div', { class: 'row gap wrap bld-actions' },
@@ -452,10 +455,31 @@
           h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
       }
       box.append(sp);
-    } else if (b.more === 'ws') widthSurface(box, tr, true);
+    } else if (b.more === 'ws') { chuteRow(box, tr); widthSurface(box, tr, true); }
     el._upd = constructorStatus(tr, status, preview);
   }
 
+  /* the wide start straight of motocross, supercross and minicross: which side of the first
+     piece it runs along, or none (the riders then line up in rows on the circuit itself) */
+  const CHUTE_OPTS = [[1, 'Izquierda', 'Recta de salida ancha a la izquierda de la primera recta'], [-1, 'Derecha', 'Recta de salida ancha a la derecha de la primera recta'], [0, 'Sin recta ancha', 'Sin recta de salida: los pilotos salen en filas desde la propia pista']];
+  function chuteRow(el, tr) {
+    if (!tr.pieces || !MX.Track.chuteWidth(tr.type)) return;
+    const ui = app().trackUI, placed = !!tr.origin, editable = tr.state !== 'open';
+    const row = h('div', { class: 'row gap wrap' });
+    const cur = placed ? tr.chuteSide : ui.chute;
+    const opts = placed ? CHUTE_OPTS : [[null, 'Automática', 'El lado que quepa (se pasa al exterior de la primera curva)']].concat(CHUTE_OPTS);
+    for (const [v, label, tip] of opts) {
+      row.append(h('button', { class: 'btn small' + (cur === v ? ' on' : ''), title: tip, disabled: !editable, onmousedown: (e) => e.preventDefault(), onclick: () => {
+        if (!placed) { ui.chute = v; WM.rebuild('tracks'); if (MX.Tools.current === TL().TrackStart) TL().TrackStart.refresh(); return; }
+        if (tr.chuteSide === v) return;
+        const r = game().setChuteSide(tr, v);
+        if (!r.ok) { app().hud.toast(r.reason, 'bad'); return; }
+        MX.Audio.sfx('build'); WM.rebuild('tracks');
+        if (MX.Tools.current === TL().TrackBuild) TL().TrackBuild.refresh();
+      } }, label));
+    }
+    el.append(h('h4', null, 'Recta de salida'), row);
+  }
   function widthSurface(el, tr, beforeClose) {
     const g = game(), ui = app().trackUI;
     const editable = tr.state !== 'open';
@@ -590,15 +614,20 @@
     if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length || tr.type !== type) { tr = g.newTrack(type); fresh = true; }
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     /* a loop that ends up somewhere the riders cannot use is taken down and the next spot tried */
-    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente/;
-    let res = null, best = null, checks = 0;
-    for (const c of cands.slice(0, 16)) {
-      res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface);
-      if (!res.ok) { if (res.short) continue; break; }
-      const bad = checks++ < 6 ? g.validateTrack(tr).find(i => i.level === 'error' && WHERE.test(i.msg)) : null;
-      if (!bad) { best = c; break; }
-      g.editTrack(tr, (t) => { t.pieces = []; t.features = []; t.closed = false; t.origin = null; });
-      res = { ok: false, reason: bad.msg };
+    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos|Pendiente|recta de salida/;
+    let res = null, best = null;
+    /* with the wide start straight outside the loop first, then without it */
+    for (const chute of MX.Track.chuteWidth(type) ? [true, false] : [false]) {
+      let checks = 0;
+      for (const c of cands.slice(0, 16)) {
+        res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface, { chute });
+        if (!res.ok) { if (res.short) continue; break; }
+        const bad = checks++ < 6 ? g.validateTrack(tr).find(i => i.level === 'error' && WHERE.test(i.msg)) : null;
+        if (!bad) { best = c; break; }
+        g.editTrack(tr, (t) => { t.pieces = []; t.features = []; t.closed = false; t.origin = null; t.chuteSide = 0; });
+        res = { ok: false, reason: bad.msg };
+      }
+      if (best) break;
     }
     if (!res.ok) {
       if (fresh) { g.deleteTrack(tr); g.selectedTrack = g.tracks[0] || null; WM.rebuild('tracks'); }

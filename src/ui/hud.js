@@ -269,6 +269,12 @@
         for (let i = 0; i < tr.S.n; i += 6) { const x = tr.S.x[i] * k, z = tr.S.z[i] * k; i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }
         if (tr.closed) ctx.closePath();
         ctx.stroke();
+        const c = tr.chute;
+        if (c && c.S) {
+          ctx.beginPath();
+          for (let i = 0; i <= c.sIndex(c.mergeAt); i += 6) { const x = c.S.x[i] * k, z = c.S.z[i] * k; i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }
+          ctx.stroke();
+        }
       }
       ctx.fillStyle = '#ffffff';
       for (const r of g.riders) if (r.state === 'ride') ctx.fillRect(r.x * k - 1, r.z * k - 1, 2, 2);

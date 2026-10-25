@@ -189,7 +189,7 @@
       const l = this.lat, tr = this.tr;
       if (!l || !tr || !tr.pieces) return;
       const ui = app().trackUI;
-      this.probe = tr.probeStart(game().world, l.x, l.z, l.h, ui.width, ui.surface);
+      this.probe = tr.probeStart(game().world, l.x, l.z, l.h, ui.width, ui.surface, ui.chute);
       const m = probeMesh(this.probe.tmp);
       if (m) R().setGhostMesh(m.data, m.count, this.probe.ok ? (this.probe.warn ? GHOST_CLOSE : GHOST_OK) : GHOST_BAD, GHOST_DITHER);
     },
@@ -214,7 +214,7 @@
       const l = this.lat, tr = this.tr;
       if (!l || !tr) return;
       const ui = app().trackUI;
-      if (result(game().placeStart(tr, l.x, l.z, l.h, ui.width, ui.surface))) {
+      if (result(game().placeStart(tr, l.x, l.z, l.h, ui.width, ui.surface, ui.chute))) {
         sfx('build');
         app().fx.burst((l.x + MX.Track.DIRV[l.h][0] * 4) * T, null, (l.z + MX.Track.DIRV[l.h][1] * 4) * T, 'dirt');
         Tools.set(TrackBuild);
@@ -229,7 +229,8 @@
       const pr = this.probe;
       if (!pr || !pr.tmp || !pr.tmp.S) return [];
       const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.gateOff(pr.tmp.pieces[0]) / C.TRACK_DS));
-      return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
+      const side = pr.chuteSide ? ' · recta de salida a la ' + (pr.chuteSide > 0 ? 'izquierda' : 'derecha') : '';
+      return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida' + side + ' · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
     }
   };
 

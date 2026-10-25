@@ -17,6 +17,7 @@ function loop(climb) {
   const tr = g.newTrack('mx');
   const r = g.placeStart(tr, 30, 45, 0, 8, 'dirt');
   if (!r.ok) throw new Error('start ' + r.reason);
+  g.setChuteSide(tr, 0);   // these loops close through where the wide start straight would go
   const seq = [...R2, P({ t: 'straight', n: 3 }), ...R2, P({ t: 'straight', n: 6 }), P({ t: 'straight', n: 6 }), ...R2].concat(climb, [...R2]);
   for (const p of seq) { const b = g.buildPiece(tr, p); if (!b.ok) throw new Error('piece ' + JSON.stringify(p) + ' ' + b.reason); }
   return { g, tr };
@@ -55,6 +56,7 @@ function loop(climb) {
   const tr = g.newTrack('mx');
   let r = g.placeStart(tr, 40, 66, 6, 8, 'dirt');
   check('start placed facing the north edge', r.ok, r.reason);
+  g.setChuteSide(tr, 0);
   for (let i = 0; i < 40; i++) { const b = g.buildPiece(tr, P({ t: 'straight', n: 1 })); if (!b.ok) break; }
   const e = tr.endPose;
   const direct = MX.Track.planClosure(g.world, tr, 8, 'dirt');
@@ -69,6 +71,7 @@ function loop(climb) {
   const g = MX.Game.create({ mode: 'career', seed: 4242, preset: 'valle', parkName: 'Salto' });
   const tr = g.newTrack('mx');
   g.placeStart(tr, 40, 66, 6, 8, 'dirt');
+  g.setChuteSide(tr, 0);
   for (let i = 0; i < 40; i++) { const b = g.buildPiece(tr, P({ t: 'straight', n: 1 })); if (!b.ok) break; }
   for (let i = 0; i < 9; i++) g.removeLastPiece(tr);
   const sp = g.buildPiece(tr, P({ t: 'special', f: 'tabletop_s' }));

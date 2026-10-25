@@ -11,7 +11,7 @@
     return {
       s: 0, v: 0, y: 0, vy: 0, air: false, airT: 0, airMax: 0, lane: 0, laneT: 0, laneBias: 0, personal: (Math.random() - 0.5) * 1.6,
       pitch: 0, roll: 0, hdg: 0, x: 0, z: 0, gy: 0,
-      crash: null, plans: new Map(), stam: 1, lap: 0, lapStart: 0, lastLap: 0, bestLap: 0, laps: 0,
+      crash: null, chute: null, plans: new Map(), stam: 1, lap: 0, lapStart: 0, lastLap: 0, bestLap: 0, laps: 0,
       attr, bike, bikeCond: 1, throttle: 0, lastS: 0, lapTime: 0, fear: 0, airtimeLap: 0, totalAir: 0,
       cleanJumps: 0, hardLandings: 0, crashes: 0, flagSlow: 0, finishedLaps: 0, vt: 0
     };
@@ -93,6 +93,16 @@
         const vw = fd.vb + fd.vs * Math.pow(m.attr.skill / 100, 1.3);
         const l2 = Math.sqrt(vw * vw + 2 * b * d);
         if (l2 < vt) vt = l2;
+      }
+    }
+    /* on the start straight the circuit it joins is ahead too: brake for its first corner */
+    const nx = ctx.next;
+    if (nx) {
+      const d0 = Math.max(0, nx.at - m.s);
+      for (let d = 0; d0 + d <= look; d += 2) {
+        const vc = cornerSpeed(m, nx.track, nx.track.sIndex(nx.s + d));
+        const lim = Math.sqrt(vc * vc + 2 * b * (d0 + d));
+        if (lim < vt) vt = lim;
       }
     }
     /* lips ahead */

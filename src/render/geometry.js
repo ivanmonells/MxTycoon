@@ -64,17 +64,32 @@
     opts = opts || {};
     const S = tr.S;
     if (!S || S.n < 4) return null;
-    const mb = new MB(S.n * 40);
+    const c = tr.chute && tr.chute.S ? tr.chute : null;
+    const mb = new MB((S.n + (c ? c.S.n : 0)) * 40);
+    surface(mb, tr, world, opts, null);
+    /* the wide start straight, tucked just under the circuit where the two overlap */
+    if (c) surface(mb, c, world, opts, tr);
+    if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
+    return mb.build();
+  }
+  function surface(mb, tr, world, opts, parent) {
+    const S = tr.S;
     const step = 2;
     const n = S.n;
-    const lastI = S.closed ? n : n - 1;
-    const lanes = [-1, -0.5, 0, 0.5, 1];
+    const lastI = parent ? Math.min(n - 1, tr.sIndex(tr.mergeAt) + step) : S.closed ? n : n - 1;
+    /* the start straight is wide and ramps down to the circuit: finer across */
+    const lanes = parent ? [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1] : [-1, -0.5, 0, 0.5, 1];
+    const last = lanes.length - 1;
+    const w0 = parent ? tr.frame.w0 * 0.5 + 0.5 : 0;
     const cross = (i) => {
       const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
       const hw = S.w[i] * 0.5;
       const pts = lanes.map((f) => {
         const l = f * hw;
-        return [S.x[i] + nx * l, S.y[i] + tr.bankAt(i, l), S.z[i] + nz * l];
+        const p = [S.x[i] + nx * l, S.y[i] + tr.bankAt(i, l), S.z[i] + nz * l];
+        /* just under the circuit where it lies on it */
+        if (parent && parent.chuteV(p[0], p[2]) < w0) p[1] -= 0.06;
+        return p;
       });
       return { pts, nx, nz, hw, i };
     };
@@ -94,7 +109,7 @@
       const mat = L()[TRACK_LAYER[S.surf[i]]];
       const col = tint(i);
       const v0 = (k - step) * C.TRACK_DS / 16, v1 = k * C.TRACK_DS / 16;
-      for (let q = 0; q < 4; q++) {
+      for (let q = 0; q < last; q++) {
         const a = prev.pts[q], b = prev.pts[q + 1], c = cur.pts[q + 1], d = cur.pts[q];
         const u0 = (lanes[q] + 1) * prev.hw / 16, u1 = (lanes[q + 1] + 1) * prev.hw / 16;
         /* order chosen so the normal points up for a track heading +X with left normal +Z */
@@ -102,8 +117,8 @@
       }
       /* embankments on both sides */
       for (const side of [-1, 1]) {
-        const ea = side < 0 ? prev.pts[0] : prev.pts[4];
-        const eb = side < 0 ? cur.pts[0] : cur.pts[4];
+        const ea = side < 0 ? prev.pts[0] : prev.pts[last];
+        const eb = side < 0 ? cur.pts[0] : cur.pts[last];
         const rim = (e, c) => {
           const ox = c.nx * side, oz = c.nz * side;
           const r = [e[0] + ox * 0.35, e[1] - 0.06, e[2] + oz * 0.35];
@@ -127,8 +142,6 @@
       }
       prev = cur;
     }
-    if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
-    return mb.build();
   }
 
   /* ---------------- track decoration: edges, finish arch and obstacles ----------------
@@ -136,10 +149,6 @@
      styled by discipline: tape stakes (motocross), small coloured stakes (minicross),
      stadium walls (supercross), a white rail (dirt track), tape in the woods (enduro)
      and tyre walls (car cross). */
-  function skipStart(tr, i) {
-    const S = tr.S;
-    return S.feat[i] >= 0 && Cat.features[tr.features[S.feat[i]].type].kind === 'start';
-  }
   function edgeAt(tr, world, i, side, extra) {
     const S = tr.S, hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
     const hw = S.w[i] * 0.5 + extra;
@@ -157,13 +166,14 @@
       return ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
     };
   }
+  /* fn(i, k, open): open(side) is true where that edge is left open (start gate, start straight) */
   function eachEdge(tr, every, fn) {
     const S = tr.S, n = S.n, lastI = S.closed ? n : n - 1;
     const step = Math.max(1, Math.round(every / C.TRACK_DS));
     let k0 = 0;
     for (let k = 0; k <= lastI; k += step, k0++) {
       const i = S.closed ? k % n : Math.min(k, n - 1);
-      fn(i, k0, skipStart(tr, i));
+      fn(i, k0, (side) => tr.edgeOpen(i, side));
     }
   }
   /* a tape (or solid band) between two posts, seen from both sides */
@@ -174,9 +184,9 @@
   }
   function stakes(mb, tr, world, o) {
     const last = { '-1': null, '1': null };
-    eachEdge(tr, o.every, (i, k, skip) => {
+    eachEdge(tr, o.every, (i, k, open) => {
       for (const side of [-1, 1]) {
-        if (skip) { last[side] = null; continue; }
+        if (open(side)) { last[side] = null; continue; }
         const e = edgeAt(tr, world, i, side, o.extra);
         mb.box(e.x - o.t, e.y, e.z - o.t, e.x + o.t, e.y + o.h, e.z + o.t, { col: k % 2 ? o.colA : o.colB });
         const p = last[side];
@@ -196,9 +206,9 @@
     const last = { '-1': null, '1': null };
     const logos = Cat.sponsors.map(sp => 'logo_' + sp.id).concat(['logo_mxt', 'sign_sx']);
     const H = 0.75, TH = 0.3;
-    eachEdge(tr, 2, (i, k, skip) => {
+    eachEdge(tr, 2, (i, k, open) => {
       for (const side of [-1, 1]) {
-        if (skip) { last[side] = null; continue; }
+        if (open(side)) { last[side] = null; continue; }
         const e = edgeAt(tr, world, i, side, 0.35);
         const p = last[side];
         if (p && U.dist2(p.x, p.z, e.x, e.z) < 16) {
@@ -229,9 +239,9 @@
     const S = tr.S, outer = outerSide(S);
     let lastO = null, lastI = null;
     const white = MB.rgba('#f4f4f2'), pad = MB.rgba('#1e88e5'), line = MB.rgba('#fafafa');
-    eachEdge(tr, 3, (i, k, skip) => {
+    eachEdge(tr, 3, (i, k, open) => {
       const so = outer(i);
-      if (skip) { lastO = null; lastI = null; return; }
+      if (open(so) || open(-so)) { lastO = null; lastI = null; return; }
       const e = edgeAt(tr, world, i, so, 0.7);
       const corner = Math.abs(S.curv[i]) > 1 / 30;
       if (corner) mb.box(e.x - 0.3, e.y, e.z - 0.3, e.x + 0.3, e.y + 1.1, e.z + 0.3, { col: k % 2 ? pad : white });
@@ -253,9 +263,9 @@
   /* minicross: low plastic barrier blocks in bright colours */
   function blocks(mb, tr, world) {
     const cols = ['#29b6f6', '#fdd835', '#29b6f6', '#ef5350'].map(c => MB.rgba(c));
-    eachEdge(tr, 1.6, (i, k, skip) => {
-      if (skip) return;
+    eachEdge(tr, 1.6, (i, k, open) => {
       for (const side of [-1, 1]) {
+        if (open(side)) continue;
         const e = edgeAt(tr, world, i, side, 0.45);
         mb.push(); mb.translate(e.x, e.y, e.z); mb.rotateY(e.hdg);
         mb.box(-0.68, 0, -0.17, 0.68, 0.42, 0.17, { col: cols[k % cols.length] });
@@ -284,9 +294,9 @@
   /* car cross: stacked tyre walls */
   function tyres(mb, tr, world) {
     const black = MB.rgba('#1d1d1f'), red = MB.rgba('#e53935'), white = MB.rgba('#f2f2f2');
-    eachEdge(tr, 3, (i, k, skip) => {
-      if (skip) return;
+    eachEdge(tr, 3, (i, k, open) => {
       for (const side of [-1, 1]) {
+        if (open(side)) continue;
         const e = edgeAt(tr, world, i, side, 0.8);
         mb.cylinder(e.x, e.y, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, black);
         mb.cylinder(e.x, e.y + 0.26, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, k % 4 === 0 ? (side > 0 ? red : white) : black);
@@ -336,16 +346,21 @@
     const S = tr.S;
     if (!S || S.n < 4) return null;
     const mb = into || new MB(S.n * 24);
+    edges(mb, tr, world);
+    if (tr.chute && tr.chute.S) edges(mb, tr.chute, world);
+    if (tr.typeDef.edge === 'sxwall') floodlights(mb, tr, world);
+    obstacles(mb, tr, world);
+    finishArch(mb, tr, world);
+    return into ? null : mb.build();
+  }
+  function edges(mb, tr, world) {
     const style = tr.typeDef.edge;
-    if (style === 'sxwall') { walls(mb, tr, world); floodlights(mb, tr, world); }
+    if (style === 'sxwall') walls(mb, tr, world);
     else if (style === 'rails') rails(mb, tr, world);
     else if (style === 'tyres') tyres(mb, tr, world);
     else if (style === 'kids') blocks(mb, tr, world);
     else if (style === 'tape') stakes(mb, tr, world, { every: 9, h: 1.0, t: 0.04, extra: 0.35, colA: MB.rgba('#e53935'), colB: MB.rgba('#f5f5f5'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1], arrows: true });
     else stakes(mb, tr, world, { every: 6, h: 0.95, t: 0.06, extra: 0.55, colA: MB.rgba('#ff6a13'), colB: MB.rgba('#f2f2f2'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1] });
-    obstacles(mb, tr, world);
-    finishArch(mb, tr, world);
-    return into ? null : mb.build();
   }
   function finishArch(mb, tr, world) {
     const S = tr.S;
@@ -384,9 +399,12 @@
   /* Start of the circuit, styled by discipline. */
   function startGate(tr, world, down) {
     const S = tr.S;
-    if (!S || tr.startS == null) return null;
+    if (!S) return null;
+    /* with a wide start straight the gate stands across it */
+    if (tr.chute && tr.chute.S) return gateStart(tr.chute, tr.chute.gateS, world, down);
+    if (tr.startS == null) return null;
     const style = tr.typeDef.start;
-    if (style === 'gate') return gateStart(tr, world, down);
+    if (style === 'gate') return gateStart(tr, tr.startS, world, down);
     const mb = new MB(4096);
     const m = tr.sIndex(tr.startS);
     const hdg = S.hdg[m], hw = S.w[m] * 0.5, baseY = S.y[m];
@@ -437,10 +455,10 @@
     return mb.build();
   }
   /* Motocross start gate: static frame plus gates up or down. */
-  function gateStart(tr, world, down) {
+  function gateStart(tr, s, world, down) {
     const S = tr.S;
-    const mb = new MB(4096);
-    const m = tr.sIndex(tr.startS);
+    const mb = new MB(8192);
+    const m = tr.sIndex(s);
     const hdg = S.hdg[m], nx = -Math.sin(hdg), nz = Math.cos(hdg), tx = Math.cos(hdg), tz = Math.sin(hdg);
     const hw = S.w[m] * 0.5;
     const baseY = S.y[m];
@@ -457,7 +475,7 @@
     mb.box(-0.25, 0, -hw - 0.4, 0.1, 0.3, hw + 0.4, { col: dark });
     mb.box(-0.2, 0, -hw - 0.6, 0.2, 1.6, -hw - 0.3, { col: metal });
     mb.box(-0.2, 0, hw + 0.3, 0.2, 1.6, hw + 0.6, { col: metal });
-    const nGates = Math.max(4, Math.floor(S.w[m] / 0.95));
+    const nGates = MX.Track.gateSlots(S.w[m]);
     const gw = (2 * hw) / nGates;
     for (let g = 0; g < nGates; g++) {
       const z0 = -hw + g * gw + 0.05, z1 = z0 + gw - 0.1;

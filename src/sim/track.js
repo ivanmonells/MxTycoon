@@ -166,6 +166,9 @@
   const GRADE = [-0.2, -0.1, 0, 0.1, 0.2];     // by slope class -2..2
   const ELEV_MAX = 8;
   const START_LEN = 36, START_GATE = 15;       // gate 15 m into the start straight: grid behind it
+  /* motocross start straight: as wide as the gate (m) for the disciplines that start
+     from a gate; it runs at an angle beside the first straight and joins it */
+  const CHUTE_W = { mx: 22, sx: 18, kids: 11 };
   /* minicross circuits use a shorter start straight (its length rides on the piece as sl) */
   const startLenFor = (type) => type === 'kids' ? 24 : START_LEN;
   const gateOff = (p) => Math.min(START_GATE, (p.sl || START_LEN) * 0.42);
@@ -246,6 +249,9 @@
       this.pieces = null;     // piece-built circuits: [{t, n | k, dir, slope, bank, f, w, surf}]
       this.origin = null;     // lattice start pose {x, z, h}
       this.e0 = 0;            // elevation at the origin (construction probes start mid-air)
+      this.chuteSide = 0;     // side of the start straight beside the first piece (1 left, -1 right, 0 none)
+      this.chuteSet = false;  // chosen by the player (otherwise it moves to the outside of the first bend)
+      this.chute = null;      // its geometry as an open scratch track (see _buildChute)
       this.endPose = null;    // lattice pose after the last piece
       this.closed = false;
       this.features = [];     // {uid, type, s, len, ax, az, side}
@@ -483,8 +489,117 @@
       /* lips and jump tables */
       this._buildLips();
       this.wear = new Float32Array(Math.max(1, Math.ceil(this.length / 5)));
+      if (!this.isChute) this._buildChute(world);
       this._computeEntry(world);
       if (this.pieces) for (const f of this.features) { const i = this.sIndex(f.s); f.ax = S.x[i]; f.az = S.z[i]; }
+    }
+
+    /* ---------- motocross start straight ----------
+       Race riders line up at a gate as wide as the field, ride a start straight that
+       comes in at an angle beside the first piece and join the circuit near its end;
+       laps never come back through it. Frame: u along the first piece from the origin,
+       v towards the start straight's side. */
+    chuteFrame() {
+      const W = CHUTE_W[this.type], p0 = this.pieces && this.pieces[0];
+      if (!W || !this.chuteSide || !this.origin || !p0 || p0.t !== 'start') return null;
+      const o = this.origin, d = DIRV[o.h], dl = Math.hypot(d[0], d[1]), dx = d[0] / dl, dz = d[1] / dl;
+      const sl = p0.sl || START_LEN, w0 = p0.w || 8;
+      /* gate behind the origin, level with the run-in to the start; a parallel stretch,
+         then an S bend that narrows into the first piece two metres before its end */
+      const uG = -Math.round(sl * 0.4), vg = w0 / 2 + 3.5 + W / 2, uP = -2, uM = sl - 2;
+      return { ox: o.x * LAT, oz: o.z * LAT, dx, dz, nx: -dz * this.chuteSide, nz: dx * this.chuteSide, W, w0, sl, uG, vg, uP, uM };
+    }
+    _buildChute(world) {
+      this.chute = null;
+      const F = this.chuteFrame();
+      if (!F || !this.S) return;
+      const c = new Track(-1000 - Math.abs(this.id), 'Recta de salida');
+      c.type = this.type; c.slot = this.slot; c.isChute = true; c.parent = this; c.frame = F;
+      const surf = this.pieces[0].surf || 'dirt', e0 = this.e0 || 0;
+      const world2 = (u, v) => [F.ox + F.dx * u + F.nx * v, F.oz + F.dz * u + F.nz * v];
+      const k = (F.uM - F.uP) * 0.42;
+      const P = [[F.uP, F.vg], [F.uP + k, F.vg], [F.uM - k, 0], [F.uM, 0]];
+      const bez = (t) => {
+        const a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, cc = 3 * (1 - t) * t * t, d = t ** 3;
+        return [a * P[0][0] + b * P[1][0] + cc * P[2][0] + d * P[3][0], a * P[0][1] + b * P[1][1] + cc * P[2][1] + d * P[3][1]];
+      };
+      /* [u, v, narrowing 0..1]: pad behind the gate, the parallel stretch, the bend, and a
+         few metres on the circuit so the riders arrive lined up with it */
+      const pts = [];
+      for (let u = F.uG - 7; u < F.uP; u += 3) pts.push([u, F.vg, 0]);
+      for (let i = 0; i <= 16; i++) { const t = i / 16; pts.push(bez(t).concat([U.smoothstep(0.12, 0.9, t)])); }
+      for (const ahead of [3, 6]) pts.push([F.uM + ahead, 0, 1]);
+      for (const [u, v, q] of pts) {
+        const [x, z] = world2(u, v);
+        c.nodes.push({ x, z, w: U.lerp(F.W, F.w0, q), surf, elev: e0 });
+      }
+      c.closed = false;
+      c.moisture = this.moisture;
+      c.rebuild(world);
+      if (!c.S) return;
+      const near = (u, v) => { const [x, z] = world2(u, v); return c.nearestS(x, z); };
+      c.gateS = near(F.uG, F.vg).s;
+      c.mergeAt = near(F.uM, 0).s;
+      c.joinS = F.uM;
+      /* where it meets the circuit its surface ramps to the circuit's level, gentler the bigger the step */
+      const CS = c.S, M = this.S, R = new Float32Array(CS.n);
+      for (let j = 0; j < CS.n; j++) {
+        const u = (CS.x[j] - F.ox) * F.dx + (CS.z[j] - F.oz) * F.dz;
+        R[j] = U.clamp(Math.abs(M.y[this.sIndex(Math.max(0, u))] - CS.y[j]) * 4, 3, 10);
+      }
+      boxSmooth(R, Math.round(4 / DS), false);
+      c.rampW = R;
+      c.bankAt = chuteBank;
+      this.chute = c;
+      c.joinU = null;
+      c.joinU = this.chuteJoinU();
+    }
+    /* lateral position (v) of a world point in the start straight's frame */
+    chuteV(x, z) { const F = this.chute && this.chute.frame; return F ? (x - F.ox) * F.nx + (z - F.oz) * F.nz : 0; }
+    chuteU(x, z) { const F = this.chute && this.chute.frame; return F ? (x - F.ox) * F.dx + (z - F.oz) * F.dz : 0; }
+    /* where the start straight already overlaps the circuit, along the first piece */
+    /* first sample of path T (i0..i1) that runs into the start straight, -1 if none;
+       skip(i) leaves out the samples where the two are meant to meet */
+    chuteClash(T, i0, i1, skip) {
+      const c = this.chute;
+      if (!c) return -1;
+      const CS = c.S, joinU = this.chuteJoinU();
+      for (let i = i0; i < i1; i += 2) {
+        if (skip && skip(i)) continue;
+        for (let j = 0; j < CS.n; j += 2) {
+          if (this.chuteU(CS.x[j], CS.z[j]) > joinU) break;
+          const minD = (T.w[i] + CS.w[j]) * 0.5 + 0.6;
+          if (U.dist2(T.x[i], T.z[i], CS.x[j], CS.z[j]) < minD * minD) return i;
+        }
+      }
+      return -1;
+    }
+    chuteJoinU() {
+      const c = this.chute;
+      if (!c) return null;
+      if (c.joinU != null) return c.joinU;
+      const F = c.frame, S = c.S;
+      for (let i = 0; i < S.n; i++) {
+        const v = this.chuteV(S.x[i], S.z[i]), hdg = S.hdg[i];
+        const inner = v - S.w[i] * 0.5 * Math.abs(Math.cos(hdg - Math.atan2(F.dz, F.dx)));
+        if (inner < F.w0 / 2 + 0.6) return this.chuteU(S.x[i], S.z[i]);
+      }
+      return F.uM;
+    }
+
+    /* where the edge markers leave an opening: around the start gate, and where the start
+       straight meets the circuit (side 1 left, -1 right of the direction of travel) */
+    edgeOpen(i, side) {
+      const S = this.S, s = i * DS;
+      if (this.isChute) {
+        if (Math.abs(s - this.gateS) < 1.2 || s > this.mergeAt) return true;
+        /* the inner edge stops where it runs into the circuit */
+        const hdg = S.hdg[i], hw = S.w[i] * 0.5, P = this.parent;
+        const v = P.chuteV(S.x[i] - Math.sin(hdg) * hw * side, S.z[i] + Math.cos(hdg) * hw * side);
+        return v < P.chuteV(S.x[i], S.z[i]) && v < this.frame.w0 / 2 + 1;
+      }
+      if (this.chute) return side === this.chuteSide && s > this.chute.joinU - 1.5 && s < this.chute.frame.uM - 0.5;
+      return S.feat[i] >= 0 && Cat.features[this.features[S.feat[i]].type].kind === 'start';
     }
 
     _placeFeatureSamples(S) {
@@ -624,28 +739,36 @@
       if (!S) return;
       const st = this.features.find(f => f.type === 'start') || this.features.find(f => f.type === 'finish');
       let s = st ? st.s + (st.type === 'start' ? 2 : 0) : 0;
-      let i = S.closed ? U.mod(Math.round(s / DS), S.n) : U.clamp(Math.round(s / DS), 0, S.n - 1);
-      const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+      /* with a wide start straight beside the first piece, riders come in just after it joins */
+      const c = this.chute;
+      const spots = c && S.closed ? [0, 4, 8, 12, 16, 20, 26, 32, 40, 50].map(d => c.joinS + 10 + d) : [s];
       /* prefer the outer side of the loop (away from the centroid) so the entry is reachable */
       let mx = 0, mz = 0;
       for (let k = 0; k < S.n; k += 8) { mx += S.x[k]; mz += S.z[k]; }
       const cnt = Math.ceil(S.n / 8); mx /= cnt; mz /= cnt;
-      const outer = ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
-      let best = null;
-      for (const side of [outer, -outer]) {
-        for (const extra of [3.5, 5.5, 8]) {
-          const off = S.w[i] * 0.5 + extra;
-          const x = S.x[i] + nx * off * side, z = S.z[i] + nz * off * side;
-          const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
-          if (!world.inBounds(tx, tz)) continue;
-          const id = world.idx(tx, tz);
-          if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit)) continue;
-          if (!best) best = { x, z, tx, tz, s: i * DS, side, i };
-          break;
+      const clearOfChute = (x, z) => {
+        if (!c) return true;
+        const CS = c.S;
+        for (let j = 0; j < CS.n; j += 4) if (U.dist2(x, z, CS.x[j], CS.z[j]) < (CS.w[j] * 0.5 + 3) ** 2) return false;
+        return true;
+      };
+      for (const s0 of spots) {
+        const i = S.closed ? U.mod(Math.round(s0 / DS), S.n) : U.clamp(Math.round(s0 / DS), 0, S.n - 1);
+        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+        const outer = ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
+        for (const side of [outer, -outer]) {
+          for (const extra of [3.5, 5.5, 8]) {
+            const off = S.w[i] * 0.5 + extra;
+            const x = S.x[i] + nx * off * side, z = S.z[i] + nz * off * side;
+            const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
+            if (!world.inBounds(tx, tz)) continue;
+            const id = world.idx(tx, tz);
+            if (world.bld[id] >= 0 || world.isWater(tx, tz) || (world.trackOcc[id] & ~this.bit) || !clearOfChute(x, z)) continue;
+            this.entry = { x, z, tx, tz, s: i * DS, side, i };
+            return;
+          }
         }
-        if (best) break;
       }
-      this.entry = best;
     }
 
     /* ---------- queries ---------- */
@@ -831,14 +954,21 @@
       return this.S.seg[this.sIndex(s)];
     }
     /* Try the start straight at lattice (x, z) facing h without building it. */
-    probeStart(world, x, z, h, w, surf) {
-      const tmp = Track.probeTrack(x, z, h, 0, Track.startPiece(this.type, w, surf), this.slot, this.type);
-      tmp.rebuild(world);
-      const res = { ok: true, tmp, g: tmp.pieces[0]._g, cost: 0, reason: '' };
-      const why = this._probeTiles(world, tmp);
-      if (why) { res.ok = false; res.reason = why; }
-      else if (!Track.roomBehind(world, x, z, h, w, this.bit)) res.warn = 'Deja sitio detrás: el circuito tiene que volver a la salida por ahí';
-      res.cost = this._probeCost(world, tmp);
+    /* side: where the start straight goes (1 left, -1 right, 0 none); without it the side that fits */
+    probeStart(world, x, z, h, w, surf, side) {
+      const sides = !CHUTE_W[this.type] ? [0] : side != null ? [side] : [1, -1];
+      let res = null;
+      for (const cs of sides) {
+        const tmp = Track.probeTrack(x, z, h, 0, Track.startPiece(this.type, w, surf), this.slot, this.type, cs);
+        tmp.rebuild(world);
+        const r = { ok: true, tmp, g: tmp.pieces[0]._g, cost: 0, reason: '', chuteSide: cs };
+        const why = this._probeTiles(world, tmp);
+        if (why) { r.ok = false; r.reason = cs ? why + ' (contando la recta de salida)' : why; }
+        else if (!Track.roomBehind(world, x, z, h, w, this.bit)) r.warn = 'Deja sitio detrás: el circuito tiene que volver a la salida por ahí';
+        r.cost = this._probeCost(world, tmp);
+        if (!res || (r.ok && !res.ok)) res = r;
+        if (r.ok) break;
+      }
       return res;
     }
     /* Try the next piece without building it: geometry, cost and the first problem found. */
@@ -869,6 +999,7 @@
       const why = this._probeTiles(world, tmp);
       if (why) return fail(why);
       if (this._probeOverlap(tmp, res.closes)) return fail('Choca con el propio circuito');
+      if (this.chuteClash(tmp.S, 0, tmp.S.n, res.closes ? (i) => i * DS > tmp.length - 8 : null) >= 0) return fail('Choca con la recta de salida: llévalo por el otro lado o cambia la salida de lado');
       /* the track follows the ground: on a hillside the piece adds its own grade to the hill's */
       const n = tmp.S.n, edge = Math.round(3 / DS), st = n > 2 * edge + 2 ? tmp.steepest(edge, n - edge) : { slope: 0 };
       if (st.slope > C.MAX_SLOPE) return fail('Demasiado empinado (' + Math.round(st.slope * 100) + ' %): prueba otra pendiente u otra dirección, o allana la ladera');
@@ -926,20 +1057,25 @@
       const S = this.S;
       const set = new Set();
       if (!S) { this.tiles = []; return this.tiles; }
-      for (let i = 0; i < S.n; i += 2) {
-        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
-        const hw = S.w[i] * 0.5;
-        for (const side of [-1, 1]) {
-          const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
-          const eh = S.y[i] + this.bankAt(i, hw * side) - world.heightAt(ex, ez);
-          const ext = 0.9 + U.clamp(eh * 1.25, 0, 7);
-          for (let o = 0; o <= hw + ext; o += 0.9) {
-            const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
-            const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
-            if (tx >= 0 && tz >= 0 && tx < world.N && tz < world.N) set.add(tx + tz * world.N);
+      const add = (t) => {
+        const S = t.S;
+        for (let i = 0; i < S.n; i += 2) {
+          const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+          const hw = S.w[i] * 0.5;
+          for (const side of [-1, 1]) {
+            const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
+            const eh = S.y[i] + t.bankAt(i, hw * side) - world.heightAt(ex, ez);
+            const ext = 0.9 + U.clamp(eh * 1.25, 0, 7);
+            for (let o = 0; o <= hw + ext; o += 0.9) {
+              const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
+              const tx = Math.floor(x / C.TILE), tz = Math.floor(z / C.TILE);
+              if (tx >= 0 && tz >= 0 && tx < world.N && tz < world.N) set.add(tx + tz * world.N);
+            }
           }
         }
-      }
+      };
+      add(this);
+      if (this.chute) add(this.chute);
       this.tiles = Array.from(set);
       return this.tiles;
     }
@@ -960,6 +1096,8 @@
         const sd = Cat.surfaces[Cat.surfaceOrder[S.surf[i]]];
         c += DS * sd.cost * (S.w[i] / 8) + DS * S.w[i] * Math.max(0, S.elev[i]) * 6;
       }
+      /* the start straight is flat graded dirt: half the price of shaped track */
+      if (this.chute) c += this.chute.geometryCost() * 0.5;
       return Math.round(c);
     }
     featureCost() {
@@ -1017,6 +1155,8 @@
         }
       }
       if (overlapAt >= 0) issues.push(Object.assign({ level: 'error', msg: 'El trazado se cruza o se pisa consigo mismo.' }, at(overlapAt)));
+      const chuteHit = this.chuteClash(S, 0, S.n, (j) => j * DS < this.chute.joinS + 12 || j * DS > S.L - 8);
+      if (chuteHit >= 0) { S.bad[chuteHit] = 1; issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por la recta de salida: cambia la salida de lado o aleja el trazado de ella.' }, at(chuteHit))); }
       /* footprint conflicts */
       this.computeFootprint(world);
       let notOwned = null, blocked = null, water = null, otherTrack = null;
@@ -1101,7 +1241,7 @@
         origin: this.origin ? [this.origin.x, this.origin.z, this.origin.h] : null,
         features: this.features.map(f => [f.type, +f.s.toFixed(2), +(f.len || 0).toFixed(2), +f.ax.toFixed(2), +f.az.toFixed(2), f.side || 0, f.pin != null ? f.pin : -1, f.off || 0, f.auto || '']),
         paid: this.paid, featPaid: this.featPaid, records: this.records, totals: this.totals,
-        moisture: this.moisture, statsTested: this.statsTested,
+        moisture: this.moisture, statsTested: this.statsTested, cs: this.chuteSide || 0, cf: this.chuteSet ? 1 : 0,
         wear: Array.from(this.wear, v => Math.round(v * 1000) / 1000)
       };
     }
@@ -1128,6 +1268,7 @@
       t.paid = d.paid || 0; t.featPaid = d.featPaid || 0;
       t.records = d.records || t.records; t.totals = d.totals || t.totals;
       t.moisture = d.moisture || 0; t.statsTested = !!d.statsTested;
+      t.chuteSide = d.cs || 0; t.chuteSet = !!d.cf;
       t.rebuild(world);
       if (d.wear && d.wear.length === t.wear.length) t.wear.set(d.wear);
       t.computeFootprint(world);
@@ -1135,11 +1276,24 @@
     }
   }
 
+  /* surface height of a start straight across its width (as Track#bankAt): its own level,
+     and the circuit's where the two meet */
+  function chuteBank(i, lane) {
+    const S = this.S, F = this.frame, P = this.parent;
+    const hdg = S.hdg[i], x = S.x[i] - Math.sin(hdg) * lane, z = S.z[i] + Math.cos(hdg) * lane;
+    const v = (x - F.ox) * F.nx + (z - F.oz) * F.nz;
+    const k = 1 - U.smoothstep(F.w0 / 2, F.w0 / 2 + this.rampW[i], v);
+    if (k <= 0) return 0;
+    const u = (x - F.ox) * F.dx + (z - F.oz) * F.dz;
+    return k * (P.S.y[P.sIndex(Math.max(0, u))] - S.y[i]);
+  }
+
   /* A one-piece scratch track used to preview and check the next piece. */
-  Track.probeTrack = function (x, z, h, e, p, slot, type) {
+  Track.probeTrack = function (x, z, h, e, p, slot, type, chuteSide) {
     const t = new Track(-1, 'tmp');
     t.slot = slot || 0;
     t.type = type || 'mx';
+    t.chuteSide = chuteSide || 0;
     t.pieces = [Object.assign({}, p)];
     t.origin = { x, z, h }; t.e0 = e || 0;
     if (p.t === 'start') t.pinFeature('start', 0, gateOff(p));
@@ -1194,6 +1348,20 @@
     for (let i = 0; i < N * N; i++) {
       const tx = i % N, tz = (i / N) | 0;
       if (world.owned[i] !== 1 || world.bld[i] >= 0 || world.path[i] || (world.trackOcc[i] & ~tr.bit) || world.isWater(tx, tz)) blocked[i] = 1;
+    }
+    /* the start straight (up to where it bends in) is in the way like a building */
+    if (tr.chute) {
+      const CS = tr.chute.S, joinU = tr.chuteJoinU();
+      for (let j = 0; j < CS.n; j += 2) {
+        if (tr.chuteU(CS.x[j], CS.z[j]) > joinU) break;
+        const R = CS.w[j] * 0.5 + 0.2;
+        const x0 = Math.max(0, Math.floor((CS.x[j] - R) / T)), x1 = Math.min(N - 1, Math.floor((CS.x[j] + R) / T));
+        const z0 = Math.max(0, Math.floor((CS.z[j] - R) / T)), z1 = Math.min(N - 1, Math.floor((CS.z[j] + R) / T));
+        for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
+          const cx = (tx + 0.5) * T, cz = (tz + 0.5) * T;
+          if ((cx - CS.x[j]) ** 2 + (cz - CS.z[j]) ** 2 < R * R) blocked[tx + tz * N] = 1;
+        }
+      }
     }
     /* tiles too close to the part of the track that stays (the two joints are left free) */
     const near = new Uint8Array(N * N);
@@ -1378,6 +1546,9 @@
   Track.ELEV_MAX = ELEV_MAX;
   Track.START_GATE = START_GATE;
   Track.gateOff = gateOff;
+  Track.chuteWidth = (type) => CHUTE_W[type] || 0;
+  /* places at a start gate of width w */
+  Track.gateSlots = (w) => Math.max(4, Math.floor(w / 0.95));
   Track.startPiece = (type, w, surf) => { const p = { t: 'start', slope: 0, bank: 0, w, surf }; if (startLenFor(type) !== START_LEN) p.sl = startLenFor(type); return p; };
   Track.SPECIAL_OFF = SPECIAL_OFF;
   Track.SURF_IDX = SURF_IDX;

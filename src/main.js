@@ -542,7 +542,7 @@
         }
       }
       /* dust trails */
-      if (zoom > 2.5 && g.speed > 0) for (const a of g.riders) if (a.m && a.trackId != null) { const t = tr(a.trackId); if (t) this.fx.riderTrail(a, t, 1 / 60 * Math.min(2, g.speed)); }
+      if (zoom > 2.5 && g.speed > 0) for (const a of g.riders) if (a.m && a.trackId != null) { const t = a.m.chute || tr(a.trackId); if (t) this.fx.riderTrail(a, t, 1 / 60 * Math.min(2, g.speed)); }
     },
     pushMarkers() {
       const r = this.renderer, g = this.game;
