@@ -1,0 +1,29 @@
+# Publishes MX Tycoon on Firebase Hosting with its Firestore rules and indexes
+# (or only the rules and indexes, when the game is hosted on Railway).
+# Run it by hand from the Actions tab. Needs the repository secret
+# FIREBASE_SERVICE_ACCOUNT (service account key JSON) and either a committed
+# online.config.json or the repository variable MX_ONLINE_CONFIG.
+name: MX Tycoon online
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: Qué publicar
+        type: choice
+        options:
+          - todo
+          - firestore
+        default: todo
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and deploy
+        env:
+          MX_ONLINE_CONFIG: ${{ vars.MX_ONLINE_CONFIG }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node tools/deploy.mjs ${{ inputs.what == 'firestore' && 'firestore' || '' }}
