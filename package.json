@@ -1,0 +1,15 @@
+{
+  "name": "mx-tycoon",
+  "version": "1.1.0",
+  "private": true,
+  "description": "MX Tycoon: Motocross Empire, juego de gestión de complejos de motocross para el navegador",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node tools/serve.mjs",
+    "test": "node tools/start-test.cjs && node tools/cross-test.cjs && node tools/close-test.cjs"
+  }
+}

@@ -5,3 +5,4 @@ dist/web-emu/
 firebase-debug.log
 firestore-debug.log
 tools/.cache/
+dist/web/

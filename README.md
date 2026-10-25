@@ -58,6 +58,7 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 
 - `index.html` carga los módulos por separado (útil para depurar).
 - `node build.mjs` genera `dist/mx-tycoon.html`, un único archivo autocontenido.
+- `npm start` genera la página y la sirve en el puerto `PORT` (3000 por defecto) con `tools/serve.mjs`; es lo que ejecuta Railway (ver `railway.json` y [ONLINE.md](ONLINE.md)).
 - `node tools/sim-test.cjs` simula un complejo durante varios meses en Node y muestra la economía.
 - `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
 - `node tools/close-test.cjs` prueba el cierre de circuitos: llegar a la salida a otra altura, cerrar desde lejos, desde muy arriba y con el final encajonado.

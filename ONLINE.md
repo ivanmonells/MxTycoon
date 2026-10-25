@@ -14,17 +14,28 @@ Todo funciona sobre Firebase (de Google), cuyo plan gratuito basta para empezar.
 2. **Inicio de sesión con Google**: menú **Compilación > Authentication > Comenzar > Método de inicio de sesión > Google > Habilitar**, elige el correo de asistencia y guarda.
 3. **Base de datos**: **Compilación > Firestore Database > Crear base de datos**, en **modo de producción**, con ubicación en Europa (por ejemplo `eur3` o `europe-southwest1`, Madrid). Las reglas de acceso las sube el despliegue.
 4. **App web**: **Configuración del proyecto** (la rueda) **> General > Tus apps >** icono `</>`, ponle un nombre y **Registrar app**. Copia el bloque `firebaseConfig` que aparece.
-5. Crea `mx-tycoon/online.config.json` copiando `online.config.example.json` y pon ahí esos valores. No son secretos: solo identifican el proyecto y acaban dentro de la página; quién puede leer o escribir lo deciden las reglas de `firestore.rules`.
+5. Crea `online.config.json` en la carpeta del juego (la raíz del repositorio) copiando `online.config.example.json` y pon ahí esos valores. No son secretos: solo identifican el proyecto y acaban dentro de la página; quién puede leer o escribir lo deciden las reglas de `firestore.rules`.
 
 ## 2. Publicar
 
 Elige una de estas formas:
 
-- **Desde tu ordenador** (Node.js 18 o superior): en la carpeta `mx-tycoon`, ejecuta `npx firebase-tools login` (una vez) y después `node tools/deploy.mjs`.
+- **Desde tu ordenador** (Node.js 18 o superior): en la carpeta del juego, ejecuta `npx firebase-tools login` (una vez) y después `node tools/deploy.mjs`.
 - **Desde GitHub Actions**: crea una clave de cuenta de servicio con el rol **Administrador de Firebase** (Google Cloud > IAM > Cuentas de servicio > Crear cuenta > Claves > Agregar clave JSON) y guárdala como secreto del repositorio `FIREBASE_SERVICE_ACCOUNT` (GitHub > Settings > Secrets and variables > Actions). Luego, en la pestaña **Actions**, ejecuta **MX Tycoon online**.
 - **Desde una sesión de Claude Code**: añade esa clave como variable de entorno `FIREBASE_SERVICE_ACCOUNT` en la configuración del entorno (menú del entorno > Editar) y la configuración web como `MX_ONLINE_CONFIG`. En una sesión nueva se puede ejecutar `node tools/deploy.mjs` directamente.
 
 El juego queda en `https://<tu-proyecto>.web.app`. Si más adelante usas un dominio propio, añádelo en **Authentication > Configuración > Dominios autorizados**.
+
+### En Railway
+
+Railway sirve el juego desde su propio servidor; Firebase sigue guardando las cuentas, las partidas y el ranking. Railway es de pago cuando acaba la prueba gratuita.
+
+1. En Railway: **New Project > Deploy from GitHub repo** y elige el repositorio del juego (si no aparece, en **Configure GitHub App** dale acceso a ese repositorio).
+2. Railway lee `railway.json`: arranca con `npm start`, que genera la página y la sirve con `tools/serve.mjs` (comprobación de salud en `/healthz`). No hay dependencias que instalar.
+3. En el servicio, **Variables > New Variable**: `MX_ONLINE_CONFIG` con el contenido de `online.config.json` en una sola línea. Sin esta variable se publica la versión sin conexión.
+4. **Settings > Networking > Generate Domain** da la dirección pública, del tipo `https://<nombre>.up.railway.app`.
+5. En Firebase, **Authentication > Configuración > Dominios autorizados > Agregar dominio**: pon ese dominio de Railway, o «Entrar con Google» fallará.
+6. Las reglas e índices de Firestore se suben aparte, desde tu ordenador: `npx firebase-tools login` (una vez) y `node tools/deploy.mjs firestore`.
 
 ## 3. Comprobarlo
 

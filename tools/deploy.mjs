@@ -4,7 +4,9 @@
    and deploy rights: a service account key in FIREBASE_SERVICE_ACCOUNT (the JSON
    itself) or GOOGLE_APPLICATION_CREDENTIALS (its path), or a firebase CLI logged in
    on this machine. The Firestore database must exist (created once in the console).
-   Usage: node tools/deploy.mjs */
+   Usage: node tools/deploy.mjs            hosting, rules and indexes
+          node tools/deploy.mjs firestore  only the rules and indexes (the game is
+                                           hosted elsewhere, e.g. on Railway) */
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,6 +27,7 @@ if ((env.FIREBASE_SERVICE_ACCOUNT || '').trim() && !env.GOOGLE_APPLICATION_CREDE
   env.GOOGLE_APPLICATION_CREDENTIALS = file;
 }
 const run = (cmd) => execSync(cmd, { stdio: 'inherit', cwd: root, env });
-run('node build.mjs');
-run('npx --yes firebase-tools@15 deploy --only hosting,firestore --project ' + project + ' --non-interactive --force');
-console.log('\nPublicado: https://' + project + '.web.app');
+const onlyRules = process.argv.includes('firestore');
+if (!onlyRules) run('node build.mjs');
+run('npx --yes firebase-tools@15 deploy --only ' + (onlyRules ? 'firestore' : 'hosting,firestore') + ' --project ' + project + ' --non-interactive --force');
+console.log(onlyRules ? '\nReglas e índices de Firestore publicados en ' + project + '.' : '\nPublicado: https://' + project + '.web.app');
