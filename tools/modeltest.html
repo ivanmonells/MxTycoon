@@ -25,7 +25,7 @@ const r = new MX.Renderer(document.getElementById('c'));
 r.init(); r.resize(innerWidth, innerHeight, 1); r.setGame(game);
 const q = new URLSearchParams(location.search);
 r.cam.tx = 160; r.cam.tz = 160; r.cam.ty = 6; r.cam.zoom = r.cam.targetZoom = +(q.get('zoom') || 40);
-const models = (q.get('m') || 'rider_sit,rider_stand,bike,person_0,person_sit,person_cheer').split(',');
+const models = (q.get('m') || 'mx_kronos_4t,rb_sit,rb_stand,person_0,person_sit,person_cheer').split(',');
 const cols = [[255,106,19],[30,136,229],[253,216,53],[229,57,53]];
 r.beginInstances();
 models.forEach((m, i) => {

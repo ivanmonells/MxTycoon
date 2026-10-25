@@ -18,13 +18,7 @@
   }
 
   function surfAt(track, i) { return SURF[track.S.surf[i]]; }
-  function wetFactor(track, sd) {
-    const m = track.moisture;
-    if (sd === SURF[0]) return 1 - 0.34 * m;
-    if (sd === SURF[1]) return 1 - 0.08 * m;
-    if (sd === SURF[2]) return 1 - 0.12 * m;
-    return 1 - 0.28 * m;
-  }
+  function wetFactor(track, sd) { return 1 - (sd.wet != null ? sd.wet : 0.3) * track.moisture; }
   function wearAt(track, s) {
     const w = track.wear;
     const k = Math.floor(U.mod(s, track.length) / 5);
@@ -292,10 +286,19 @@
         const sl = (track.S.yRide[track.sIndex(m.s + 0.8)] - track.S.yRide[track.sIndex(m.s - 0.8)]) / 1.6;
         m.pitch = U.lerp(m.pitch, Math.atan(sl), 0.35);
       }
-      const lean = U.clamp(Math.atan(m.v * m.v * S.curv[i] / G) * 0.55, -0.62, 0.62) * (S.berm[i] > 0.3 ? 0.55 : 1);
+      const vd = VEH[m.bike.vehicle] || VEH.mx;
+      const lean = U.clamp(Math.atan(m.v * m.v * S.curv[i] / G) * (vd.car ? 0.12 : 0.55), -0.62, 0.62) * (S.berm[i] > 0.3 ? 0.55 : 1);
       m.roll = U.lerp(m.roll, m.air ? 0 : lean, 0.15);
+      /* flat trackers and buggies slide: the nose points into the corner */
+      if (vd.slide || vd.car) {
+        const lat = m.v * m.v * S.curv[i] / G;
+        const want = m.air ? 0 : U.clamp(lat * (vd.car ? 0.32 : 0.5), -0.6, 0.6);
+        m.drift = U.lerp(m.drift || 0, want, 0.08);
+        m.hdg += m.drift;
+      }
     }
   }
+  const VEH = Cat.vehicles;
 
   /* Riders stretch or shorten a jump in the air (body position, throttle, rear brake). */
   const AC = {};
@@ -366,10 +369,16 @@
   }
 
   /* ---------------- analyzer ---------------- */
-  function virtualRider(skill) {
+  /* the best vehicle of a class a rider of this skill would bring */
+  function vehicleFor(cls, skill) {
+    const list = Cat.bikes.filter(b => b.vehicle === cls && skill >= b.minSkill && skill <= b.maxSkill);
+    if (!list.length) return Cat.bikes.find(b => b.vehicle === cls) || Cat.bikes[2];
+    if (cls === 'mx') return skill < 30 ? Cat.bikes[1] : skill < 70 ? Cat.bikes[2] : Cat.bikes[4];
+    return list[list.length - 1];
+  }
+  function virtualRider(skill, cls) {
     const attr = { skill, speed: skill, stamina: 80, jump: skill, aggr: 0.5, exp: skill };
-    const bike = skill < 30 ? Cat.bikes[1] : skill < 70 ? Cat.bikes[2] : Cat.bikes[4];
-    const m = makeMotion(attr, bike);
+    const m = makeMotion(attr, vehicleFor(cls || 'mx', skill));
     m.personal = 0;
     return m;
   }
@@ -381,11 +390,13 @@
     const startF = track.features.find(f => f.type === 'start');
     const finishF = track.features.find(f => f.type === 'finish');
     track.finishS = finishF ? finishF.s + 1 : 0;
-    const skills = [20, 45, 70, 92];
+    const td = track.typeDef, type = track.type;
+    /* four virtual riders spread over the skill range of the discipline */
+    const skills = type === 'mx' ? [20, 45, 70, 92] : [0.08, 0.38, 0.68, 0.94].map(k => Math.round(td.skill[0] + (td.skill[1] - td.skill[0]) * k));
     const runs = [];
     const rng = new U.RNG(1234);
     for (const sk of skills) {
-      const m = virtualRider(sk);
+      const m = virtualRider(sk, td.vehicle);
       m.s = startF ? startF.s + 3 : track.finishS + 2;
       m.v = 0.5;
       let t = 0, events = { hard: 0, crashRisk: 0, clean: 0, jumps: 0, air: 0 }, maxV = 0, sumV = 0, n = 0;
@@ -431,23 +442,56 @@
     const kinds = new Set(track.features.map(f => Cat.features[f.type].kind).filter(k => k !== 'start' && k !== 'finish'));
     const jumpCount = track.features.filter(f => Cat.features[f.type].group === 'jump').length;
     const rhythmCount = track.features.filter(f => Cat.features[f.type].group === 'rhythm').length;
+    const natural = track.features.filter(f => Cat.features[f.type].group === 'natural');
+    const natKinds = new Set(natural.map(f => f.type)).size;
     const pro = runs[3], mid = runs[1];
     let diff = 0.8 + 4.2 * (maxReq / 100) + 1.4 * U.clamp(desc.tight / Math.max(1, desc.corners), 0, 1) + surfDiff * 1.1
       + (whoops ? 0.6 : 0) + 0.8 * U.clamp(desc.elevRange / 12, 0, 1) + (desc.avgW < 7 ? 0.5 : desc.avgW > 10 ? -0.3 : 0)
       + gaps * 0.25 + U.clamp(pro.maxV / 30, 0, 1) * 0.6;
+    if (type === 'enduro') diff += natural.length * 0.35 + (desc.avgW < 4.5 ? 0.6 : 0) + U.clamp(desc.climb / 40, 0, 1) * 0.8;
+    if (type === 'flat') diff += U.clamp(pro.maxV / 30, 0, 1) * 1.2;
     diff = U.clamp(diff, 0, 10);
     const per100 = desc.corners / Math.max(1, track.length / 100);
+    const lenScore = (a, b, w) => track.length >= a && track.length <= b ? w : track.length < a ? track.length / a * w * 0.65 : w * 0.55;
     let rating = 0;
-    rating += U.clamp(pro.air / 7, 0, 1) * 2.6;
-    rating += U.clamp(kinds.size / 5, 0, 1) * 1.8;
-    rating += U.clamp(jumpCount / 6, 0, 1) * 1.0;
-    rating += U.clamp(rhythmCount / 2, 0, 1) * 0.6;
-    rating += (per100 >= 1.2 && per100 <= 4.5 ? 1.0 : per100 < 1.2 ? per100 / 1.2 * 0.7 : 0.4);
-    rating += U.clamp(desc.berms / 4, 0, 1) * 0.6;
-    rating += U.clamp(desc.elevRange / 8, 0, 1) * 0.8;
-    rating += track.length >= 450 && track.length <= 1600 ? 0.9 : track.length < 450 ? track.length / 450 * 0.6 : 0.5;
-    rating -= desc.longestStraight > 130 ? 0.6 : 0;
-    rating -= (desc.tight > desc.corners * 0.7 && desc.corners > 3) ? 0.4 : 0;
+    if (type === 'flat') {
+      /* an oval: few corners, room to race side by side, long enough to slide */
+      rating += desc.corners >= 2 && desc.corners <= 6 ? 2.6 : desc.corners < 2 ? 1 : 1.2;
+      rating += U.clamp((desc.avgW - 6) / 5, 0, 1) * 1.6;
+      rating += lenScore(260, 700, 1.6);
+      rating += U.clamp(pro.maxV / 30, 0, 1) * 1.4;
+      rating += desc.tight === 0 ? 0.8 : 0.2;
+      rating += U.clamp(desc.surf[Cat.surfaceOrder.indexOf('clay')] || 0, 0, 1) * 0.8;
+    } else if (type === 'enduro') {
+      /* a long special through the hills: obstacles, climbs and trees */
+      rating += lenScore(700, 2600, 1.8);
+      rating += U.clamp(natKinds / 3, 0, 1) * 1.6 + U.clamp(natural.length / 6, 0, 1) * 1.0;
+      rating += U.clamp(desc.elevRange / 10, 0, 1) * 1.2 + U.clamp(desc.climb / 30, 0, 1) * 0.6;
+      rating += per100 >= 1.5 ? 0.9 : per100 / 1.5 * 0.9;
+      rating -= desc.longestStraight > 90 ? 0.5 : 0;
+    } else if (type === 'carcross') {
+      /* wide, fast and varied, with something to jump or splash through */
+      rating += U.clamp((desc.avgW - 8) / 5, 0, 1) * 1.4;
+      rating += lenScore(450, 1300, 1.4);
+      rating += (per100 >= 1 && per100 <= 4 ? 1.4 : 0.6);
+      rating += U.clamp(kinds.size / 3, 0, 1) * 1.4;
+      rating += U.clamp(pro.air / 3, 0, 1) * 0.8;
+      rating += U.clamp(desc.elevRange / 6, 0, 1) * 0.6 + U.clamp(desc.berms / 3, 0, 1) * 0.5;
+      rating += desc.surf.filter(f => f > 0.1).length > 1 ? 0.4 : 0;
+    } else {
+      rating += U.clamp(pro.air / (type === 'kids' ? 2.5 : 7), 0, 1) * 2.6;
+      rating += U.clamp(kinds.size / (type === 'kids' ? 3 : 5), 0, 1) * 1.8;
+      rating += U.clamp(jumpCount / (type === 'kids' ? 3 : 6), 0, 1) * 1.0;
+      rating += U.clamp(rhythmCount / 2, 0, 1) * 0.6;
+      rating += (per100 >= 1.2 && per100 <= 4.5 ? 1.0 : per100 < 1.2 ? per100 / 1.2 * 0.7 : 0.4);
+      rating += U.clamp(desc.berms / 4, 0, 1) * 0.6;
+      rating += U.clamp(desc.elevRange / 8, 0, 1) * 0.8;
+      if (type === 'sx') rating += lenScore(260, 650, 0.9) + U.clamp(jumpCount / Math.max(1, track.length / 100) / 2, 0, 1) * 0.6;
+      else if (type === 'kids') rating += lenScore(150, 450, 0.9);
+      else rating += track.length >= 450 && track.length <= 1600 ? 0.9 : track.length < 450 ? track.length / 450 * 0.6 : 0.5;
+      rating -= desc.longestStraight > (type === 'kids' ? 60 : 130) ? 0.6 : 0;
+      rating -= (desc.tight > desc.corners * 0.7 && desc.corners > 3 && type !== 'sx') ? 0.4 : 0;
+    }
     /* scenery and atmosphere near the track */
     let scen = 0, stands = 0, safetyItems = [];
     if (world) {
@@ -473,17 +517,17 @@
         }
       }
     }
-    rating += U.clamp(scen / 30, 0, 1) * 0.8;
-    rating += U.clamp(stands / 8, 0, 1) * 0.5;
+    rating += U.clamp(scen / (type === 'enduro' ? 18 : 30), 0, 1) * (type === 'enduro' ? 1.6 : 0.8);
+    rating += U.clamp(stands / 8, 0, 1) * (type === 'enduro' ? 0.2 : type === 'sx' ? 0.9 : 0.5);
     rating = U.clamp(rating, 0, 10);
     /* safety: hazards are jump landings and tight corners after fast sections */
     const hazards = [];
     for (const f of track.features) {
       const k = Cat.features[f.type].kind;
-      if (k === 'table' || k === 'double' || k === 'triple' || k === 'stepup' || k === 'rhythm') {
+      if (k === 'table' || k === 'double' || k === 'triple' || k === 'stepup' || k === 'rhythm' || k === 'logs' || k === 'rocks') {
         const sh = MX.Track.getShape(f.type);
         const i = track.sIndex(f.s + sh.len * 0.75);
-        hazards.push({ x: S.x[i], z: S.z[i], w: k === 'double' || k === 'triple' ? 1.4 : 1 });
+        hazards.push({ x: S.x[i], z: S.z[i], w: k === 'double' || k === 'triple' ? 1.4 : k === 'logs' || k === 'rocks' ? 0.6 : 1 });
       }
     }
     for (let i = 0; i < S.n; i += 6) {
@@ -505,19 +549,22 @@
       - U.clamp(pro.crashRisk * 0.04 + mid.crashRisk * 0.03, 0, 0.25) - gaps * 0.02;
     safety = U.clamp(safety, 0.05, 1);
     const maint = Math.round(track.length * 0.9 * desc.surf.reduce((a, f, k) => a + f * SURF[k].maint, 0) + track.features.length * 30);
-    const capacity = Math.max(4, Math.floor(track.length / 24));
+    const capacity = Math.max(4, Math.floor(track.length / td.cap));
+    /* official homologation tiers only exist for motocross */
     let homolog = 'local';
-    if (track.length >= 550 && diff >= 2.5 && diff <= 7.5 && safety >= 0.45) homolog = 'regional';
-    if (track.length >= 750 && diff >= 4 && diff <= 8.5 && safety >= 0.6 && desc.avgW >= 7.8) homolog = 'nacional';
-    if (track.length >= 900 && diff >= 5 && diff <= 9 && safety >= 0.7 && desc.avgW >= 8.4) homolog = 'internacional';
-    if (track.length >= 1050 && diff >= 5.5 && diff <= 9.5 && safety >= 0.8 && desc.avgW >= 9) homolog = 'gp';
+    if (type === 'mx') {
+      if (track.length >= 550 && diff >= 2.5 && diff <= 7.5 && safety >= 0.45) homolog = 'regional';
+      if (track.length >= 750 && diff >= 4 && diff <= 8.5 && safety >= 0.6 && desc.avgW >= 7.8) homolog = 'nacional';
+      if (track.length >= 900 && diff >= 5 && diff <= 9 && safety >= 0.7 && desc.avgW >= 8.4) homolog = 'internacional';
+      if (track.length >= 1050 && diff >= 5.5 && diff <= 9.5 && safety >= 0.8 && desc.avgW >= 9) homolog = 'gp';
+    }
     const stats = {
       length: track.length, diff, rating, safety, maint, capacity, homolog,
       lapPro: pro.lap, lapAm: mid.lap, lapBeg: runs[0].lap, lapExp: runs[2].lap,
       maxSpeed: pro.maxV, avgSpeed: pro.avgV, airPro: pro.air, airMid: mid.air, airBeg: runs[0].air,
       jumps: jumpCount, rhythm: rhythmCount, corners: desc.corners, tight: desc.tight, berms: desc.berms,
       elev: desc.elevRange, width: desc.avgW, longest: desc.longestStraight, hazards: hazards.length,
-      protectedRatio: totalW ? protectedW / totalW : 1, maxReq, gaps, runs, surf: desc.surf
+      protectedRatio: totalW ? protectedW / totalW : 1, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: scen
     };
     track.stats = stats;
     return stats;
@@ -526,7 +573,7 @@
   const HOMOLOG_NAMES = { local: 'Local', regional: 'Regional', nacional: 'Nacional', internacional: 'Internacional', gp: 'Gran Premio' };
   const HOMOLOG_RANK = { local: 1, regional: 2, nacional: 3, internacional: 4, gp: 5 };
 
-  MX.RiderPhysics = { makeMotion, step, cornerSpeed, topSpeed, crash, decide, targetSpeed };
+  MX.RiderPhysics = { makeMotion, step, cornerSpeed, topSpeed, crash, decide, targetSpeed, vehicleFor };
   MX.TrackAnalyzer = { analyze, HOMOLOG_NAMES, HOMOLOG_RANK, difficultyLabel };
   function difficultyLabel(d) {
     if (d < 2) return 'Muy fácil';

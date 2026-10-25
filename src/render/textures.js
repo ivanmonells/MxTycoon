@@ -146,6 +146,38 @@
       if (U.hash2(x, y, 113) > 0.985) c = hex('#c1b5a5');
       return c;
     }));
+    /* flat track clay: smooth, with a darker polished racing groove */
+    const clayPal = ['#9a4f2c', '#a65732', '#b05f37', '#ba683d', '#c47244', '#cd7c4b'].map(hex);
+    layer('t_clay', paint((x, y) => {
+      let c = palNoise(clayPal, 14, 141)(x, y);
+      const u = x / S;
+      const groove = Math.abs(u - 0.38 - pn(y / 64, 0, 2, 142) * 0.08);
+      if (groove < 0.12) c = shade(c, 0.86 + groove * 0.9);
+      if (U.hash2(x, y, 143) > 0.993) c = hex('#e3a57a');
+      return c;
+    }));
+    /* forest loam: dark soil with fallen leaves, roots and pebbles */
+    const loamPal = ['#3e2c1d', '#463222', '#4f3926', '#58402b', '#614830', '#6b5036'].map(hex);
+    layer('t_loam', paint((x, y) => {
+      let c = palNoise(loamPal, 7, 151)(x, y);
+      c = shade(c, ruts(x, y, 152, 0.84));
+      const r = U.hash2(x, y, 153);
+      if (r > 0.985) c = hex(['#c9822e', '#d9a441', '#9c5a25'][Math.floor(U.hash2(x, y, 154) * 3) % 3]);
+      else if (r < 0.012) c = hex('#8a8178');
+      const root = Math.abs(fbmP(x / 18, y / 18, S / 18, 155, 2) - 0.5);
+      if (root < 0.012) c = hex('#2b1d12');
+      return c;
+    }));
+    /* car cross gravel: grey stones over brown dirt with wheel ruts */
+    const gravTrackPal = ['#7d7466', '#887e70', '#93897a', '#9e9484', '#aaa08f', '#b6ac9b'].map(hex);
+    layer('t_gravel', paint((x, y) => {
+      let c = palNoise(gravTrackPal, 6, 161)(x, y);
+      const r = U.hash2(x, y, 162);
+      if (r > 0.9) c = gravTrackPal[5]; else if (r < 0.08) c = hex('#6e5a44');
+      const lane = Math.abs(((x / S) * 4 + pn(y / 32, x / 32, 4, 163) * 0.4) % 1 - 0.5);
+      if (lane < 0.07) c = shade(hex('#7a6550'), 0.95);
+      return c;
+    }));
     const embPal = ['#6a4a2c', '#755233', '#805c39', '#8a6540', '#946f47', '#9e7a50'].map(hex);
     layer('embank', paint((x, y) => {
       let c = palNoise(embPal, 6, 121)(x, y);
@@ -335,7 +367,11 @@
       ['sign_paddock', 'PADDOCK', '#ff6a13', '#151515'], ['sign_escuela', 'ESCUELA MX', '#fdd835', '#1a237e'],
       ['sign_control', 'RACE CONTROL', '#151515', '#ffffff'], ['sign_mant', 'MANTENIMIENTO', '#f9a825', '#1d1d1d'],
       ['sign_camping', 'CAMPING', '#33691e', '#ffffff'], ['sign_boxes', 'BOXES', '#212121', '#ff6a13'],
-      ['sign_salida', 'SALIDA', '#151515', '#ffffff'], ['sign_podio', 'PODIO', '#151515', '#ffd22e']
+      ['sign_salida', 'SALIDA', '#151515', '#ffffff'], ['sign_podio', 'PODIO', '#151515', '#ffd22e'],
+      ['sign_restaurante', 'RESTAURANTE', '#5d4037', '#ffe0b2'], ['sign_tienda', 'TIENDA OFICIAL', '#151515', '#ff6a13'],
+      ['sign_recambios', 'RECAMBIOS', '#c62828', '#ffffff'], ['sign_lavadero', 'LAVADERO', '#0277bd', '#ffffff'],
+      ['sign_alquiler', 'ALQUILER', '#2e7d32', '#ffffff'], ['sign_infantil', 'ZONA INFANTIL', '#fdd835', '#e53935'],
+      ['sign_crono', 'CRONO', '#151515', '#ffd22e'], ['sign_sx', 'SUPERCROSS', '#311b92', '#ffffff']
     ];
     for (const s of signs) region(s[0], 64, 14, signPlate(s[1], s[2], s[3]));
     region('sign_meta', 96, 20, (c, w, h) => {

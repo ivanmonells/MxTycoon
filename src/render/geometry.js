@@ -6,7 +6,7 @@
   const T = C.TILE;
   const L = () => MX.Tex.L;
   const GROUND_LAYER = ['grass', 'dry', 'dirt', 'sand', 'rock', 'forest', 'gravel'];
-  const TRACK_LAYER = ['t_dirt', 't_sand', 't_mud', 't_hard'];
+  const TRACK_LAYER = ['t_dirt', 't_sand', 't_mud', 't_hard', 't_clay', 't_loam', 't_gravel'];
   const CH = 16;
 
   function terrainChunk(world, cx, cz) {
@@ -127,75 +127,318 @@
       }
       prev = cur;
     }
-    if (!opts.ghost) {
-      /* marker stakes with tape every 6 m on both sides */
-      const tapeMat = L().track_tape;
-      const every = Math.round(6 / C.TRACK_DS);
-      let lastPts = null;
-      for (let k = 0; k <= lastI; k += every) {
-        const i = S.closed ? k % n : Math.min(k, n - 1);
-        if (S.feat[i] >= 0 && Cat.features[tr.features[S.feat[i]].type].kind === 'start') { lastPts = null; continue; }
-        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
-        const hw = S.w[i] * 0.5 + 0.55;
-        const pts = [];
-        for (const side of [-1, 1]) {
-          const x = S.x[i] + nx * hw * side, z = S.z[i] + nz * hw * side;
-          const y = Math.max(S.y[i] + tr.bankAt(i, (hw - 0.55) * side) - 0.05, world.heightAt(x, z));
-          const col = (k / every) % 2 ? MB.rgba('#ff6a13') : MB.rgba('#f2f2f2');
-          mb.box(x - 0.06, y, z - 0.06, x + 0.06, y + 0.95, z + 0.06, { col });
-          pts.push([x, y]);
-          pts.push(z);
-        }
-        if (lastPts) {
-          for (let sIdx = 0; sIdx < 2; sIdx++) {
-            const ax = lastPts[sIdx * 2][0], ay = lastPts[sIdx * 2][1], az = lastPts[sIdx * 2 + 1];
-            const bx = pts[sIdx * 2][0], by = pts[sIdx * 2][1], bz = pts[sIdx * 2 + 1];
-            if (U.dist2(ax, az, bx, bz) > 120) continue;
-            const t0 = 0.74, t1 = 0.84;
-            mb.quad([ax, ay + t0, az], [bx, by + t0, bz], [bx, by + t1, bz], [ax, ay + t1, az], [0, 0, 0.4, 0.05], tapeMat, [1, 1, 1, 1]);
-            mb.quad([bx, by + t0, bz], [ax, ay + t0, az], [ax, ay + t1, az], [bx, by + t1, bz], [0, 0, 0.4, 0.05], tapeMat, [1, 1, 1, 1]);
-          }
-        }
-        lastPts = pts;
-      }
-      /* finish line: checker band and arch */
-      if (tr.finishS != null) {
-        const i = tr.sIndex(tr.finishS - 1);
-        const j = tr.sIndex(tr.finishS + 0.5);
-        const ci = cross(i), cj = cross(j);
-        const chk = L().checker;
-        for (let q = 0; q < 4; q++) {
-          const a = ci.pts[q], b = ci.pts[q + 1], c = cj.pts[q + 1], d = cj.pts[q];
-          const lift = (p) => [p[0], p[1] + 0.03, p[2]];
-          mb.quad4(lift(a), lift(b), lift(c), lift(d), [q * 0.25, 0], [(q + 1) * 0.25, 0], [(q + 1) * 0.25, 0.1], [q * 0.25, 0.1], chk, [1, 1, 1, 1]);
-        }
-        const m = tr.sIndex(tr.finishS);
-        const hdg = S.hdg[m], nx = -Math.sin(hdg), nz = Math.cos(hdg), tx = Math.cos(hdg), tz = Math.sin(hdg);
-        const hw = S.w[m] * 0.5 + 1.1;
-        const post = MB.rgba('#2b2b2b');
-        const baseY = S.y[m];
-        for (const side of [-1, 1]) {
-          const x = S.x[m] + nx * hw * side, z = S.z[m] + nz * hw * side;
-          mb.box(x - 0.15, Math.min(baseY, world.heightAt(x, z)) - 0.2, z - 0.15, x + 0.15, baseY + 5, z + 0.15, { col: post });
-        }
-        const r = MX.Tex.regions.sign_meta;
-        if (r) {
-          const y0 = baseY + 3.9, y1 = baseY + 5.0;
-          const ax = S.x[m] - nx * hw, az = S.z[m] - nz * hw, bx = S.x[m] + nx * hw, bz = S.z[m] + nz * hw;
-          const off = 0.05;
-          const mir = [r.uv[2], r.uv[1], r.uv[0], r.uv[3]];
-          mb.quad([ax + tx * off, y0, az + tz * off], [bx + tx * off, y0, bz + tz * off], [bx + tx * off, y1, bz + tz * off], [ax + tx * off, y1, az + tz * off], mir, MB.MAT_ATLAS, [1, 1, 1, 1]);
-          mb.quad([bx - tx * off, y0, bz - tz * off], [ax - tx * off, y0, az - tz * off], [ax - tx * off, y1, az - tz * off], [bx - tx * off, y1, bz - tz * off], mir, MB.MAT_ATLAS, [1, 1, 1, 1]);
-        }
-      }
-    }
+    if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
   }
 
-  /* Start gate: static frame plus gates up or down. */
+  /* ---------------- track decoration: edges, finish arch and obstacles ----------------
+     Built separately from the surface (which is rebuilt as it wears and dries) and
+     styled by discipline: tape stakes (motocross), small coloured stakes (minicross),
+     stadium walls (supercross), a white rail (dirt track), tape in the woods (enduro)
+     and tyre walls (car cross). */
+  function skipStart(tr, i) {
+    const S = tr.S;
+    return S.feat[i] >= 0 && Cat.features[tr.features[S.feat[i]].type].kind === 'start';
+  }
+  function edgeAt(tr, world, i, side, extra) {
+    const S = tr.S, hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
+    const hw = S.w[i] * 0.5 + extra;
+    const x = S.x[i] + nx * hw * side, z = S.z[i] + nz * hw * side;
+    const y = Math.max(S.y[i] + tr.bankAt(i, S.w[i] * 0.5 * side) - 0.05, world.heightAt(x, z));
+    return { x, y, z, nx: nx * side, nz: nz * side, hdg };
+  }
+  /* side of each sample facing away from the middle of the loop */
+  function outerSide(S) {
+    let mx = 0, mz = 0;
+    for (let k = 0; k < S.n; k += 8) { mx += S.x[k]; mz += S.z[k]; }
+    const cnt = Math.ceil(S.n / 8); mx /= cnt; mz /= cnt;
+    return (i) => {
+      const nx = -Math.sin(S.hdg[i]), nz = Math.cos(S.hdg[i]);
+      return ((S.x[i] + nx - mx) ** 2 + (S.z[i] + nz - mz) ** 2) > ((S.x[i] - nx - mx) ** 2 + (S.z[i] - nz - mz) ** 2) ? 1 : -1;
+    };
+  }
+  function eachEdge(tr, every, fn) {
+    const S = tr.S, n = S.n, lastI = S.closed ? n : n - 1;
+    const step = Math.max(1, Math.round(every / C.TRACK_DS));
+    let k0 = 0;
+    for (let k = 0; k <= lastI; k += step, k0++) {
+      const i = S.closed ? k % n : Math.min(k, n - 1);
+      fn(i, k0, skipStart(tr, i));
+    }
+  }
+  /* a tape (or solid band) between two posts, seen from both sides */
+  function band(mb, a, b, y0, y1, mat, col) {
+    const uv = [0, 0, 0.4, 0.05];
+    mb.quad([a.x, a.y + y0, a.z], [b.x, b.y + y0, b.z], [b.x, b.y + y1, b.z], [a.x, a.y + y1, a.z], uv, mat, col);
+    mb.quad([b.x, b.y + y0, b.z], [a.x, a.y + y0, a.z], [a.x, a.y + y1, a.z], [b.x, b.y + y1, b.z], uv, mat, col);
+  }
+  function stakes(mb, tr, world, o) {
+    const last = { '-1': null, '1': null };
+    eachEdge(tr, o.every, (i, k, skip) => {
+      for (const side of [-1, 1]) {
+        if (skip) { last[side] = null; continue; }
+        const e = edgeAt(tr, world, i, side, o.extra);
+        mb.box(e.x - o.t, e.y, e.z - o.t, e.x + o.t, e.y + o.h, e.z + o.t, { col: k % 2 ? o.colA : o.colB });
+        const p = last[side];
+        if (p && U.dist2(p.x, p.z, e.x, e.z) < (o.every * 2.2) ** 2) band(mb, p, e, o.h * 0.78, o.h * 0.88, o.tapeMat, o.tapeCol);
+        if (o.arrows && k % 7 === 3 && Math.abs(tr.S.curv[i]) > 1 / 30 && side === -Math.sign(tr.S.curv[i])) {
+          /* yellow arrow board on the outside of a corner */
+          const ax = -e.nz * 0.35, az = e.nx * 0.35;
+          mb.quad([e.x - ax, e.y + 0.55, e.z - az], [e.x + ax, e.y + 0.55, e.z + az], [e.x + ax, e.y + 0.95, e.z + az], [e.x - ax, e.y + 0.95, e.z - az], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
+          mb.quad([e.x + ax, e.y + 0.55, e.z + az], [e.x - ax, e.y + 0.55, e.z - az], [e.x - ax, e.y + 0.95, e.z - az], [e.x + ax, e.y + 0.95, e.z + az], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
+        }
+        last[side] = e;
+      }
+    });
+  }
+  /* supercross: low walls with sponsor boards */
+  function walls(mb, tr, world) {
+    const last = { '-1': null, '1': null };
+    const logos = Cat.sponsors.map(sp => 'logo_' + sp.id).concat(['logo_mxt', 'sign_sx']);
+    const H = 0.75, TH = 0.3;
+    eachEdge(tr, 2, (i, k, skip) => {
+      for (const side of [-1, 1]) {
+        if (skip) { last[side] = null; continue; }
+        const e = edgeAt(tr, world, i, side, 0.35);
+        const p = last[side];
+        if (p && U.dist2(p.x, p.z, e.x, e.z) < 16) {
+          const col = MB.rgba(Math.floor(k / 4) % 2 ? '#5e35b1' : '#eceff1');
+          const po = [p.x + p.nx * TH, p.z + p.nz * TH], eo = [e.x + e.nx * TH, e.z + e.nz * TH];
+          const f = side > 0;
+          /* track-side face, top and back */
+          const A = [p.x, p.y, p.z], B = [e.x, e.y, e.z], Bt = [e.x, e.y + H, e.z], At = [p.x, p.y + H, p.z];
+          const Ao = [po[0], p.y, po[1]], Bo = [eo[0], e.y, eo[1]], Bot = [eo[0], e.y + H, eo[1]], Aot = [po[0], p.y + H, po[1]];
+          if (f) { mb.quad(B, A, At, Bt, null, MB.MAT_SOLID, col); mb.quad(Bt, At, Aot, Bot, null, MB.MAT_SOLID, MB.mulCol(col, 1.08)); mb.quad(Ao, Bo, Bot, Aot, null, MB.MAT_SOLID, MB.mulCol(col, 0.8)); }
+          else { mb.quad(A, B, Bt, At, null, MB.MAT_SOLID, col); mb.quad(At, Bt, Bot, Aot, null, MB.MAT_SOLID, MB.mulCol(col, 1.08)); mb.quad(Bo, Ao, Aot, Bot, null, MB.MAT_SOLID, MB.mulCol(col, 0.8)); }
+          /* a sponsor board on the track side every 24 m */
+          if (k % 12 === 6) {
+            const r = MX.Tex.regions[logos[(Math.floor(k / 12) + (side > 0 ? 3 : 0)) % logos.length]];
+            if (r) {
+              const lift = (q, d) => [q[0] - e.nx * d, q[1], q[2] - e.nz * d];
+              const a0 = lift([p.x, p.y + 0.12, p.z], 0.02), b0 = lift([e.x, e.y + 0.12, e.z], 0.02), b1 = lift([e.x, e.y + H - 0.08, e.z], 0.02), a1 = lift([p.x, p.y + H - 0.08, p.z], 0.02);
+              if (f) mb.quad(b0, a0, a1, b1, r.uv, MB.MAT_ATLAS, [1, 1, 1, 1]); else mb.quad(a0, b0, b1, a1, r.uv, MB.MAT_ATLAS, [1, 1, 1, 1]);
+            }
+          }
+        }
+        last[side] = e;
+      }
+    });
+  }
+  /* dirt track: white rail on the outside (padded in the corners), white line inside */
+  function rails(mb, tr, world) {
+    const S = tr.S, outer = outerSide(S);
+    let lastO = null, lastI = null;
+    const white = MB.rgba('#f4f4f2'), pad = MB.rgba('#1e88e5'), line = MB.rgba('#fafafa');
+    eachEdge(tr, 3, (i, k, skip) => {
+      const so = outer(i);
+      if (skip) { lastO = null; lastI = null; return; }
+      const e = edgeAt(tr, world, i, so, 0.7);
+      const corner = Math.abs(S.curv[i]) > 1 / 30;
+      if (corner) mb.box(e.x - 0.3, e.y, e.z - 0.3, e.x + 0.3, e.y + 1.1, e.z + 0.3, { col: k % 2 ? pad : white });
+      else mb.box(e.x - 0.06, e.y, e.z - 0.06, e.x + 0.06, e.y + 1.0, e.z + 0.06, { col: white });
+      if (lastO && U.dist2(lastO.x, lastO.z, e.x, e.z) < 64) { band(mb, lastO, e, 0.42, 0.52, MB.MAT_SOLID, white); band(mb, lastO, e, 0.86, 0.98, MB.MAT_SOLID, white); }
+      lastO = e;
+      /* inside: a painted line on the track edge */
+      const hdg = S.hdg[i], nx = -Math.sin(hdg) * -so, nz = Math.cos(hdg) * -so;
+      const hw = S.w[i] * 0.5;
+      const a = [S.x[i] + nx * (hw - 0.05), S.y[i] + 0.04, S.z[i] + nz * (hw - 0.05)], b = [S.x[i] + nx * (hw - 0.35), S.y[i] + 0.04, S.z[i] + nz * (hw - 0.35)];
+      /* keep the strip facing up whichever side it is on */
+      if (lastI) {
+        if (so < 0) mb.quad4(lastI[0], a, b, lastI[1], [0, 0], [1, 0], [1, 1], [0, 1], MB.MAT_SOLID, line);
+        else mb.quad4(lastI[1], b, a, lastI[0], [0, 0], [1, 0], [1, 1], [0, 1], MB.MAT_SOLID, line);
+      }
+      lastI = [a, b];
+    });
+  }
+  /* minicross: low plastic barrier blocks in bright colours */
+  function blocks(mb, tr, world) {
+    const cols = ['#29b6f6', '#fdd835', '#29b6f6', '#ef5350'].map(c => MB.rgba(c));
+    eachEdge(tr, 1.6, (i, k, skip) => {
+      if (skip) return;
+      for (const side of [-1, 1]) {
+        const e = edgeAt(tr, world, i, side, 0.45);
+        mb.push(); mb.translate(e.x, e.y, e.z); mb.rotateY(e.hdg);
+        mb.box(-0.68, 0, -0.17, 0.68, 0.42, 0.17, { col: cols[k % cols.length] });
+        mb.pop();
+      }
+    });
+  }
+  /* supercross: floodlight towers at the corners of the stadium */
+  function floodlights(mb, tr, world) {
+    const S = tr.S;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < S.n; i += 4) { x0 = Math.min(x0, S.x[i]); x1 = Math.max(x1, S.x[i]); z0 = Math.min(z0, S.z[i]); z1 = Math.max(z1, S.z[i]); }
+    const grey = MB.rgba('#78909c'), lamp = MB.rgba('#fffde7'), frame = MB.rgba('#37474f');
+    for (const [x, z, sx, sz] of [[x0 - 2, z0 - 2, 1, 1], [x1 + 2, z0 - 2, -1, 1], [x0 - 2, z1 + 2, 1, -1], [x1 + 2, z1 + 2, -1, -1]]) {
+      if (!world.inBounds(Math.floor(x / C.TILE), Math.floor(z / C.TILE))) continue;
+      const y = world.heightAt(x, z), H = 13;
+      mb.box(x - 0.6, y - 0.3, z - 0.6, x + 0.6, y + 0.4, z + 0.6, { col: MB.rgba('#9e9e9e') });
+      mb.box(x - 0.18, y, z - 0.18, x + 0.18, y + H, z + 0.18, { col: grey });
+      /* the lamp panel faces the middle of the track */
+      mb.push(); mb.translate(x, y + H, z); mb.rotateY(Math.atan2(sz, sx));
+      mb.box(-0.3, -0.2, -1.5, 0.1, 1.5, 1.5, { col: frame });
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) mb.box(0.1, 0.05 + r * 0.72, -1.3 + c * 0.9, 0.22, 0.6 + r * 0.72, -0.6 + c * 0.9, { col: lamp });
+      mb.pop();
+    }
+  }
+  /* car cross: stacked tyre walls */
+  function tyres(mb, tr, world) {
+    const black = MB.rgba('#1d1d1f'), red = MB.rgba('#e53935'), white = MB.rgba('#f2f2f2');
+    eachEdge(tr, 3, (i, k, skip) => {
+      if (skip) return;
+      for (const side of [-1, 1]) {
+        const e = edgeAt(tr, world, i, side, 0.8);
+        mb.cylinder(e.x, e.y, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, black);
+        mb.cylinder(e.x, e.y + 0.26, e.z, 0.38, 0.26, 7, MB.MAT_SOLID, k % 4 === 0 ? (side > 0 ? red : white) : black);
+      }
+    });
+  }
+  /* logs, stones and water on the obstacles */
+  function obstacles(mb, tr, world) {
+    const S = tr.S;
+    for (const f of tr.features) {
+      const d = Cat.features[f.type];
+      if (!d || (d.kind !== 'logs' && d.kind !== 'rocks' && d.kind !== 'water')) continue;
+      const len = f.len || MX.Track.getShape(f.type).len;
+      if (d.kind === 'logs') {
+        for (let k = 0; k < d.n; k++) {
+          const i = tr.sIndex(f.s + (k + 0.5) * d.pitch);
+          const hw = S.w[i] * 0.5 + 0.4, R = d.H / 2;
+          mb.push(); mb.translate(S.x[i], S.base[i] + Track_THICK() + R * 0.9, S.z[i]); mb.rotateY(S.hdg[i]); mb.rotateX(Math.PI / 2);
+          mb.cylinder(0, -hw, 0, R, 2 * hw, 7, MB.MAT_SOLID, MB.rgba(k % 2 ? '#6d4c33' : '#7b5638'));
+          mb.pop();
+        }
+      } else if (d.kind === 'rocks') {
+        for (let q = 0; q < len * 1.6; q++) {
+          const u = U.hash2(q, f.uid, 31) * len, lane = (U.hash2(q, f.uid, 37) - 0.5);
+          const i = tr.sIndex(f.s + u);
+          const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), l = lane * S.w[i];
+          const x = S.x[i] + nx * l, z = S.z[i] + nz * l, r = 0.18 + U.hash2(q, f.uid, 41) * 0.22;
+          mb.blob(x, S.y[i] + r * 0.2, z, r * 1.3, r * 0.7, r, [0.66, 0.64, 0.6, 1], q + f.uid, 0.3);
+        }
+      } else {
+        /* water surface over the dip, a little below the normal track level */
+        const cnt = Math.max(2, Math.round(len / 1));
+        let prev = null;
+        for (let k = 0; k <= cnt; k++) {
+          const i = tr.sIndex(f.s + 0.8 + (len - 1.6) * k / cnt);
+          const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), hw = S.w[i] * 0.5 + 0.2;
+          const y = S.base[i] + Track_THICK() - Math.min(0.15, d.depth * 0.3);
+          const a = [S.x[i] - nx * hw, y, S.z[i] - nz * hw], b = [S.x[i] + nx * hw, y, S.z[i] + nz * hw];
+          if (prev) mb.quad4(prev[0], prev[1], b, a, [0, 0], [1, 0], [1, 1], [0, 1], MB.MAT_SOLID, MB.rgba('#5b8fb0'));
+          prev = [a, b];
+        }
+      }
+    }
+  }
+  const Track_THICK = () => MX.Track.THICK;
+  function trackDecor(tr, world, into) {
+    const S = tr.S;
+    if (!S || S.n < 4) return null;
+    const mb = into || new MB(S.n * 24);
+    const style = tr.typeDef.edge;
+    if (style === 'sxwall') { walls(mb, tr, world); floodlights(mb, tr, world); }
+    else if (style === 'rails') rails(mb, tr, world);
+    else if (style === 'tyres') tyres(mb, tr, world);
+    else if (style === 'kids') blocks(mb, tr, world);
+    else if (style === 'tape') stakes(mb, tr, world, { every: 9, h: 1.0, t: 0.04, extra: 0.35, colA: MB.rgba('#e53935'), colB: MB.rgba('#f5f5f5'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1], arrows: true });
+    else stakes(mb, tr, world, { every: 6, h: 0.95, t: 0.06, extra: 0.55, colA: MB.rgba('#ff6a13'), colB: MB.rgba('#f2f2f2'), tapeMat: L().track_tape, tapeCol: [1, 1, 1, 1] });
+    obstacles(mb, tr, world);
+    finishArch(mb, tr, world);
+    return into ? null : mb.build();
+  }
+  function finishArch(mb, tr, world) {
+    const S = tr.S;
+    if (tr.finishS == null) return;
+    const cross = (i) => {
+      const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), hw = S.w[i] * 0.5;
+      return [-1, -0.5, 0, 0.5, 1].map(f => [S.x[i] + nx * f * hw, S.y[i] + tr.bankAt(i, f * hw), S.z[i] + nz * f * hw]);
+    };
+    const i = tr.sIndex(tr.finishS - 1), j = tr.sIndex(tr.finishS + 0.5);
+    const ci = cross(i), cj = cross(j);
+    const chk = L().checker;
+    for (let q = 0; q < 4; q++) {
+      const lift = (p) => [p[0], p[1] + 0.03, p[2]];
+      mb.quad4(lift(ci[q]), lift(ci[q + 1]), lift(cj[q + 1]), lift(cj[q]), [q * 0.25, 0], [(q + 1) * 0.25, 0], [(q + 1) * 0.25, 0.1], [q * 0.25, 0.1], chk, [1, 1, 1, 1]);
+    }
+    const m = tr.sIndex(tr.finishS);
+    const hdg = S.hdg[m], nx = -Math.sin(hdg), nz = Math.cos(hdg), tx = Math.cos(hdg), tz = Math.sin(hdg);
+    const hw = S.w[m] * 0.5 + 1.1;
+    const post = MB.rgba('#2b2b2b');
+    const baseY = S.y[m];
+    for (const side of [-1, 1]) {
+      const x = S.x[m] + nx * hw * side, z = S.z[m] + nz * hw * side;
+      mb.box(x - 0.15, Math.min(baseY, world.heightAt(x, z)) - 0.2, z - 0.15, x + 0.15, baseY + 5, z + 0.15, { col: post });
+    }
+    const r = MX.Tex.regions.sign_meta;
+    if (r) {
+      const y0 = baseY + 3.9, y1 = baseY + 5.0;
+      const ax = S.x[m] - nx * hw, az = S.z[m] - nz * hw, bx = S.x[m] + nx * hw, bz = S.z[m] + nz * hw;
+      const off = 0.05;
+      const mir = [r.uv[2], r.uv[1], r.uv[0], r.uv[3]];
+      mb.quad([ax + tx * off, y0, az + tz * off], [bx + tx * off, y0, bz + tz * off], [bx + tx * off, y1, bz + tz * off], [ax + tx * off, y1, az + tz * off], mir, MB.MAT_ATLAS, [1, 1, 1, 1]);
+      mb.quad([bx - tx * off, y0, bz - tz * off], [ax - tx * off, y0, az - tz * off], [ax - tx * off, y1, az - tz * off], [bx - tx * off, y1, bz - tz * off], mir, MB.MAT_ATLAS, [1, 1, 1, 1]);
+    }
+  }
+
+  /* Start of the circuit, styled by discipline. */
   function startGate(tr, world, down) {
     const S = tr.S;
     if (!S || tr.startS == null) return null;
+    const style = tr.typeDef.start;
+    if (style === 'gate') return gateStart(tr, world, down);
+    const mb = new MB(4096);
+    const m = tr.sIndex(tr.startS);
+    const hdg = S.hdg[m], hw = S.w[m] * 0.5, baseY = S.y[m];
+    const white = MB.rgba('#f5f5f5'), dark = MB.rgba('#2b2b2b');
+    mb.push();
+    mb.translate(S.x[m], baseY, S.z[m]);
+    mb.rotateY(hdg);
+    /* painted start line (local x along the track, z across) */
+    mb.quad([-0.2, 0.04, hw], [0.2, 0.04, hw], [0.2, 0.04, -hw], [-0.2, 0.04, -hw], null, MB.MAT_SOLID, white);
+    if (style === 'line') {
+      /* grid boxes and the starter's stand with the green flag */
+      for (let r = 0; r < 3; r++) for (const z of [-hw * 0.5, hw * 0.5]) {
+        const x0 = -2.2 - r * 3.2 - (z > 0 ? 1.6 : 0);
+        mb.quad([x0 - 0.12, 0.04, z + 0.9], [x0 + 0.12, 0.04, z + 0.9], [x0 + 0.12, 0.04, z - 0.9], [x0 - 0.12, 0.04, z - 0.9], null, MB.MAT_SOLID, white);
+      }
+      mb.box(-0.6, 0, -hw - 2.4, 0.6, 1.2, -hw - 1.2, { mat: L().wood, col: [1, 1, 1, 1] });
+      mb.box(-0.04, 1.2, -hw - 1.84, 0.04, 3.0, -hw - 1.76, { col: MB.rgba('#cfcfcf') });
+      mb.quad([0, 2.2, -hw - 1.8], [1.1, 2.3, -hw - 1.8], [1.1, 2.95, -hw - 1.8], [0, 3.0, -hw - 1.8], null, MB.MAT_SOLID, MB.rgba('#2e7d32'));
+      mb.quad([1.1, 2.3, -hw - 1.8], [0, 2.2, -hw - 1.8], [0, 3.0, -hw - 1.8], [1.1, 2.95, -hw - 1.8], null, MB.MAT_SOLID, MB.rgba('#2e7d32'));
+    } else if (style === 'lights') {
+      /* gantry with the five red start lights */
+      for (const z of [-hw - 0.9, hw + 0.9]) mb.box(-0.2, -0.3, z - 0.2, 0.2, 5.0, z + 0.2, { col: dark });
+      mb.box(-0.25, 4.6, -hw - 1.1, 0.25, 5.2, hw + 1.1, { col: MB.rgba('#37474f') });
+      for (let k = 0; k < 5; k++) {
+        const z = (k - 2) * 0.9;
+        mb.box(-0.3, 4.05, z - 0.32, 0.3, 4.6, z + 0.32, { col: dark });
+        mb.box(-0.34, 4.15, z - 0.2, -0.28, 4.5, z + 0.2, { col: MB.rgba(down ? '#3a1010' : '#ff3b30') });
+      }
+      const r = MX.Tex.regions.sign_salida;
+      if (r) mb.quad([-0.27, 4.62, -1.6], [-0.27, 4.62, 1.6], [-0.27, 5.18, 1.6], [-0.27, 5.18, -1.6], r.uv, MB.MAT_ATLAS, [1, 1, 1, 1]);
+    } else if (style === 'crono') {
+      /* timing arch, the clock and the timekeepers' table */
+      const post = MB.rgba('#455a64');
+      for (const z of [-hw - 0.5, hw + 0.5]) mb.box(-0.12, -0.3, z - 0.12, 0.12, 3.4, z + 0.12, { col: post });
+      mb.box(-0.15, 3.0, -hw - 0.7, 0.15, 3.6, hw + 0.7, { col: dark });
+      const r = MX.Tex.regions.sign_crono;
+      if (r) {
+        mb.quad([-0.17, 3.05, -1.4], [-0.17, 3.05, 1.4], [-0.17, 3.55, 1.4], [-0.17, 3.55, -1.4], r.uv, MB.MAT_ATLAS, [1, 1, 1, 1]);
+        mb.quad([0.17, 3.05, 1.4], [0.17, 3.05, -1.4], [0.17, 3.55, -1.4], [0.17, 3.55, 1.4], r.uv, MB.MAT_ATLAS, [1, 1, 1, 1]);
+      }
+      mb.box(-0.3, 0, -hw - 2.4, 0.3, 1.9, -hw - 1.6, { col: dark });
+      mb.quad([-0.31, 1.2, -hw - 2.3], [-0.31, 1.2, -hw - 1.7], [-0.31, 1.8, -hw - 1.7], [-0.31, 1.8, -hw - 2.3], [0, 0, 0.6 / 16, 0.6 / 16], L().screen, MB.rgba('#ff9800'));
+      mb.box(1.0, 0, -hw - 3.6, 2.6, 0.8, -hw - 2.6, { mat: L().wood, col: [1, 1, 1, 1] });
+      mb.gable(0.8, -hw - 3.9, 2.8, -hw - 2.3, 1.9, 2.5, 'x', L().stripes, MB.rgba('#43a047'), MB.rgba('#43a047'), 0.05);
+      for (const [x, z] of [[0.85, -hw - 3.85], [2.75, -hw - 3.85], [0.85, -hw - 2.35], [2.75, -hw - 2.35]]) mb.box(x - 0.04, 0, z - 0.04, x + 0.04, 1.9, z + 0.04, { col: MB.rgba('#cfd8dc') });
+    }
+    mb.pop();
+    return mb.build();
+  }
+  /* Motocross start gate: static frame plus gates up or down. */
+  function gateStart(tr, world, down) {
+    const S = tr.S;
     const mb = new MB(4096);
     const m = tr.sIndex(tr.startS);
     const hdg = S.hdg[m], nx = -Math.sin(hdg), nz = Math.cos(hdg), tx = Math.cos(hdg), tz = Math.sin(hdg);
@@ -333,5 +576,5 @@
     mb.pop();
   }
 
-  MX.Geom = { terrainChunk, skirt, track, startGate, paths, CH, GROUND_LAYER, TRACK_LAYER };
+  MX.Geom = { terrainChunk, skirt, track, trackDecor, startGate, paths, CH, GROUND_LAYER, TRACK_LAYER };
 })(window.MX);

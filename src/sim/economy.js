@@ -6,6 +6,7 @@
   const INCOME = {
     entradas: 'Entradas', tarifas: 'Tarifas de pilotos', abonos: 'Abonos de temporada', inscripciones: 'Inscripciones',
     comida: 'Comida y bebida', merch: 'Merchandising', taller: 'Taller', escuela: 'Escuela MX', camping: 'Camping',
+    recambios: 'Recambios', lavadero: 'Lavadero', alquiler: 'Alquiler de motos',
     aparcamiento: 'Aparcamiento', patrocinio: 'Patrocinios', eventos: 'Eventos y TV', subvenciones: 'Subvenciones', otros: 'Otros ingresos'
   };
   const EXPENSE = {

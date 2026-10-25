@@ -30,6 +30,21 @@
       access: 'any', capacity: 6, staff: 'coach', price: 35, unlock: 'research:school',
       desc: 'Clases para principiantes. Atrae nuevos pilotos y mejora su técnica. Necesita monitores.'
     },
+    parts: {
+      name: 'Tienda de recambios', cat: 'riders', w: 1, h: 1, cost: 9000, upkeep: 90, height: 3.4,
+      access: 'any', capacity: 3, price: 30,
+      desc: 'Neumáticos, palancas, guantes y gafas. Los pilotos compran aquí después de rodar y sus motos aguantan más.'
+    },
+    wash: {
+      name: 'Lavadero de motos', cat: 'riders', w: 2, h: 1, cost: 7000, upkeep: 70, height: 3.2,
+      access: 'any', capacity: 4, price: 6,
+      desc: 'Agua a presión para quitar el barro antes de volver a casa. Mucha clientela los días de lluvia.'
+    },
+    rental: {
+      name: 'Alquiler de motos', cat: 'riders', w: 2, h: 2, cost: 20000, upkeep: 200, height: 3.6,
+      access: 'any', capacity: 6, price: 45, unlock: 'research:minicross',
+      desc: 'Motos y equipación de alquiler: atrae a gente sin moto que quiere probar en las pistas fáciles (minicross o motocross sencillo).'
+    },
     /* --- Public --- */
     entrance: {
       name: 'Taquilla y acceso', cat: 'public', w: 2, h: 1, cost: 6000, upkeep: 70, height: 5.0,
@@ -61,10 +76,25 @@
       access: 'path', capacity: 8, sells: 'food', seats: true,
       desc: 'Más capacidad y más caja que un food truck. Los clientes descansan sentados.'
     },
+    restaurant_big: {
+      name: 'Restaurante con terraza', cat: 'public', w: 3, h: 2, cost: 30000, upkeep: 300, height: 5.2,
+      access: 'path', capacity: 16, sells: 'food', seats: true, spend: 1.6, unlock: 'research:hospitality',
+      desc: 'Comidas completas y terraza con vistas. Mucha capacidad y cada cliente gasta más que en un bar.'
+    },
     shop: {
       name: 'Tienda de merchandising', cat: 'public', w: 1, h: 1, cost: 7000, upkeep: 70, height: 3.6,
       access: 'path', capacity: 3, sells: 'merch',
       desc: 'Camisetas, gorras y réplicas de los pilotos famosos. Vende más con buenos eventos.'
+    },
+    megastore: {
+      name: 'Tienda oficial', cat: 'public', w: 2, h: 2, cost: 24000, upkeep: 220, height: 5.0,
+      access: 'path', capacity: 8, sells: 'merch', spend: 1.7, unlock: 'research:hospitality',
+      desc: 'Equipación, cascos y réplicas oficiales del complejo. Vende mucho más que un puesto y atrae a los aficionados.'
+    },
+    playground: {
+      name: 'Zona infantil', cat: 'public', w: 2, h: 2, cost: 8000, upkeep: 60, height: 3.0,
+      access: 'path', capacity: 10,
+      desc: 'Columpios y mini rampas. Los niños se lo pasan en grande y las familias se quedan más tiempo.'
     },
     toilets: {
       name: 'Baños', cat: 'public', w: 1, h: 1, cost: 3500, upkeep: 40, height: 3.0,
@@ -139,12 +169,72 @@
 
   /* Track surfaces. cost is € per metre for an 8 m wide track. */
   const surfaces = {
-    dirt: { name: 'Tierra seca', grip: 0.92, drag: 1.0, dust: 1.0, wear: 1.0, maint: 1.0, diff: 0, cost: 45, stamina: 1.0, color: '#9a6a3c' },
-    sand: { name: 'Arena', grip: 0.7, drag: 1.38, dust: 0.25, wear: 1.5, maint: 0.8, diff: 1.3, cost: 70, stamina: 1.7, color: '#d9b77a', unlock: 'research:sand' },
-    mud: { name: 'Barro', grip: 0.58, drag: 1.26, dust: 0, wear: 1.9, maint: 1.25, diff: 1.6, cost: 55, stamina: 1.4, color: '#5a3d26', unlock: 'research:mud' },
-    hardpack: { name: 'Hardpack', grip: 1.02, drag: 0.9, dust: 0.6, wear: 0.6, maint: 0.75, diff: -0.2, cost: 85, stamina: 0.9, color: '#8b7766', unlock: 'research:hardpack' }
+    dirt: { name: 'Tierra seca', grip: 0.92, drag: 1.0, dust: 1.0, wear: 1.0, maint: 1.0, diff: 0, cost: 45, stamina: 1.0, wet: 0.34, color: '#9a6a3c' },
+    sand: { name: 'Arena', grip: 0.7, drag: 1.38, dust: 0.25, wear: 1.5, maint: 0.8, diff: 1.3, cost: 70, stamina: 1.7, wet: 0.08, color: '#d9b77a', unlock: 'research:sand' },
+    mud: { name: 'Barro', grip: 0.58, drag: 1.26, dust: 0, wear: 1.9, maint: 1.25, diff: 1.6, cost: 55, stamina: 1.4, wet: 0.12, color: '#5a3d26', unlock: 'research:mud' },
+    hardpack: { name: 'Hardpack', grip: 1.02, drag: 0.9, dust: 0.6, wear: 0.6, maint: 0.75, diff: -0.2, cost: 85, stamina: 0.9, wet: 0.28, color: '#8b7766', unlock: 'research:hardpack' },
+    clay: { name: 'Arcilla', grip: 0.8, drag: 0.94, dust: 0.75, wear: 0.7, maint: 0.85, diff: 0.4, cost: 60, stamina: 1.0, wet: 0.45, color: '#b5643a' },
+    loam: { name: 'Tierra de monte', grip: 0.86, drag: 1.1, dust: 0.45, wear: 1.1, maint: 0.4, diff: 0.7, cost: 22, stamina: 1.3, wet: 0.2, color: '#5d4630' },
+    gravel: { name: 'Grava y tierra', grip: 0.74, drag: 1.04, dust: 1.4, wear: 0.8, maint: 0.8, diff: 0.5, cost: 50, stamina: 1.0, wet: 0.1, color: '#9b9283' }
   };
-  const surfaceOrder = ['dirt', 'sand', 'mud', 'hardpack'];
+  const surfaceOrder = ['dirt', 'sand', 'mud', 'hardpack', 'clay', 'loam', 'gravel'];
+
+  /* Circuit disciplines. Each one has its own vehicles, customers, pieces, look
+     (edge: stakes, kids, sxwall, rails, tape, tyres; start: gate, line, lights, crono)
+     and competitions. Slopes and banks list the classes the constructor offers. */
+  const trackTypes = {
+    kids: {
+      name: 'Minicross', short: 'Mini', color: '#29b6f6', vehicle: 'mini', unlock: 'research:minicross',
+      desc: 'Pista corta y segura para niños y principiantes con motos pequeñas. Las familias se quedan a mirar.',
+      riders: 'niños y principiantes', widths: [4, 5, 6], width: 5, surfaces: ['dirt', 'hardpack'], surface: 'dirt',
+      slopes: [-1, 0, 1], banks: [0, 1], len: [120, 700], skill: [6, 38], fee: 0.6, demand: 0.8, crowd: 0.7, cap: 18,
+      edge: 'kids', start: 'gate', jumps: true,
+      specials: ['finish', 'minijump', 'tabletop_s', 'rollers'], features: ['start', 'finish', 'minijump', 'tabletop_s', 'rollers', 'berm']
+    },
+    mx: {
+      name: 'Motocross', short: 'MX', color: '#ff6a13', vehicle: 'mx',
+      desc: 'El clásico: saltos, peraltes y secciones rítmicas. Atrae pilotos de todos los niveles y es la base de los grandes campeonatos.',
+      riders: 'pilotos de motocross de todos los niveles', widths: [6, 7, 8, 10, 12], width: 8, surfaces: ['dirt', 'sand', 'mud', 'hardpack'], surface: 'dirt',
+      slopes: [-2, -1, 0, 1, 2], banks: [0, 1, 2], len: [250, 2600], skill: [12, 96], fee: 1, demand: 1, crowd: 1, cap: 24,
+      edge: 'stakes', start: 'gate', jumps: true,
+      specials: ['finish', 'tabletop_s', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'plateau', 'whoops', 'rollers', 'dubbies', 'rhythm'],
+      features: ['start', 'finish', 'tabletop_s', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'plateau', 'whoops', 'rollers', 'dubbies', 'rhythm', 'berm', 'berm_big']
+    },
+    sx: {
+      name: 'Supercross', short: 'SX', color: '#7e57c2', vehicle: 'mx', unlock: 'research:supercross',
+      desc: 'Estadio: trazado corto y muy técnico, con saltos enormes, whoops y curvas cerradas. Solo para expertos y profesionales, y el mejor espectáculo para el público.',
+      riders: 'expertos y profesionales', widths: [6, 7, 8], width: 7, surfaces: ['hardpack', 'dirt'], surface: 'hardpack',
+      slopes: [-2, -1, 0, 1, 2], banks: [0, 1, 2], len: [220, 900], skill: [58, 99], fee: 1.6, demand: 0.4, crowd: 1.7, cap: 20,
+      edge: 'sxwall', start: 'gate', jumps: true,
+      specials: ['finish', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'whoops', 'dubbies', 'rhythm'],
+      features: ['start', 'finish', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'whoops', 'dubbies', 'rhythm', 'berm', 'berm_big']
+    },
+    flat: {
+      name: 'Dirt track', short: 'Óvalo', color: '#e53935', vehicle: 'flat', unlock: 'research:flattrack',
+      desc: 'Óvalo de arcilla completamente llano: rectas a fondo y curvas derrapando, sin saltos. Carreras muy igualadas que encantan al público.',
+      riders: 'pilotos de flat track y motos clásicas', widths: [8, 10, 12], width: 10, surfaces: ['clay', 'hardpack'], surface: 'clay',
+      slopes: [0], banks: [0], len: [160, 900], skill: [18, 96], fee: 0.9, demand: 0.55, crowd: 1.25, cap: 30,
+      edge: 'rails', start: 'line', jumps: false,
+      specials: ['finish'], features: ['start', 'finish']
+    },
+    enduro: {
+      name: 'Crono de enduro', short: 'Enduro', color: '#43a047', vehicle: 'enduro', unlock: 'research:enduro',
+      desc: 'Especial cronometrada por el monte: estrecha, larga y con troncos, pedreras y vadeos. Los pilotos salen de uno en uno contra el reloj y les encanta rodar entre árboles.',
+      riders: 'pilotos de enduro y trail', widths: [3, 4, 5], width: 4, surfaces: ['loam', 'dirt', 'mud', 'sand'], surface: 'loam',
+      slopes: [-2, -1, 0, 1, 2], banks: [0], len: [300, 2600], skill: [16, 94], fee: 1.3, demand: 0.7, crowd: 0.45, cap: 60,
+      edge: 'tape', start: 'crono', jumps: false,
+      specials: ['finish', 'logs', 'rocks', 'ford', 'rollers'], features: ['start', 'finish', 'logs', 'rocks', 'ford', 'rollers']
+    },
+    carcross: {
+      name: 'Car cross', short: 'Car', color: '#fdd835', vehicle: 'car', unlock: 'research:carcross',
+      desc: 'Buggies monoplaza sobre grava y tierra: pista ancha, derrapes y mucho contacto. Pilotos de coches que pagan bien y un público que disfruta de lo lindo.',
+      riders: 'pilotos de car cross', widths: [10, 12, 14], width: 12, surfaces: ['gravel', 'dirt', 'hardpack'], surface: 'gravel',
+      slopes: [-1, 0, 1], banks: [0, 1], len: [250, 1600], skill: [14, 95], fee: 2.2, demand: 0.45, crowd: 1.35, cap: 32,
+      edge: 'tyres', start: 'lights', jumps: false,
+      specials: ['finish', 'crest', 'splash', 'rollers'], features: ['start', 'finish', 'crest', 'splash', 'rollers', 'berm']
+    }
+  };
+  const trackTypeOrder = ['kids', 'mx', 'sx', 'flat', 'enduro', 'carcross'];
 
   /* Track features. Lengths in metres along the track, heights in metres. */
   const features = {
@@ -163,22 +253,73 @@
     dubbies: { name: 'Dubbies', group: 'rhythm', kind: 'bumps', n: 4, H: 1.05, pitch: 4.4, vb: 6.5, vs: 8.5, cost: 2600, unlock: 'research:rhythm', desc: 'Lomitas cortas que se pueden doblar.' },
     rhythm: { name: 'Sección rítmica', group: 'rhythm', kind: 'rhythm', heights: [1.6, 1.5, 1.7, 1.4, 1.6, 1.5], spacing: [6.2, 6.8, 6.0, 7.2, 6.4], cost: 7500, unlock: 'research:rhythm', desc: 'Combinación de lomas para dobles y triples encadenados.' },
     berm: { name: 'Peralte', group: 'corner', kind: 'berm', H: 1.1, cost: 1600, desc: 'Curva peraltada: se toma mucho más rápido. Haz clic en una curva.' },
-    berm_big: { name: 'Peralte grande', group: 'corner', kind: 'berm', H: 1.8, cost: 2600, unlock: 'research:berms', desc: 'Peralte alto para curvas muy rápidas.' }
+    berm_big: { name: 'Peralte grande', group: 'corner', kind: 'berm', H: 1.8, cost: 2600, unlock: 'research:berms', desc: 'Peralte alto para curvas muy rápidas.' },
+    minijump: { name: 'Saltito', group: 'jump', kind: 'table', H: 0.6, face: 2.6, top: 2.6, land: 3.2, cost: 1200, desc: 'Mesa diminuta para que los peques despeguen las ruedas sin riesgo.' },
+    crest: { name: 'Cambio de rasante', group: 'jump', kind: 'table', H: 0.9, face: 7.0, top: 3.0, land: 8.0, cost: 2200, desc: 'Loma larga y suave: los coches se aligeran o vuelan un poco.' },
+    logs: { name: 'Troncos', group: 'natural', kind: 'logs', n: 3, H: 0.42, pitch: 3.4, vb: 2.8, vs: 5.5, cost: 900, desc: 'Troncos atravesados en la pista: se pasan con técnica y mucho cuidado.' },
+    rocks: { name: 'Pedrera', group: 'natural', kind: 'rocks', len: 16, H: 0.34, vb: 3.2, vs: 6.5, cost: 1300, desc: 'Tramo de piedras sueltas: lento, duro y muy técnico.' },
+    ford: { name: 'Vadeo', group: 'natural', kind: 'water', len: 12, depth: 0.55, vb: 4.0, vs: 7.0, cost: 1600, desc: 'Paso por agua: frena a los pilotos y deja fotos espectaculares.' },
+    splash: { name: 'Charco', group: 'natural', kind: 'water', len: 10, depth: 0.3, vb: 9.0, vs: 9.0, cost: 1200, desc: 'Charco ancho que se pasa a toda velocidad levantando agua.' }
   };
   const featureGroups = [
     { id: 'basic', name: 'Básicos' },
     { id: 'jump', name: 'Saltos' },
     { id: 'rhythm', name: 'Rítmicos' },
+    { id: 'natural', name: 'Obstáculos' },
     { id: 'corner', name: 'Curvas' }
   ];
 
+  /* Vehicles by class (mx, mini, flat, enduro, car). The first five keep their order:
+     old code and saves index motocross bikes by position. */
   const bikes = [
-    { id: 'mini', name: 'Mini 85', accel: 5.0, top: 22, handling: 1.05, reliability: 0.95, minSkill: 0, maxSkill: 30 },
-    { id: 'e125', name: '125 2T', accel: 6.6, top: 29, handling: 1.06, reliability: 0.86, minSkill: 15, maxSkill: 100 },
-    { id: 'f250', name: '250 4T', accel: 7.1, top: 31, handling: 1.0, reliability: 0.92, minSkill: 20, maxSkill: 100 },
-    { id: 'e250', name: '250 2T', accel: 7.7, top: 32, handling: 0.97, reliability: 0.84, minSkill: 35, maxSkill: 100 },
-    { id: 'f450', name: '450 4T', accel: 8.6, top: 35, handling: 0.9, reliability: 0.9, minSkill: 45, maxSkill: 100 }
+    { id: 'mini', name: 'Pit bike 125', vehicle: 'mx', stroke: 4, accel: 5.0, top: 22, handling: 1.05, reliability: 0.95, minSkill: 0, maxSkill: 30 },
+    { id: 'e125', name: 'MX 125 2T', vehicle: 'mx', stroke: 2, accel: 6.6, top: 29, handling: 1.06, reliability: 0.86, minSkill: 15, maxSkill: 100 },
+    { id: 'f250', name: 'MX 250F 4T', vehicle: 'mx', stroke: 4, accel: 7.1, top: 31, handling: 1.0, reliability: 0.92, minSkill: 20, maxSkill: 100 },
+    { id: 'e250', name: 'MX 250 2T', vehicle: 'mx', stroke: 2, accel: 7.7, top: 32, handling: 0.97, reliability: 0.84, minSkill: 35, maxSkill: 100 },
+    { id: 'f450', name: 'MX 450F 4T', vehicle: 'mx', stroke: 4, accel: 8.6, top: 35, handling: 0.9, reliability: 0.9, minSkill: 45, maxSkill: 100 },
+    { id: 'm50', name: 'Mini 50', vehicle: 'mini', stroke: 2, accel: 3.4, top: 14, handling: 1.1, reliability: 0.96, minSkill: 0, maxSkill: 22 },
+    { id: 'm65', name: 'Mini 65', vehicle: 'mini', stroke: 2, accel: 4.3, top: 18, handling: 1.08, reliability: 0.94, minSkill: 10, maxSkill: 34 },
+    { id: 'm85', name: 'Mini 85', vehicle: 'mini', stroke: 2, accel: 5.0, top: 22, handling: 1.05, reliability: 0.94, minSkill: 20, maxSkill: 100 },
+    { id: 'ft450', name: 'Flat track 450', vehicle: 'flat', stroke: 4, accel: 7.4, top: 33, handling: 1.1, reliability: 0.92, minSkill: 0, maxSkill: 100 },
+    { id: 'ft750', name: 'Bicilíndrica 750', vehicle: 'flat', stroke: 4, twin: true, accel: 8.8, top: 38, handling: 0.98, reliability: 0.88, minSkill: 55, maxSkill: 100 },
+    { id: 'en250', name: 'Enduro 250 4T', vehicle: 'enduro', stroke: 4, accel: 6.2, top: 27, handling: 1.08, reliability: 0.93, minSkill: 0, maxSkill: 100 },
+    { id: 'en300', name: 'Enduro 300 2T', vehicle: 'enduro', stroke: 2, accel: 7.0, top: 28, handling: 1.04, reliability: 0.88, minSkill: 35, maxSkill: 100 },
+    { id: 'cc600', name: 'Car cross 600', vehicle: 'car', accel: 7.0, top: 29, handling: 1.12, reliability: 0.9, minSkill: 0, maxSkill: 100 },
+    { id: 'cc1000', name: 'Car cross 1000', vehicle: 'car', accel: 8.4, top: 33, handling: 1.08, reliability: 0.86, minSkill: 50, maxSkill: 100 }
   ];
+  /* Models, scale and size of each vehicle class (half width in metres for traffic). The
+     rider's body (sit/stand) and the machine (kind + make) are drawn as two models. */
+  const vehicles = {
+    mx: { sit: 'rb_sit', stand: 'rb_stand', kind: 'mx', scale: 1, half: 0.75 },
+    mini: { sit: 'rb_sit', stand: 'rb_stand', kind: 'mx', scale: 0.7, half: 0.55 },
+    flat: { sit: 'rb_flat', stand: 'rb_flat', kind: 'ft', scale: 1, half: 0.75, slide: true },
+    enduro: { sit: 'rb_sit_pack', stand: 'rb_stand_pack', kind: 'en', scale: 1, half: 0.75 },
+    car: { sit: null, stand: null, kind: 'car', scale: 1, half: 1.15, car: true }
+  };
+  /* Makes and their factory colours: plastics (main), graphics, number plates (plate,
+     side, digit), fenders, seat, frame, rims, fork tubes and guards, clamps and shock
+     spring. cls: the vehicle classes each make builds; w: how common it is. */
+  const brands = {
+    kronos: { name: 'Kronos', cls: ['mx', 'mini', 'enduro'], w: 1.3, main: '#ff6a00', gfx: '#1e1e1e', side: '#ff6a00', plate: '#f3f3f3', digit: '#1e1e1e', seat: '#1e1e1e', frame: '#ff6a00', rim: '#1e1e1e', fork: '#ef7d1a', guard: '#1e1e1e', clamp: '#ff6a00', spring: '#ff6a00', pad: '#ff6a00' },
+    hanza: { name: 'Hanza', cls: ['mx', 'mini'], w: 1.2, main: '#e3101b', gfx: '#f4f4f4', side: '#e3101b', plate: '#e3101b', digit: '#f4f4f4', seat: '#1e1e1e', frame: '#c4c8cc', rim: '#1e1e1e', fork: '#d4a017', guard: '#1e1e1e', clamp: '#1e1e1e', spring: '#e3101b', pad: '#e3101b' },
+    yamato: { name: 'Yamato', cls: ['mx', 'mini', 'enduro'], w: 1.1, main: '#1f3fbf', gfx: '#f4f4f4', side: '#f4f4f4', plate: '#f4f4f4', digit: '#1e1e1e', rfender: '#f4f4f4', seat: '#1f3fbf', frame: '#9ba7c2', rim: '#2147d6', fork: '#d4a017', guard: '#1e1e1e', clamp: '#1e1e1e', spring: '#1f3fbf', pad: '#1f3fbf' },
+    kawara: { name: 'Kawara', cls: ['mx', 'mini'], w: 1.0, main: '#78d21a', gfx: '#1e1e1e', side: '#78d21a', plate: '#78d21a', digit: '#1e1e1e', seat: '#1e1e1e', frame: '#a3a9b0', rim: '#1e1e1e', fork: '#d4a017', guard: '#1e1e1e', clamp: '#1e1e1e', spring: '#78d21a', pad: '#78d21a' },
+    huska: { name: 'Huska', cls: ['mx', 'mini', 'enduro'], w: 0.9, main: '#f4f4f4', gfx: '#1b3a8a', side: '#13306b', plate: '#f4f4f4', digit: '#13306b', seat: '#2a2a2a', frame: '#1f4db3', rim: '#1e1e1e', fork: '#2a2a2a', guard: '#f4f4f4', clamp: '#2a2a2a', spring: '#ffd400', pad: '#13306b' },
+    suzaki: { name: 'Suzaki', cls: ['mx'], w: 0.7, main: '#ffd400', gfx: '#1f3fbf', side: '#ffd400', plate: '#ffd400', digit: '#1e1e1e', seat: '#1f3fbf', frame: '#c4c8cc', rim: '#1e1e1e', fork: '#d4a017', guard: '#1e1e1e', clamp: '#c4c8cc', spring: '#ffd400', pad: '#1f3fbf' },
+    betta: { name: 'Betta', cls: ['enduro'], w: 1.0, main: '#e3101b', gfx: '#f4f4f4', side: '#f4f4f4', plate: '#e3101b', digit: '#1e1e1e', rfender: '#f4f4f4', seat: '#1e1e1e', frame: '#e3101b', rim: '#1e1e1e', fork: '#2a2a2a', guard: '#1e1e1e', clamp: '#1e1e1e', spring: '#f4f4f4', pad: '#e3101b' },
+    sherpa: { name: 'Sherpa', cls: ['enduro'], w: 0.8, main: '#2156d6', gfx: '#ffd400', side: '#f4f4f4', plate: '#2156d6', digit: '#1e1e1e', fender: '#f4f4f4', rfender: '#f4f4f4', seat: '#1e2a5a', frame: '#c4c8cc', rim: '#2156d6', fork: '#d4a017', guard: '#2156d6', clamp: '#c4c8cc', spring: '#ffd400', pad: '#2156d6' },
+    indus: { name: 'Indus', cls: ['flat'], w: 1.0, main: '#a3121a', gfx: '#f2d38b', side: '#ffd400', plate: '#ffd400', digit: '#1e1e1e', seat: '#1e1e1e', frame: '#1e1e1e', rim: '#1e1e1e', fork: '#2a2a2a', clamp: '#1e1e1e', spring: '#a3121a', pad: '#1e1e1e' },
+    harlan: { name: 'Harlan', cls: ['flat'], w: 1.0, main: '#ff7a00', gfx: '#1e1e1e', side: '#f4f4f4', plate: '#f4f4f4', digit: '#1e1e1e', seat: '#1e1e1e', frame: '#1e1e1e', rim: '#1e1e1e', fork: '#2a2a2a', clamp: '#1e1e1e', spring: '#ff7a00', pad: '#1e1e1e' }
+  };
+  const brandsFor = (cls) => Object.keys(brands).filter(k => brands[k].cls.includes(cls));
+  /* library model of a machine: kind, make and engine (two/four stroke, single/twin) */
+  function bikeModel(bike, brand) {
+    const v = vehicles[bike.vehicle] || vehicles.mx;
+    if (v.car) return 'buggy';
+    const b = brands[brand] && brands[brand].cls.includes(bike.vehicle) ? brand : brandsFor(bike.vehicle)[0];
+    return v.kind + '_' + b + (v.kind === 'ft' ? (bike.twin ? '_twin' : '_single') : bike.stroke === 2 ? '_2t' : '_4t');
+  }
+  const bikeName = (bike, brand) => (brands[brand] ? brands[brand].name + ' ' : '') + bike.name;
 
   const staff = {
     mechanic: { name: 'Mecánico', plural: 'Mecánicos', salary: 680, needs: 'workshop', desc: 'Trabaja en el taller reparando motos.' },
@@ -198,42 +339,81 @@
       reqs: { paddock: 1 }
     },
     amateur: {
-      name: 'Carrera amateur', tier: 1, rep: 60, cost: 3000, prize: 1500, riders: 12, entryFee: 40,
+      track: 'mx', name: 'Carrera amateur', tier: 1, rep: 60, cost: 3000, prize: 1500, riders: 12, entryFee: 40,
       skill: [22, 62], ticket: 10, demand: 260, sponsor: 1200, tv: 0, diff: [1.0, 6.5], minLen: 350, laps: [3, 4],
       repGain: 35, unlock: 'obj:amateur',
       desc: 'Carrera local con pilotos de la zona. El primer paso para hacerse un nombre.',
       reqs: { paddock: 1, toilets: 1, medical: 1, medic: 1 }
     },
     regional: {
-      name: 'Campeonato regional', tier: 2, rep: 280, cost: 12000, prize: 5000, riders: 16, entryFee: 80,
+      track: 'mx', name: 'Campeonato regional', tier: 2, rep: 280, cost: 12000, prize: 5000, riders: 16, entryFee: 80,
       skill: [42, 76], ticket: 16, demand: 1100, sponsor: 6000, tv: 0, diff: [2.5, 7.5], minLen: 550, laps: [4, 5],
       repGain: 70, unlock: 'obj:regional',
       desc: 'Prueba puntuable con pilotos federados. Exige organización seria.',
       reqs: { paddock: 1, toilets: 2, medical: 1, medic: 1, office: 1, tower: 1, workshop: 1, seats: 48, marshal: 2, foodtruck: 1 }
     },
     national: {
-      name: 'Campeonato nacional', tier: 3, rep: 500, cost: 40000, prize: 15000, riders: 20, entryFee: 150,
+      track: 'mx', name: 'Campeonato nacional', tier: 3, rep: 500, cost: 40000, prize: 15000, riders: 20, entryFee: 150,
       skill: [58, 88], ticket: 24, demand: 4200, sponsor: 15000, tv: 15000, diff: [4.0, 8.5], minLen: 750, laps: [5, 6],
       repGain: 120, unlock: 'obj:national',
       desc: 'Los mejores pilotos del país. Televisión, patrocinadores y mucho público.',
       reqs: { paddock: 2, toilets: 4, medical: 1, medic: 2, office: 1, tower: 1, workshop: 1, seats: 144, marshal: 4, boxes: 2, podium: 1, parking: 2, safety: 0.6 }
     },
     international: {
-      name: 'Evento internacional', tier: 4, rep: 680, cost: 90000, prize: 35000, riders: 24, entryFee: 250,
+      track: 'mx', name: 'Evento internacional', tier: 4, rep: 680, cost: 90000, prize: 35000, riders: 24, entryFee: 250,
       skill: [70, 95], ticket: 35, demand: 9500, sponsor: 30000, tv: 45000, diff: [5.0, 9.0], minLen: 900, laps: [5, 7],
       repGain: 170, unlock: 'obj:international',
       desc: 'Equipos de todo el mundo. Tu complejo en el mapa internacional.',
       reqs: { paddock: 2, toilets: 5, medical: 2, medic: 3, office: 1, tower: 1, workshop: 2, seats: 288, marshal: 6, boxes: 4, podium: 1, parking: 3, screen: 1, camping: 1, safety: 0.7 }
     },
     gp: {
-      name: 'Gran Premio', tier: 5, rep: 820, cost: 200000, prize: 80000, riders: 30, entryFee: 400,
+      track: 'mx', name: 'Gran Premio', tier: 5, rep: 820, cost: 200000, prize: 80000, riders: 30, entryFee: 400,
       skill: [80, 100], ticket: 50, demand: 22000, sponsor: 80000, tv: 120000, diff: [5.5, 9.5], minLen: 1050, laps: [6, 8],
       repGain: 250, unlock: 'obj:gp',
       desc: 'La élite mundial del motocross. El evento con el que sueña cualquier circuito.',
       reqs: { paddock: 3, toilets: 6, medical: 2, medic: 4, office: 1, tower: 1, workshop: 2, seats: 480, marshal: 8, boxes: 8, podium: 1, parking: 4, screen: 2, camping: 2, safety: 0.8 }
     }
   };
-  const eventOrder = ['training', 'amateur', 'regional', 'national', 'international', 'gp'];
+  /* Competitions of the other disciplines. format 'crono': riders start one by one
+     and the classification is by time. */
+  Object.assign(events, {
+    kids_cup: {
+      track: 'kids', name: 'Trofeo de minicross', tier: 1, rep: 70, cost: 1500, prize: 600, riders: 12, entryFee: 25,
+      skill: [8, 36], ticket: 6, demand: 240, sponsor: 900, tv: 0, diff: [0, 6], minLen: 150, laps: [3, 5],
+      repGain: 22, unlock: 'research:minicross',
+      desc: 'Carrera para los peques de la comarca. Vienen familias enteras a animar.',
+      reqs: { paddock: 1, toilets: 1, medical: 1, medic: 1 }
+    },
+    flat_race: {
+      track: 'flat', name: 'Carrera de dirt track', tier: 2, rep: 180, cost: 6000, prize: 3000, riders: 12, entryFee: 60,
+      skill: [35, 92], ticket: 14, demand: 900, sponsor: 4000, tv: 0, diff: [0, 10], minLen: 200, laps: [8, 14],
+      repGain: 50, unlock: 'research:flattrack',
+      desc: 'Mangas cortas y muy igualadas en el óvalo, derrapando a fondo en cada curva.',
+      reqs: { paddock: 1, toilets: 2, medical: 1, medic: 1, seats: 48, foodtruck: 1 }
+    },
+    enduro_crono: {
+      track: 'enduro', format: 'crono', name: 'Enduro cronometrado', tier: 2, rep: 200, cost: 5000, prize: 2500, riders: 18, entryFee: 70,
+      skill: [28, 92], ticket: 5, demand: 320, sponsor: 3500, tv: 0, diff: [0, 10], minLen: 300, laps: [1, 3],
+      repGain: 45, unlock: 'research:enduro',
+      desc: 'Los pilotos salen de uno en uno cada pocos segundos y gana el mejor tiempo en la especial.',
+      reqs: { paddock: 1, toilets: 1, medical: 1, medic: 2, marshal: 2 }
+    },
+    carcross_race: {
+      track: 'carcross', name: 'Carrera de car cross', tier: 2, rep: 300, cost: 12000, prize: 6000, riders: 14, entryFee: 150,
+      skill: [30, 94], ticket: 16, demand: 1400, sponsor: 7000, tv: 0, diff: [0, 10], minLen: 250, laps: [5, 8],
+      repGain: 65, unlock: 'research:carcross',
+      desc: 'Buggies rueda con rueda sobre la grava. Mucho contacto y un público entregado.',
+      reqs: { paddock: 1, toilets: 2, medical: 1, medic: 2, office: 1, seats: 72, marshal: 2, foodtruck: 1 }
+    },
+    sx_night: {
+      track: 'sx', name: 'Supercross nocturno', tier: 4, rep: 520, cost: 60000, prize: 25000, riders: 20, entryFee: 200,
+      skill: [65, 98], ticket: 32, demand: 8000, sponsor: 25000, tv: 30000, diff: [3, 10], minLen: 250, laps: [10, 16],
+      repGain: 150, unlock: 'research:supercross',
+      desc: 'Estadio lleno, focos y fuegos artificiales. El evento más espectacular del calendario.',
+      reqs: { paddock: 2, toilets: 4, medical: 1, medic: 3, office: 1, tower: 1, workshop: 1, seats: 240, marshal: 4, boxes: 2, podium: 1, parking: 2, screen: 1, safety: 0.6 }
+    }
+  });
+  const eventOrder = ['training', 'kids_cup', 'amateur', 'flat_race', 'enduro_crono', 'regional', 'carcross_race', 'national', 'sx_night', 'international', 'gp'];
 
   const research = [
     { id: 'doubles', name: 'Saltos dobles', cost: 6000, days: 10, desc: 'Desbloquea dobles pequeños y grandes.' },
@@ -253,7 +433,13 @@
     { id: 'camping', name: 'Zona de acampada', cost: 6000, days: 9, desc: 'Parcelas de acampada para eventos de varios días.' },
     { id: 'podium', name: 'Ceremonias de podio', cost: 3000, days: 5, desc: 'Podio para la entrega de trofeos.' },
     { id: 'screen', name: 'Pantalla gigante', cost: 15000, days: 16, req: ['timing'], desc: 'Realización en directo para el público.' },
-    { id: 'digital', name: 'Marketing digital', cost: 5000, days: 8, desc: 'Campañas en redes sociales y televisión regional.' }
+    { id: 'digital', name: 'Marketing digital', cost: 5000, days: 8, desc: 'Campañas en redes sociales y televisión regional.' },
+    { id: 'minicross', name: 'Minicross y alquiler', cost: 3500, days: 6, desc: 'Pistas para niños y principiantes, el Trofeo de minicross y el alquiler de motos.' },
+    { id: 'hospitality', name: 'Hostelería y tienda oficial', cost: 7000, days: 9, minRep: 120, desc: 'Restaurante con terraza y tienda oficial: más caja por visitante.' },
+    { id: 'flattrack', name: 'Dirt track', cost: 9000, days: 10, minRep: 150, desc: 'Óvalos de arcilla para flat track y su carrera propia.' },
+    { id: 'enduro', name: 'Crono de enduro', cost: 10000, days: 12, minRep: 200, desc: 'Especiales cronometradas por el monte con troncos, pedreras y vadeos.' },
+    { id: 'carcross', name: 'Car cross', cost: 18000, days: 14, minRep: 300, desc: 'Pistas anchas de grava para buggies y la carrera de car cross.' },
+    { id: 'supercross', name: 'Supercross', cost: 32000, days: 18, minRep: 450, req: ['doubles'], desc: 'Estadios de supercross y el Supercross nocturno, el gran espectáculo.' }
   ];
 
   const marketing = [
@@ -360,12 +546,18 @@
     pass_bought: { t: ['Me he sacado el abono de temporada'], mood: 1 },
     pro_boxes: { t: ['Por fin unos boxes en condiciones'], mood: 1 },
     no_boxes: { t: ['Un piloto de mi nivel merece unos boxes'], mood: -1 },
-    race_win: { t: ['¡He ganado!', '¡Victoria!'], mood: 3 }
+    race_win: { t: ['¡He ganado!', '¡Victoria!'], mood: 3 },
+    washed: { t: ['La moto ha quedado como nueva', 'Por fin sin barro'], mood: 1 },
+    parts_ok: { t: ['Me he llevado unos guantes nuevos', 'Neumático nuevo para la próxima'], mood: 1 },
+    rental_ok: { t: ['¡Mi primera vez en una moto de cross!', 'Alquilar ha sido una gran idea'], mood: 2 },
+    kids_fun: { t: ['¡Los columpios molan!', 'Mamá, ¿podemos volver mañana?'], mood: 2 },
+    big_meal: { t: ['Qué bien se come aquí', 'La terraza tiene unas vistas geniales'], mood: 2 },
+    trees: { t: ['Rodar entre árboles es lo mejor', 'Qué especial más bonita'], mood: 2 }
   };
 
   MX.Catalog = {
-    buildings, decor, paths, addons, surfaces, surfaceOrder, features, featureGroups,
-    bikes, staff, staffOrder, events, eventOrder, research, marketing, sponsors, objectives,
+    buildings, decor, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
+    bikes, vehicles, brands, brandsFor, bikeModel, bikeName, staff, staffOrder, events, eventOrder, research, marketing, sponsors, objectives,
     weather, names, thoughts,
     buildingCats: [
       { id: 'riders', name: 'Pilotos' },

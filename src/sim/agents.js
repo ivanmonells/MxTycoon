@@ -14,6 +14,22 @@
   const TEAM = [[255, 106, 19], [230, 40, 40], [30, 110, 230], [250, 210, 30], [40, 170, 70], [245, 245, 245], [130, 50, 190], [20, 20, 20], [0, 180, 200]];
 
   function personName(rng) { return rng.pick(Cat.names.first) + ' ' + rng.pick(Cat.names.last); }
+  const hexRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  /* a make for a vehicle class, the popular ones more often */
+  function pickBrand(rng, cls) {
+    const ids = Cat.brandsFor(cls);
+    if (!ids.length) return null;
+    let t = rng.next() * ids.reduce((a, k) => a + Cat.brands[k].w, 0);
+    for (const k of ids) { t -= Cat.brands[k].w; if (t <= 0) return k; }
+    return ids[ids.length - 1];
+  }
+  function brandFromName(name, cls) {
+    const ids = Cat.brandsFor(cls);
+    if (!ids.length) return null;
+    let h = 7;
+    for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return ids[h % ids.length];
+  }
 
   /* ---------------- shared helpers ---------------- */
   function tileCenter(tx, tz) { return [tx * T + T / 2, tz * T + T / 2]; }
@@ -153,6 +169,7 @@
       if (this.thirst > 56 && this.money >= drinkP) { if (this.goTo(g, 'food', rng)) { this.want = 'drink'; return; } this.think(g, 'thirsty'); }
       if (this.energy < 32) { if (this.goTo(g, 'seat', rng)) return; this.think(g, 'tired'); if (g.openTracks().length) this.think(g, 'no_seats'); }
       if (this.money > 24 * P.merch && this.happy > 55 && rng.chance(0.12)) { if (this.goTo(g, 'shop', rng)) return; }
+      if (this.kid && this.fun < 80 && rng.chance(0.3) && this.goTo(g, 'play', rng)) return;
       if (g.openTracks().length || g.race) {
         if (rng.chance(0.25) && this.goTo(g, 'seat', rng, true)) return;
         if (this.goTo(g, 'view', rng)) return;
@@ -195,24 +212,25 @@
         return;
       }
       if (key === 'seat') {
-        const b = g.buildingAtDoor(this.tx, this.tz, ['grandstand', 'grandstand_cov', 'restaurant']);
+        const b = g.buildingAtDoor(this.tx, this.tz, ['grandstand', 'grandstand_cov', 'restaurant', 'restaurant_big']);
         if (b && (b.type === 'grandstand' || b.type === 'grandstand_cov')) {
           const s = g.takeSeat(b, this);
           if (s) { this.state = 'seat'; this.seat = s; this.watchT = rng.range(25, 60); this.seen = 0; return; }
           this.think(g, 'no_seats'); this.state = 'wander'; this.timer = 3; return;
         }
-        if (b && b.type === 'restaurant') { this.enter(g, b, rng.range(6, 10), rng); return; }
+        if (b && (b.type === 'restaurant' || b.type === 'restaurant_big')) { this.enter(g, b, rng.range(6, 10), rng); return; }
         if (g.world.addon[g.world.idx(this.tx, this.tz)] === MX.World.ADDON.BENCH) {
           this.state = 'bench'; this.timer = rng.range(10, 20); return;
         }
         this.state = 'wander'; this.timer = 2; return;
       }
-      const types = { food: ['foodtruck', 'restaurant'], toilet: ['toilets'], shop: ['shop'], camping: ['camping'] }[key];
+      const types = { food: ['foodtruck', 'restaurant', 'restaurant_big'], toilet: ['toilets'], shop: ['shop', 'megastore'], camping: ['camping'], play: ['playground'] }[key];
       const b = types ? g.buildingAtDoor(this.tx, this.tz, types) : null;
       if (!b) { this.state = 'wander'; this.timer = 2; return; }
+      const spend = Cat.buildings[b.type].spend || 1;
       if (key === 'food') {
         const drink = this.want === 'drink';
-        const price = Math.round((drink ? 3 : 7) * P.food);
+        const price = Math.round((drink ? 3 : 7) * P.food * (drink ? 1 : spend));
         if (this.money < price) { this.state = 'wander'; this.timer = 2; return; }
         if (P.food > 1.45 && rng.chance(0.5)) { this.think(g, 'expensive_food'); if (rng.chance(0.4)) { this.state = 'wander'; this.timer = 3; return; } }
         this.money -= price; this.spent += price;
@@ -222,15 +240,21 @@
         if (!drink && this.money >= Math.round(3 * P.food) && this.thirst > 30) {
           const dp = Math.round(3 * P.food); this.money -= dp; this.spent += dp; g.sale(b, 'comida', dp, 0.35); this.thirst = 0;
         }
-        this.enter(g, b, b.type === 'restaurant' ? rng.range(5, 9) : rng.range(2, 4), rng);
+        if (b.type === 'restaurant_big' && !drink) { this.happy = Math.min(100, this.happy + 6); if (rng.chance(0.3)) this.think(g, 'big_meal'); }
+        this.enter(g, b, b.type === 'restaurant_big' ? rng.range(8, 14) : b.type === 'restaurant' ? rng.range(5, 9) : rng.range(2, 4), rng);
+      } else if (key === 'play') {
+        this.fun = Math.min(100, this.fun + 30); this.happy = Math.min(100, this.happy + 8);
+        this.maxStay += 25;
+        if (rng.chance(0.4)) this.think(g, 'kids_fun');
+        this.enter(g, b, rng.range(10, 20), rng);
       } else if (key === 'toilet') {
         if (b.clean < 35) this.think(g, 'toilet_dirty');
         b.clean = Math.max(0, b.clean - 0.6);
         this.bladder = 0;
         this.enter(g, b, rng.range(2.5, 4), rng);
       } else if (key === 'shop') {
-        const price = Math.round(20 * P.merch);
-        if (this.money >= price && rng.chance(0.55 + g.merchBoost())) {
+        const price = Math.round(20 * P.merch * spend);
+        if (this.money >= price && rng.chance((b.type === 'megastore' ? 0.7 : 0.55) + g.merchBoost())) {
           this.money -= price; this.spent += price; g.sale(b, 'merch', price, 0.45);
           this.think(g, 'bought_merch');
         }
@@ -358,19 +382,30 @@
       this.id = UID++; this.kind = 'rider';
       opts = opts || {};
       const skill = opts.skill != null ? opts.skill : 30;
+      this.disc = opts.disc || 'mx';
       if (opts.profile) Object.assign(this, JSON.parse(JSON.stringify(opts.profile)), { id: this.id });
       else {
         this.name = opts.intl ? rng.pick(Cat.names.intlFirst) + ' ' + rng.pick(Cat.names.intlLast) : personName(rng);
         this.nick = rng.chance(0.25) ? rng.pick(Cat.names.nick) : '';
         this.attr = riderAttrs(rng, skill);
-        const eligible = Cat.bikes.filter(b => this.attr.skill >= b.minSkill && this.attr.skill <= b.maxSkill);
-        this.bikeId = (opts.bike || rng.pick(eligible.length ? eligible : Cat.bikes)).id;
-        const team = rng.pick(TEAM);
-        this.cols = [team, rng.pick([[30, 30, 30], [240, 240, 240], team, rng.pick(TEAM)]), rng.chance(0.5) ? team : rng.pick(TEAM), rng.pick(TEAM)];
+        /* each discipline brings its own machines */
+        const cls = (Cat.trackTypes[this.disc] || Cat.trackTypes.mx).vehicle;
+        const own = Cat.bikes.filter(b => b.vehicle === cls);
+        const eligible = own.filter(b => this.attr.skill >= b.minSkill && this.attr.skill <= b.maxSkill);
+        this.bikeId = (opts.bike || rng.pick(eligible.length ? eligible : own)).id;
+        /* the make of the machine; many riders wear kit in its colours */
+        this.brand = opts.brand || pickBrand(rng, cls);
+        const team = rng.pick(TEAM), bc = this.brand ? hexRgb(Cat.brands[this.brand].main) : team;
+        const kit = rng.chance(0.45) ? bc : team;
+        this.cols = cls === 'car'
+          ? [team, rng.pick(TEAM), rng.pick(TEAM), rng.pick(TEAM)]
+          : [rng.chance(0.6) ? bc : rng.pick(TEAM), rng.pick([[30, 30, 30], [240, 240, 240], kit, rng.pick(TEAM)]), kit, rng.pick(TEAM)];
         this.num = rng.int(2, 999);
         this.passHolder = false;
       }
       this.bike = Cat.bikes.find(b => b.id === this.bikeId) || Cat.bikes[2];
+      /* saves from before the makes: one from the name, always the same */
+      if (this.brand === undefined) this.brand = brandFromName(this.name, this.bike.vehicle);
       this.cat = categoryOf(this.attr.skill);
       this.x = opts.x || 0; this.z = opts.z || 0; this.tx = opts.tx || 0; this.tz = opts.tz || 0; this.ntx = null;
       this.ox = rng.range(-1, 1); this.oz = rng.range(-1, 1);
@@ -393,8 +428,12 @@
       this.stuckT = 0;
     }
     get displayName() { return this.name + (this.nick ? ' "' + this.nick + '"' : ''); }
+    get veh() { return Cat.vehicles[this.bike.vehicle] || Cat.vehicles.mx; }
+    /* library model of the machine and its full name (make and model) */
+    get bikeModel() { return Cat.bikeModel(this.bike, this.brand); }
+    get bikeName() { return Cat.bikeName(this.bike, this.brand); }
     profile() {
-      return { name: this.name, nick: this.nick, attr: this.attr, bikeId: this.bikeId, cols: this.cols, num: this.num, passHolder: this.passHolder, passMonths: this.passMonths || 0 };
+      return { name: this.name, nick: this.nick, attr: this.attr, bikeId: this.bikeId, brand: this.brand, cols: this.cols, num: this.num, passHolder: this.passHolder, passMonths: this.passMonths || 0, disc: this.disc };
     }
     update(g, dt, rng) {
       if (this.bubble) { this.bubble.t -= dt; if (this.bubble.t <= 0) this.bubble = null; }
@@ -518,7 +557,7 @@
       this.wantShower = true;
     }
     uToPaddock(g, dt, rng) {
-      const f = g.fields.get('r_paddock');
+      const f = g.fields.get(this.homeField) || g.fields.get('r_paddock');
       const r = followField(this, f, 4.5, dt, rng);
       if (r === 'arrived' || (r === 'stuck' && (this.stuckT += dt) > 4)) {
         this.state = 'rest'; this.timer = rng.range(8, 16);
@@ -537,6 +576,11 @@
       }
       if (this.wantShower) {
         this.wantShower = false;
+        /* after a session: wash the mud off, buy spares, then a shower */
+        const tr = g.trackById(this.trackId);
+        const muddy = tr && (tr.moisture > 0.3 || (tr.S && Cat.surfaceOrder[tr.S.surf[0]] === 'mud'));
+        if (!this.washed && (muddy || rng.chance(0.3)) && g.fieldReach('r_wash', this.tx, this.tz)) { this.washed = true; this.wantShower = true; return this.walkTo(g, 'r_wash', 'wash'); }
+        if (!this.boughtParts && (this.bikeCond < 0.8 || rng.chance(0.2)) && g.fieldReach('r_parts', this.tx, this.tz)) { this.boughtParts = true; this.wantShower = true; return this.walkTo(g, 'r_parts', 'parts'); }
         if (g.fieldReach('r_shower', this.tx, this.tz)) return this.walkTo(g, 'r_shower', 'shower');
         if (g.count('showers') === 0 && rng.chance(0.6)) this.think(g, 'no_shower');
       }
@@ -545,7 +589,7 @@
       if (this.sessions < this.maxSessions && this.happy > 40 && g.openTracks().length && this.bikeCond > 0.2) {
         /* every extra track session is paid like a new ticket (season pass holders ride free) */
         if (!this.passHolder && !this.race) {
-          const fee = g.econ.prices.riderFee;
+          const fee = g.riderFeeFor(this.disc);
           if (fee > this.feeOk * 1.15 && rng.chance(0.6)) { this.think(g, 'expensive_fee', true); return this.goLeave(g); }
           if (fee > 0) g.earn('tarifas', fee, this.x, this.z);
         }
@@ -571,6 +615,16 @@
           if (b) { g.sale(b, 'taller', price, 0.4); this.bikeCond = 1; this.broken = false; this.think(g, 'workshop_ok'); this.timer = 10 / Math.max(1, g.mechanicsAt(b)); }
           else this.timer = 1;
         } else if (w === 'shower') { this.think(g, 'shower_ok'); this.timer = rng.range(4, 7); }
+        else if (w === 'wash') {
+          const b = g.nearestBuilding('wash', this.x, this.z);
+          if (b && this.money >= Cat.buildings.wash.price) { this.money -= Cat.buildings.wash.price; g.sale(b, 'lavadero', Cat.buildings.wash.price, 0.15); this.think(g, 'washed'); this.happy = Math.min(100, this.happy + 4); }
+          this.timer = rng.range(3, 5);
+        } else if (w === 'parts') {
+          const b = g.nearestBuilding('parts', this.x, this.z);
+          const price = Math.round(Cat.buildings.parts.price * (0.6 + rng.range(0, 0.9)));
+          if (b && this.money >= price) { this.money -= price; g.sale(b, 'recambios', price, 0.5); this.bikeCond = Math.min(1, this.bikeCond + 0.25); this.think(g, 'parts_ok'); }
+          this.timer = rng.range(3, 6);
+        }
         else if (w === 'food') {
           const b = g.nearestBuilding(['foodtruck', 'restaurant'], this.x, this.z);
           const price = Math.round(7 * P.food);
@@ -593,18 +647,24 @@
       this.state = 'leave'; this.timer = 2; this.ntx = null;
       g.riderLeaving(this);
     }
+    /* rental customers start at the shop and walk back there */
+    get homeField() { return this.rental ? 'r_rental_' + this.rental : 'r_paddock'; }
     uLeave(g, dt) {
       this.timer -= dt;
       if (this.timer <= 0) this.dead = true;
       void g;
     }
     satisfaction() { return U.clamp(this.happy * 0.55 + this.fun * 0.45, 0, 100); }
+    /* the rider's body: a person on foot, or the pose on the machine (none in a buggy
+       or after a crash, when the machine is drawn on its own) */
     model() {
       if (this.state === 'inside' || this.state === 'leave' || this.state === 'carried') return null;
       if (this.onFoot) return 'person_' + (Math.floor((this.walked || 0) / 0.45) % 4);
-      if (this.m && this.m.crash) return 'bike';
-      if (this.m && (this.m.air || this.m.v > 12)) return 'rider_stand';
-      return 'rider_sit';
+      const v = this.veh;
+      if (v.car || (this.m && this.m.crash)) return null;
+      if (v.slide && this.m && Math.abs(this.m.roll) > 0.22) return this.m.roll > 0 ? 'rb_flat_r' : 'rb_flat_l';
+      if (this.m && (this.m.air || this.m.v > 12)) return v.stand;
+      return v.sit;
     }
   }
   Rider.CAT_NAMES = CAT_NAMES;

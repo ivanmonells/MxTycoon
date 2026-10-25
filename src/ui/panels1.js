@@ -45,8 +45,8 @@
       build: (body) => {
         const list = h('div', { class: 'track-list' });
         const head = h('div', { class: 'row gap' },
-          h('button', { id: 'win-tracks-new', class: 'btn primary', onclick: () => newTrack() }, icon('track'), 'Nuevo circuito'),
-          h('button', { class: 'btn', title: 'Genera un circuito cerrado con salida, meta y algunos saltos en tu terreno libre', onclick: () => suggested() }, icon('jump'), 'Trazado sugerido'));
+          h('button', { id: 'win-tracks-new', class: 'btn primary', onclick: () => pickType('new') }, icon('track'), 'Nuevo circuito'),
+          h('button', { class: 'btn', title: 'Genera un circuito cerrado con salida, meta y algunos elementos en tu terreno libre', onclick: () => pickType('suggest') }, icon('jump'), 'Trazado sugerido'));
         const detail = h('div', { class: 'track-detail' });
         body.append(head, list, detail);
         return () => {
@@ -58,22 +58,70 @@
           keyed(list, g.tracks.map(t => t.id + t.state + t.name + (g.selectedTrack === t)).join('|'), (el) => {
             if (!g.tracks.length) el.append(h('p', { class: 'muted' }, 'Aún no tienes circuitos. Pulsa «Nuevo circuito», coloca la parrilla de salida y construye el trazado pieza a pieza.'));
             for (const t of g.tracks) {
-              const st = STATE[t.state];
-              el.append(h('button', { class: 'track-chip' + (g.selectedTrack === t ? ' on' : ''), onclick: () => { g.selectedTrack = t; t.ver++; } },
-                h('b', null, t.name), chip(st[0], st[1]), h('small', null, t.S ? U.fmtMeters(t.length) : 'sin trazado')));
+              const st = STATE[t.state], td = t.typeDef;
+              el.append(h('button', { class: 'track-chip' + (g.selectedTrack === t ? ' on' : ''), onclick: () => { g.selectedTrack = t; app().trackUI.picking = null; t.ver++; } },
+                h('span', { class: 'type-tag', style: { background: td.color } }, td.short), h('b', null, t.name), chip(st[0], st[1]), h('small', null, t.S ? U.fmtMeters(t.length) : 'sin trazado')));
             }
           });
-          const tr = g.selectedTrack;
-          keyed(detail, tr ? tr.id + ':' + tr.state + ':' + (tr.closed ? 1 : 0) + ':' + (tr.origin ? 1 : 0) + ':' + (app().trackUI.section) : 'none', (el) => buildTrackDetail(el, tr));
-          if (tr && detail._upd) detail._upd();
+          const tr = g.selectedTrack, ui = app().trackUI;
+          if (ui.picking) keyed(detail, 'pick:' + ui.picking + ':' + g.unlocked.size, (el) => typePicker(el, ui.picking));
+          else keyed(detail, tr ? tr.id + ':' + tr.state + ':' + (tr.closed ? 1 : 0) + ':' + (tr.origin ? 1 : 0) + ':' + (ui.section) : 'none', (el) => buildTrackDetail(el, tr));
+          if (tr && !ui.picking && detail._upd) detail._upd();
         };
       }
     });
   }
-  function newTrack() {
+  /* «Nuevo circuito» and «Trazado sugerido» first ask which kind of circuit (unless only one is available) */
+  function pickType(mode) {
     const g = game();
-    const tr = g.newTrack();
+    const avail = Cat.trackTypeOrder.filter(k => g.trackTypeUnlocked(k));
+    if (avail.length <= 1) { if (mode === 'new') newTrack(avail[0] || 'mx'); else suggested(avail[0] || 'mx'); return; }
+    app().trackUI.picking = mode;
+    MX.Tools.select();
+    WM.rebuild('tracks');
+    if (WM.setSheet) WM.setSheet('tracks', 'half');
+  }
+  function typePicker(el, mode) {
+    const g = game();
+    el.append(h('div', { class: 'row gap center pick-head' }, h('b', null, mode === 'suggest' ? '¿Qué circuito te sugiero?' : '¿Qué tipo de circuito quieres construir?'),
+      h('button', { class: 'btn small', onclick: () => { app().trackUI.picking = null; WM.rebuild('tracks'); } }, 'Cancelar')));
+    const grid = h('div', { class: 'type-grid' });
+    for (const k of Cat.trackTypeOrder) {
+      const td = Cat.trackTypes[k];
+      const locked = !g.trackTypeUnlocked(k);
+      let why = '';
+      if (locked) {
+        const r = Cat.research.find(x => 'research:' + x.id === td.unlock);
+        why = 'Investiga «' + (r ? r.name : '') + '»' + (r && r.minRep ? ' (reputación ' + r.minRep + ')' : '');
+      }
+      grid.append(h('button', { class: 'type-card' + (locked ? ' locked' : ''), title: td.desc, onclick: () => {
+        if (locked) { app().hud.toast(why, 'bad'); MX.Audio.sfx('error'); return; }
+        app().trackUI.picking = null;
+        if (mode === 'suggest') suggested(k); else newTrack(k);
+      } },
+      h('span', { class: 'type-tag big', style: { background: td.color } }, td.short),
+      h('span', { class: 'type-txt' }, h('b', null, td.name), h('small', null, td.desc), h('em', null, locked ? why : 'Clientes: ' + td.riders + ' · ' + td.len[0] + ' a ' + td.len[1] + ' m')),
+      locked ? icon('lock', 'lk') : null));
+    }
+    el.append(grid);
+  }
+  /* the constructor defaults (width and surface) follow the discipline */
+  function typeDefaults(type, fresh) {
+    const td = Cat.trackTypes[type] || Cat.trackTypes.mx, ui = app().trackUI;
+    if (fresh || !td.widths.includes(ui.width)) ui.width = td.width;
+    const unl = (k) => game().isUnlocked(Cat.surfaces[k]);
+    if (fresh || !td.surfaces.includes(ui.surface) || !unl(ui.surface)) ui.surface = unl(td.surface) ? td.surface : (td.surfaces.find(unl) || 'dirt');
+    const b = buildState();
+    if (!td.slopes.includes(b.slope || 0)) b.slope = 0;
+    if (!td.banks.includes(b.bank || 0)) b.bank = 0;
+    if (b.special && !td.specials.includes(b.special)) b.special = null;
+  }
+  function newTrack(type) {
+    const g = game();
+    const tr = g.newTrack(type);
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
+    typeDefaults(tr.type, true);
+    WM.rebuild('tracks');
     MX.Tools.set(TL().TrackStart);
     app().hud.toast(app().input.touchMode ? 'Mueve la parrilla con el dedo y pulsa «Colocar»' : 'Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
   }
@@ -81,8 +129,10 @@
     if (!tr) return;
     const g = game(), ui = app().trackUI;
     const nameIn = h('input', { id: 'track-name', class: 'inp', value: tr.name, maxlength: 28, 'aria-label': 'Nombre del circuito', onchange: (e) => { tr.name = e.target.value || tr.name; tr.ver++; } });
-    const st = STATE[tr.state];
-    el.append(h('div', { class: 'row gap center name-row' }, nameIn, chip(st[0], st[1])));
+    const st = STATE[tr.state], td = tr.typeDef;
+    typeDefaults(tr.type);
+    el.append(h('div', { class: 'row gap center name-row' }, h('span', { class: 'type-tag', style: { background: td.color }, title: td.name }, td.short), nameIn, chip(st[0], st[1])));
+    el.append(h('p', { class: 'muted small type-line' }, h('b', null, td.name), ' · ', td.riders + '. Tarifa ×' + String(td.fee).replace('.', ',') + ', atractivo para el público ×' + String(td.crowd).replace('.', ',') + '.'));
     /* tools */
     const editable = tr.state !== 'open';
     const toolBtn = (ic, label, tool, extra) => {
@@ -120,14 +170,14 @@
         const row = h('div', { class: 'feat-grid' });
         for (const k in Cat.features) {
           const d = Cat.features[k];
-          if (d.group !== grp.id) continue;
+          if (d.group !== grp.id || !td.features.includes(k)) continue;
           const locked = !g.isUnlocked(d);
           const on = MX.Tools.current === TL().TrackFeature && TL().TrackFeature.type === k;
           row.append(h('button', { class: 'feat' + (on ? ' on' : '') + (locked ? ' locked' : ''), disabled: !editable, title: (locked ? lockReason(d) + ' · ' : '') + d.desc,
             onclick: () => { if (locked) { app().hud.toast(lockReason(d), 'bad'); return; } TL().TrackFeature.type = k; MX.Tools.set(TL().TrackFeature); WM.rebuild('tracks'); } },
             h('span', { class: 'feat-ic' }, featureGlyph(d)), h('b', null, d.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(d.cost))));
         }
-        sec.append(h('h4', null, grp.name), row);
+        if (row.children.length) sec.append(h('h4', null, grp.name), row);
       }
       const feats = h('div', { class: 'feat-list' });
       sec.append(h('h4', null, 'Elementos colocados'), feats);
@@ -188,6 +238,7 @@
     if (sh && sh.fn && sh.len) {
       for (let x = 0; x <= 34; x++) { const u = x / 34 * sh.len; ctx.lineTo(x, 15 - Math.min(13, sh.fn(u) * 4.2)); }
     } else if (d.kind === 'berm') { ctx.lineTo(10, 15); ctx.quadraticCurveTo(28, 14, 32, 3); ctx.lineTo(34, 15); }
+    else if (d.kind === 'water') { ctx.lineTo(34, 15); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#5b8fb0'; ctx.fillRect(6, 12, 22, 4); ctx.beginPath(); ctx.moveTo(0, 15); }
     else if (d.kind === 'start') { ctx.fillStyle = '#ffd22e'; for (let i = 0; i < 5; i++) ctx.fillRect(3 + i * 6, 6, 4, 9); }
     else if (d.kind === 'finish') { for (let i = 0; i < 6; i++) for (let j = 0; j < 2; j++) { ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff'; ctx.fillRect(4 + i * 4.5, 8 + j * 4, 4.5, 4); } }
     ctx.lineTo(34, 15); ctx.closePath(); ctx.fill();
@@ -206,7 +257,6 @@
   const BUILD_SLOPES = [[-2, 'Bajada fuerte'], [-1, 'Bajada'], [0, 'Llano'], [1, 'Subida'], [2, 'Subida fuerte']];
   const BUILD_LENS = [[1, 'Corta'], [3, 'Media'], [6, 'Larga']];
   const BUILD_BANKS = [[0, 'Sin peralte'], [1, 'Peralte'], [2, 'Peralte grande']];
-  const SPECIALS = ['finish', 'tabletop_s', 'tabletop_m', 'tabletop_l', 'double_s', 'double_l', 'triple', 'stepup', 'plateau', 'whoops', 'rollers', 'dubbies', 'rhythm'];
   function buildState() {
     const ui = app().trackUI;
     if (!ui.build) ui.build = { dir: 'S', n: 3, slope: 0, bank: 0, special: null };
@@ -214,6 +264,8 @@
   }
   function currentPiece() {
     const b = buildState(), ui = app().trackUI;
+    const tr = game() && game().selectedTrack;
+    if (tr) typeDefaults(tr.type);
     const base = { w: ui.width, surf: ui.surface, slope: 0, bank: 0 };
     if (b.special) return Object.assign(base, { t: 'special', f: b.special });
     const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
@@ -277,6 +329,7 @@
     const noFocus = (e) => e.preventDefault();
     const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
     const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
+    const td = tr.typeDef;
     if (document.documentElement.classList.contains('phone')) { compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el); return; }
     box.append(status);
     /* direction */
@@ -288,30 +341,31 @@
       for (const [n, label] of BUILD_LENS) lens.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label + ' · ' + n * C.TILE + ' m'));
       box.append(lens);
     }
-    if (!b.special && d.kind === 'curve') {
+    if (!b.special && d.kind === 'curve' && td.banks.length > 1) {
       const banks = h('div', { class: 'row gap wrap' });
       for (const [v, label] of BUILD_BANKS) {
+        if (!td.banks.includes(v)) continue;
         const locked = v === 2 && !g.isUnlocked(Cat.features.berm_big);
         banks.append(opt('btn small' + (locked ? ' locked' : ''), b.bank === v, locked ? lockReason(Cat.features.berm_big) : label, () => { if (locked) { app().hud.toast(lockReason(Cat.features.berm_big), 'bad'); return; } b.bank = v; changed(); }, label, locked ? icon('lock') : null));
       }
       box.append(banks);
     }
     /* slope */
-    if (!b.special) {
+    if (!b.special && td.slopes.length > 1) {
       const slopes = h('div', { class: 'bld-slopes' });
-      for (const [v, label] of BUILD_SLOPES) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v), h('small', null, label)));
+      for (const [v, label] of BUILD_SLOPES) if (td.slopes.includes(v)) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v), h('small', null, label)));
       box.append(h('h4', null, 'Pendiente'), slopes);
     }
     /* special pieces */
     const sp = h('div', { class: 'bld-specials' });
     sp.append(opt('feat', !b.special, 'Pieza normal', () => { b.special = null; changed(); }, h('span', { class: 'feat-ic' }, dirGlyph(BUILD_DIRS[3])), h('b', null, 'Normal'), h('small', null, 'Tramo de pista')));
-    for (const k of SPECIALS) {
+    for (const k of td.specials) {
       const fd = Cat.features[k];
       const locked = !g.isUnlocked(fd);
       sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.desc, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
         h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
     }
-    box.append(h('h4', null, 'Pieza especial'), sp);
+    box.append(h('h4', null, td.specials.length > 1 ? 'Pieza especial' : 'Línea de meta'), sp);
     widthSurface(box, tr, true);
     box.append(preview,
       h('div', { class: 'row gap wrap bld-actions' },
@@ -358,16 +412,17 @@
       ctx.append(h('span', { class: 'chip chip-info' }, Cat.features[b.special].name), opt('btn small', false, 'Volver a una pieza normal', () => { b.special = null; changed(); }, 'Pieza normal'));
     } else if (d.kind === 'straight') {
       for (const [n, label] of BUILD_LENS) ctx.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label));
-    } else {
+    } else if (tr.typeDef.banks.length > 1) {
       for (const [v, label] of BUILD_BANKS) {
+        if (!tr.typeDef.banks.includes(v)) continue;
         const locked = v === 2 && !g.isUnlocked(Cat.features.berm_big);
         ctx.append(opt('btn small' + (locked ? ' locked' : ''), b.bank === v, label, () => { if (locked) { app().hud.toast(lockReason(Cat.features.berm_big), 'bad'); return; } b.bank = v; changed(); }, v === 0 ? 'Sin peralte' : v === 1 ? 'Peralte' : 'Grande', locked ? icon('lock') : null));
       }
     }
-    box.append(ctx);
-    if (!b.special) {
+    if (ctx.children.length) box.append(ctx);
+    if (!b.special && tr.typeDef.slopes.length > 1) {
       const slopes = h('div', { class: 'bld-slopes' });
-      for (const [v, label] of BUILD_SLOPES) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v)));
+      for (const [v, label] of BUILD_SLOPES) if (tr.typeDef.slopes.includes(v)) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v)));
       box.append(slopes);
     }
     box.append(preview,
@@ -377,12 +432,12 @@
         h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino más corto hasta la salida', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
         opt('btn bld-dots', !!b.more, 'Más opciones: piezas especiales, anchura, superficie', () => { b.more = b.more ? null : 'menu'; changed(); }, h('span', { class: 'dots' }, '•••'))));
     if (b.more) box.append(h('div', { class: 'row gap bld-more' },
-      opt('btn small', b.more === 'sp', 'Piezas especiales: meta y saltos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
+      opt('btn small', b.more === 'sp', 'Piezas especiales: meta y obstáculos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
       opt('btn small', b.more === 'ws', 'Anchura y superficie', () => { b.more = b.more === 'ws' ? 'menu' : 'ws'; changed(); }, icon('paint'), 'Ancho y suelo'),
       h('button', { class: 'btn small danger', title: 'Borrar circuito', 'aria-label': 'Borrar circuito', onmousedown: noFocus, onclick: () => delTrack(tr) }, icon('demolish'))));
     if (b.more === 'sp') {
       const sp = h('div', { class: 'bld-strip' });
-      for (const k of SPECIALS) {
+      for (const k of tr.typeDef.specials) {
         const fd = Cat.features[k];
         const locked = !g.isUnlocked(fd);
         sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.name, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
@@ -397,7 +452,8 @@
     const g = game(), ui = app().trackUI;
     const editable = tr.state !== 'open';
     const srow = h('div', { class: 'row gap wrap' });
-    for (const k of Cat.surfaceOrder) {
+    const td = tr.typeDef;
+    for (const k of td.surfaces) {
       const d = Cat.surfaces[k];
       const locked = !g.isUnlocked(d);
       const on = beforeClose ? ui.surface === k : (MX.Tools.current === TL().TrackSurface && TL().TrackSurface.surface === k);
@@ -411,7 +467,7 @@
         } }, h('i', { style: { background: d.color } }), d.name, locked ? icon('lock') : null));
     }
     const wrow = h('div', { class: 'row gap wrap' });
-    for (const wv of [6, 7, 8, 10, 12]) {
+    for (const wv of td.widths) {
       const on = beforeClose ? ui.width === wv : (MX.Tools.current === TL().TrackWidth && TL().TrackWidth.width === wv);
       wrow.append(h('button', { class: 'btn small' + (on ? ' on' : ''), disabled: !editable, onmousedown: (e) => e.preventDefault(), onclick: () => { ui.width = wv; if (!beforeClose) { TL().TrackWidth.width = wv; MX.Tools.set(TL().TrackWidth); } WM.rebuild('tracks'); if (MX.Tools.current === TL().TrackBuild || MX.Tools.current === TL().TrackStart) MX.Tools.current.refresh(); } }, wv + ' m'));
     }
@@ -435,13 +491,13 @@
         h('div', null, h('small', null, 'Dificultad'), h('b', null, U.fmt1(st.diff)), h('em', null, A.difficultyLabel(st.diff))),
         h('div', null, h('small', null, 'Valoración'), h('b', null, U.fmt1(st.rating)), h('em', null, st.rating >= 7 ? 'Excelente' : st.rating >= 5.5 ? 'Buena' : st.rating >= 4 ? 'Correcta' : 'Floja')),
         h('div', null, h('small', null, 'Seguridad'), h('b', null, Math.round(st.safety * 100) + '%'), h('em', null, st.safety >= 0.7 ? 'Alta' : st.safety >= 0.5 ? 'Media' : 'Baja'))),
-      statRow('Homologación', A.HOMOLOG_NAMES[st.homolog]),
+      tr.type === 'mx' ? statRow('Homologación', A.HOMOLOG_NAMES[st.homolog]) : statRow('Tipo de circuito', tr.typeDef.name),
       statRow('Longitud', U.fmtMeters(st.length) + ' · ancho medio ' + U.fmt1(st.width) + ' m'),
       statRow('Vuelta profesional', U.fmtLap(st.lapPro) + ' · amateur ' + U.fmtLap(st.lapAm)),
       statRow('Vuelta principiante', U.fmtLap(st.lapBeg)),
       statRow('Velocidad máx. / media', U.fmtKmh(st.maxSpeed) + ' / ' + U.fmtKmh(st.avgSpeed)),
       statRow('Tiempo en el aire (pro)', U.fmt1(st.airPro) + ' s por vuelta'),
-      statRow('Saltos · rítmicos · peraltes', st.jumps + ' · ' + st.rhythm + ' · ' + st.berms),
+      tr.type === 'enduro' ? statRow('Obstáculos', String(st.natural || 0)) : statRow('Saltos · rítmicos · peraltes', st.jumps + ' · ' + st.rhythm + ' · ' + st.berms),
       statRow('Curvas (cerradas)', st.corners + ' (' + st.tight + ')'),
       statRow('Desnivel', U.fmt1(st.elev) + ' m'),
       statRow('Zonas de riesgo protegidas', Math.round(st.protectedRatio * 100) + '% de ' + st.hazards),
@@ -460,28 +516,76 @@
     });
   }
   /* auto-generate a closed loop in the largest free owned rectangle */
-  function suggested() {
+  function suggested(type) {
     const g = game(), w = g.world, N = w.N;
+    type = type || 'mx';
+    const sel = g.selectedTrack;
+    typeDefaults(type, !(sel && sel.type === type && sel.pieces && !sel.pieces.length && !sel.nodes.length));
+    /* only land the riders can get to from the road: not inside another circuit, past the water or up a cliff */
+    const reach = new Uint8Array(N * N), queue = [];
+    for (let tx = 0; tx < N; tx++) { const i = tx + w.roadRow * N; if (g.riderPassable(tx, w.roadRow, i)) { reach[i] = 1; queue.push(i); } }
+    while (queue.length) {
+      const i = queue.pop(), tx = i % N, tz = (i - tx) / N;
+      for (const [x, z] of [[tx + 1, tz], [tx - 1, tz], [tx, tz + 1], [tx, tz - 1]]) {
+        if (x < 0 || z < 0 || x >= N || z >= N) continue;
+        const j = x + z * N;
+        if (reach[j] || !g.riderPassable(x, z, j)) continue;
+        reach[j] = 1; queue.push(j);
+      }
+    }
     const free = new Uint8Array(N * N);
     for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
       const i = tx + tz * N;
-      free[i] = (w.owned[i] && w.bld[i] < 0 && !w.path[i] && !w.trackOcc[i] && !w.isWater(tx, tz) && w.tileSlope(tx, tz) < 2.5) ? 1 : 0;
+      free[i] = (reach[i] && w.owned[i] && w.bld[i] < 0 && !w.path[i] && !w.trackOcc[i] && !w.isWater(tx, tz) && w.tileSlope(tx, tz) < 2.5) ? 1 : 0;
     }
-    const sum = new Int32Array((N + 1) * (N + 1));
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) sum[(x + 1) + (z + 1) * (N + 1)] = free[x + z * N] + sum[x + (z + 1) * (N + 1)] + sum[(x + 1) + z * (N + 1)] - sum[x + z * (N + 1)];
-    const area = (x0, z0, x1, z1) => sum[x1 + z1 * (N + 1)] - sum[x0 + z1 * (N + 1)] - sum[x1 + z0 * (N + 1)] + sum[x0 + z0 * (N + 1)];
-    let best = null;
-    for (let wv = 30; wv >= 14; wv -= 2) for (let hv = Math.min(30, wv); hv >= 11; hv -= 2) {
-      if (best && wv * hv <= best.w * best.h) continue;
+    /* the embankments can spill one tile past the rectangle: that ring must be clear too */
+    const clear = new Uint8Array(N * N);
+    for (let i = 0; i < N * N; i++) clear[i] = (w.owned[i] && w.bld[i] < 0 && !w.path[i] && !w.trackOcc[i] && !w.isWater(i % N, (i / N) | 0)) ? 1 : 0;
+    const prefix = (a) => {
+      const sum = new Int32Array((N + 1) * (N + 1));
+      for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) sum[(x + 1) + (z + 1) * (N + 1)] = a[x + z * N] + sum[x + (z + 1) * (N + 1)] + sum[(x + 1) + z * (N + 1)] - sum[x + z * (N + 1)];
+      return (x0, z0, x1, z1) => sum[x1 + z1 * (N + 1)] - sum[x0 + z1 * (N + 1)] - sum[x1 + z0 * (N + 1)] + sum[x0 + z0 * (N + 1)];
+    };
+    const areaFree = prefix(free), areaClear = prefix(clear);
+    const area = (x0, z0, x1, z1) => {
+      const a = areaFree(x0, z0, x1, z1);
+      if (a !== (x1 - x0) * (z1 - z0)) return a;
+      const X0 = Math.max(0, x0 - 1), Z0 = Math.max(0, z0 - 1), X1 = Math.min(N, x1 + 1), Z1 = Math.min(N, z1 + 1);
+      return areaClear(X0, Z0, X1, Z1) === (X1 - X0) * (Z1 - Z0) ? a : -1;
+    };
+    /* free rectangles of every size, each at its spot nearest the paddocks (or the road); the
+       ones with the longest edges (the longest loop) and closest to the riders go first */
+    const pads = g.buildingsOf('paddock');
+    const ax = pads.length ? pads.reduce((a, b) => a + b.tx, 0) / pads.length : N / 2, az = pads.length ? pads.reduce((a, b) => a + b.tz, 0) / pads.length : w.roadRow;
+    const dist = (c) => Math.hypot(c.x0 + c.w / 2 - ax, c.z0 + c.h / 2 - az);
+    const cands = [];
+    const big = type === 'carcross' || type === 'flat' ? 36 : type === 'kids' ? 20 : 30;
+    for (let wv = big; wv >= 14; wv -= 2) for (let hv = Math.min(big, wv); hv >= 11; hv -= 2) {
+      let near = null;
       for (let z0 = 0; z0 + hv <= N; z0 += 2) for (let x0 = 0; x0 + wv <= N; x0 += 2) {
-        if (area(x0, z0, x0 + wv, z0 + hv) === wv * hv) { best = { x0, z0, w: wv, h: hv }; break; }
+        if (area(x0, z0, x0 + wv, z0 + hv) !== wv * hv) continue;
+        const c = { x0, z0, w: wv, h: hv };
+        if (!near || dist(c) < dist(near)) near = c;
       }
+      if (near) cands.push(near);
     }
-    if (!best) { app().hud.toast('No hay un terreno libre suficientemente grande (mínimo 14 x 11 casillas)', 'bad'); return; }
+    const score = (c) => c.w + c.h - dist(c) / 3;
+    cands.sort((a, b) => score(b) - score(a) || b.w * b.h - a.w * a.h);
+    if (!cands.length) { app().hud.toast('No hay un terreno libre suficientemente grande (mínimo 14 x 11 casillas)', 'bad'); return; }
     let tr = g.selectedTrack, fresh = false;
-    if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length) { tr = g.newTrack(); fresh = true; }
+    if (!tr || !tr.pieces || tr.pieces.length || tr.nodes.length || tr.type !== type) { tr = g.newTrack(type); fresh = true; }
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
-    const res = g.suggestLoop(tr, { x0: best.x0, z0: best.z0, w: best.w, h: best.h }, app().trackUI.width, app().trackUI.surface);
+    /* a loop that ends up somewhere the riders cannot use is taken down and the next spot tried */
+    const WHERE = /llegar desde el paddock|agua|pisa edificios|fuera de tu terreno|otro circuito|entrada de pilotos/;
+    let res = null, best = null, checks = 0;
+    for (const c of cands.slice(0, 16)) {
+      res = g.suggestLoop(tr, c, app().trackUI.width, app().trackUI.surface);
+      if (!res.ok) { if (res.short) continue; break; }
+      const bad = checks++ < 6 ? g.validateTrack(tr).find(i => i.level === 'error' && WHERE.test(i.msg)) : null;
+      if (!bad) { best = c; break; }
+      g.editTrack(tr, (t) => { t.pieces = []; t.features = []; t.closed = false; t.origin = null; });
+      res = { ok: false, reason: bad.msg };
+    }
     if (!res.ok) {
       if (fresh) { g.deleteTrack(tr); g.selectedTrack = g.tracks[0] || null; WM.rebuild('tracks'); }
       app().hud.toast(res.reason, 'bad');
@@ -489,6 +593,9 @@
     }
     g.selectedTrack = tr;
     const cx = (best.x0 + best.w / 2) * T, cz = (best.z0 + best.h / 2) * T;
+    /* the element tool starts with something this discipline uses */
+    const tdf = tr.typeDef.features;
+    if (!tdf.includes(TL().TrackFeature.type)) TL().TrackFeature.type = tdf.find(k => Cat.features[k].group !== 'basic' && Cat.features[k].group !== 'corner') || 'finish';
     MX.Tools.set(TL().TrackFeature);
     app().trackUI.section = 'features';
     WM.rebuild('tracks');

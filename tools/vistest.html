@@ -39,7 +39,7 @@ function frame() {
     const s = (k * 27) % tr.length;
     const p = tr.poseAt(s, (k % 3 - 1) * 2, {});
     const air = k % 4 === 0;
-    r.pushInst(air ? 'rider_stand' : 'rider_sit', p.x, p.y + (air ? 2.5 : 0), p.z, p.hdg, air ? 0.3 : 0, 0, 1, cols[k%6], [40,40,40], cols[(k+2)%6], cols[(k+4)%6]);
+    for (const m of ['mx_kronos_4t', air ? 'rb_stand' : 'rb_sit']) r.pushInst(m, p.x, p.y + (air ? 2.5 : 0), p.z, p.hdg, air ? 0.3 : 0, 0, 1, cols[k%6], [40,40,40], cols[(k+2)%6], cols[(k+4)%6]);
   }
   for (let k = 0; k < 30; k++) {
     const x = cx - 60 + (k % 10) * 3, z = cz + 50 + Math.floor(k / 10) * 3;

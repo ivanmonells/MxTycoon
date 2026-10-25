@@ -1,0 +1,73 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script src="../src/core/util.js"></script>
+<script src="../src/data/constants.js"></script>
+<script src="../src/data/catalog.js"></script>
+<script src="../src/sim/world.js"></script>
+<script src="../src/sim/track.js"></script>
+<script src="../src/sim/physics.js"></script>
+<script src="../src/render/glutil.js"></script>
+<script src="../src/render/meshbuilder.js"></script>
+<script src="../src/render/textures.js"></script>
+<script src="../src/render/voxel.js"></script>
+<script src="../src/render/models.js"></script>
+<script src="../src/render/geometry.js"></script>
+<script src="../src/render/shaders.js"></script>
+<script src="../src/render/renderer.js"></script>
+<script>
+/* model sheet: machines with their riders, people and staff close up.
+   ?zoom=N (half CSS px per metre), ?ps=1|2 pixel size, ?set=bikes|people, ?yaw=a */
+window.onerror = (m, s, l, c, e) => { window.__err = (window.__err || '') + m + ' @' + l + '\n'; };
+const w = new MX.World(80); w.generate(5, 'valle'); w.setupOwnership('sandbox');
+for (let i = 0; i < w.heights.length; i++) w.heights[i] = 6;
+w.scenery.clear(); w.scen.fill(-1); w.markTerrainDirty(0,0,79,79);
+const game = { world: w, tracks: [], buildings: new Map(), bldVer: 0, bldDirtyChunks: new Set(), selectedTrack: null,
+  weatherDef: () => MX.Catalog.weather.sunny, cloudCover: () => 0, wetness: () => 0, seasonTint: () => 0, screenTint: () => [1,1,1] };
+MX.Tex.buildMaterials && MX.Tex.buildMaterials();
+const r = new MX.Renderer(document.getElementById('c'));
+const q = new URLSearchParams(location.search);
+r.pixelScale = +(q.get('ps') || 1);
+r.init(); r.resize(innerWidth, innerHeight, 1); r.setGame(game);
+r.cam.tx = +(q.get('cx') || 155); r.cam.tz = +(q.get('cz') || 159); r.cam.ty = w.heightAt(155, 159); r.cam.zoom = r.cam.targetZoom = +(q.get('zoom') || 30);
+if (q.get('yawi')) r.cam.yawIndex = +q.get('yawi');
+const set = q.get('set') || 'bikes';
+const yaw0 = +(q.get('yaw') || 0);
+r.beginInstances();
+const kit = [[255, 106, 0], [30, 30, 30], [255, 106, 0], [240, 240, 240]];
+const kits = [[[255,106,0],[30,30,30],[255,106,0],[245,245,245]], [[227,16,27],[240,240,240],[227,16,27],[30,30,30]], [[31,63,191],[30,30,30],[31,63,191],[255,212,0]], [[120,210,26],[30,30,30],[30,30,30],[120,210,26]], [[19,48,107],[240,240,240],[244,244,244],[19,48,107]], [[255,212,0],[31,63,191],[255,212,0],[31,63,191]]];
+if (q.get('solo')) {
+  /* one machine (and body) per comma group: solo=mx_kronos_4t:rb_sit,ft_indus_twin:rb_flat_l */
+  q.get('solo').split(',').forEach((pair, i, all) => {
+    const [b, body] = pair.split(':');
+    const x = 155 + (i - (all.length - 1) / 2) * 2.6, z = 159 - (i - (all.length - 1) / 2) * 2.6;
+    const k = kits[i % 6];
+    r.pushInst(b, x, w.heightAt(x, z), z, yaw0, 0, 0, 1, k[0], k[1], k[2], k[3]);
+    if (body) r.pushInst(body, x, w.heightAt(x, z), z, yaw0, 0, 0, 1, k[0], k[1], k[2], k[3]);
+  });
+} else if (set === 'bikes') {
+  const ids = ['kronos', 'hanza', 'yamato', 'kawara', 'huska', 'suzaki'];
+  ids.forEach((id, i) => {
+    const x = 151 + (i % 3) * 3.4, z = 154 + Math.floor(i / 3) * 3.4;
+    const k = kits[i];
+    r.pushInst('mx_' + id + (i % 2 ? '_2t' : '_4t'), x, w.heightAt(x, z), z, yaw0, 0, 0, 1, k[0], k[1], k[2], k[3]);
+    if (q.get('riders') !== '0') r.pushInst(i % 2 ? 'rb_stand' : 'rb_sit', x, w.heightAt(x, z), z, yaw0, 0, 0, 1, k[0], k[1], k[2], k[3]);
+  });
+  const extra = [['en_betta_2t', 'rb_sit_pack'], ['en_sherpa_4t', 'rb_stand_pack'], ['ft_indus_twin', 'rb_flat'], ['ft_harlan_single', 'rb_flat_l'], ['buggy', null], ['mx_kronos_2t', 'rb_sit']];
+  extra.forEach(([b, body], i) => {
+    const x = 151 + (i % 3) * 3.4, z = 161 + Math.floor(i / 3) * 3.6;
+    const k = kits[(i + 2) % 6];
+    const sc = i === 5 ? 0.7 : 1;
+    r.pushInst(b, x, w.heightAt(x, z), z, yaw0, 0, 0, sc, k[0], k[1], k[2], k[3]);
+    if (body && q.get('riders') !== '0') r.pushInst(body, x, w.heightAt(x, z), z, yaw0, 0, 0, sc, k[0], k[1], k[2], k[3]);
+  });
+} else {
+  const ppl = ['person_0', 'person_1', 'person_3', 'person_sit', 'person_cheer', 'person_lie', 'staff_mechanic_0', 'staff_crew_1', 'staff_cleaner_0', 'staff_medic_0', 'staff_marshal_0', 'staff_coach_3'];
+  const shirts = [[229,57,53],[30,136,229],[253,216,53],[67,160,71],[255,255,255],[142,36,170]];
+  ppl.forEach((m, i) => {
+    const x = 153 + (i % 6) * 1.6, z = 157 + Math.floor(i / 6) * 2.2;
+    r.pushInst(m, x, w.heightAt(x, z), z, yaw0, 0, 0, 1, shirts[i % 6], [40,53,147], [70,45,25], [224,172,130]);
+  });
+}
+r.render(1/60);
+window.__done = true;
+</script></body></html>

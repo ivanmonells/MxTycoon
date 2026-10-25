@@ -55,7 +55,8 @@
     mb.gable(x0, z0, x1, z1, 0, h, 'x', L().tent, cc, MB.mulCol(cc, 0.85), 0);
   }
   /* bake an instanced voxel model into a static mesh, resolving colour slots */
-  function bakeModel(mb, name, x, y, z, yaw, slots, scale) {
+  /* mono: paint the whole model in one colour, keeping its light and dark parts (statues) */
+  function bakeModel(mb, name, x, y, z, yaw, slots, scale, mono) {
     const m = MX.Models.lib[name];
     if (!m) return;
     const d = m.data, S = MX.GL.STRIDE;
@@ -74,6 +75,10 @@
       if (slot > 0.5 && slots) {
         const sl = slots[Math.round(slot) - 1] || [255, 255, 255];
         vcol = [vcol[0] * sl[0] / 255, vcol[1] * sl[1] / 255, vcol[2] * sl[2] / 255, 1];
+      }
+      if (mono) {
+        const k = 0.72 + 0.28 * (vcol[0] * 0.3 + vcol[1] * 0.59 + vcol[2] * 0.11);
+        vcol = [mono[0] / 255 * k, mono[1] / 255 * k, mono[2] / 255 * k, 1];
       }
       mb.tri(tri[0], tri[1], tri[2], null, SOLID, vcol);
     }
@@ -204,6 +209,87 @@
     mb.quad([0.3, 0.05, D - 0.2], [W - 0.3, 0.05, D - 0.2], [W - 0.3, 0.05, 5.4], [0.3, 0.05, 5.4], [0, 0, W / 16, 0.15], L().wood, WHITE);
     umbrella(mb, 1.6, 6.6, '#e53935'); umbrella(mb, W - 1.6, 6.6, '#fdd835');
   };
+  M.restaurant_big = (mb, W, D) => {
+    /* dining hall at the back, wooden terrace with tables and umbrellas at the front */
+    mb.box(0.4, 0, 0.4, W - 0.4, 0.9, 4.4, { mat: L().brick, col: WHITE });
+    mb.box(0.4, 0.9, 0.4, W - 0.4, 3.8, 4.4, { mat: L().wood, col: col('#d7b98e'), noTop: true });
+    mb.gable(0.4, 0.4, W - 0.4, 4.4, 3.8, 5.3, 'x', L().tiles, WHITE, col('#d7b98e'), 0.45);
+    sign(mb, 'sign_restaurante', W / 2 - 1.8, 3.0, W / 2 + 1.8, 3.65, 4.4);
+    for (let x = 0.9; x < W - 2; x += 2.6) windowZ(mb, x, 1.3, x + 1.8, 2.6, 4.4, 'win_wide');
+    sign(mb, 'door_glass', W - 1.8, 0, W - 0.8, 2.2, 4.4);
+    mb.box(0.3, 0, 4.6, W - 0.3, 0.25, D - 0.3, { mat: L().wood, col: WHITE });
+    fenceRun(mb, 0.3, 4.6, 0.3, D - 0.3, 0.9, '#8d6e63'); fenceRun(mb, W - 0.3, 4.6, W - 0.3, D - 0.3, 0.9, '#8d6e63');
+    for (let x = 1.6; x < W - 0.8; x += 3.0) {
+      mb.push(); mb.translate(0, 0.25, 0);
+      mb.cylinder(x, 0, 6.3, 0.55, 0.72, 8, SOLID, col('#efebe9'));
+      for (const dx of [-0.9, 0.9]) mb.box(x + dx - 0.2, 0, 6.1, x + dx + 0.2, 0.45, 6.5, { col: col('#6d4c41') });
+      umbrella(mb, x, 6.3, ['#c62828', '#2e7d32', '#f9a825', '#1565c0'][Math.round(x) % 4]);
+      mb.pop();
+    }
+  };
+  M.megastore = (mb, W, D) => {
+    const wall = col('#546e7a');
+    mb.box(0.4, 0, 0.4, W - 0.4, 4.2, D - 1.2, { mat: L().metal, col: wall, top: L().roofmetal, topCol: col('#607d8b') });
+    /* orange band and the brand on the back and the sides, so it reads as the store from any side */
+    mb.box(0.35, 3.3, 0.35, W - 0.35, 3.75, D - 1.15, { col: col('#ff6a13'), noTop: true });
+    sign(mb, 'logo_mxt', W / 2 - 1.6, 2.35, W / 2 + 1.6, 3.1, 0.4, true);
+    signX(mb, 'logo_mxt', W - 0.36, 2.35, 3.1, D / 2 - 2.0, D / 2 + 1.2);
+    signX(mb, 'logo_mxt', 0.36, 2.35, 3.1, D / 2 - 2.0, D / 2 + 1.2, true);
+    mb.quad([0.8, 0.05, D - 1.18], [W - 0.8, 0.05, D - 1.18], [W - 0.8, 2.9, D - 1.18], [0.8, 2.9, D - 1.18], [0, 0, (W - 1.6) / 16, 2.85 / 16], L().glass, WHITE);
+    sign(mb, 'tshirts', 1.2, 0.8, W / 2 - 0.4, 1.8, D - 1.16);
+    sign(mb, 'tshirts', W / 2 + 0.4, 0.8, W - 1.2, 1.8, D - 1.16);
+    sign(mb, 'sign_tienda', W / 2 - 2.0, 3.15, W / 2 + 2.0, 3.95, D - 1.18);
+    mb.box(0.2, 4.2, D - 1.6, W - 0.2, 4.45, D - 0.4, { col: col('#ff6a13') });
+    sign(mb, 'logo_mxt', W / 2 - 1.4, 4.45, W / 2 + 1.4, 5.1, D - 1.0);
+    for (const x of [0.9, W - 0.9]) { mb.box(x - 0.08, 0, D - 0.5, x + 0.08, 3.4, D - 0.34, { col: col('#cfd8dc') }); mb.quad([x, 1.6, D - 0.42], [x + (x < W / 2 ? 0.9 : -0.9), 1.6, D - 0.42], [x + (x < W / 2 ? 0.9 : -0.9), 3.2, D - 0.42], [x, 3.2, D - 0.42], null, SOLID, col(x < W / 2 ? '#ff6a13' : '#fdd835')); }
+  };
+  M.playground = (mb, W, D) => {
+    mb.quad([0.3, 0.04, D - 0.3], [W - 0.3, 0.04, D - 0.3], [W - 0.3, 0.04, 0.3], [0.3, 0.04, 0.3], [0, 0, W / 16, D / 16], L().sand, col('#ffe0b2'));
+    fenceRun(mb, 0.3, 0.3, W - 0.3, 0.3, 0.8, '#43a047'); fenceRun(mb, 0.3, 0.3, 0.3, D - 1.6, 0.8, '#43a047'); fenceRun(mb, W - 0.3, 0.3, W - 0.3, D - 1.6, 0.8, '#43a047');
+    /* slide tower */
+    mb.box(1.0, 0, 1.0, 2.6, 1.6, 2.6, { col: col('#fdd835') });
+    mb.cone(1.8, 1.6, 1.8, 1.3, 1.0, 4, col('#e53935'));
+    mb.push(); mb.translate(2.6, 0, 1.4); mb.rotateZ(-0.62); mb.box(0, -0.05, 0, 2.6, 0.08, 0.8, { col: col('#1e88e5') }); mb.pop();
+    /* swings */
+    const metal = col('#78909c');
+    for (const z of [5.0, 6.6]) { mb.box(4.4, 0, z - 0.06, 4.52, 2.4, z + 0.06, { col: metal }); mb.box(7.2, 0, z - 0.06, 7.32, 2.4, z + 0.06, { col: metal }); }
+    mb.box(4.4, 2.36, 4.94, 7.32, 2.48, 6.66, { col: metal });
+    for (const x of [5.2, 6.4]) { mb.box(x - 0.02, 0.5, 5.75, x + 0.02, 2.36, 5.85, { col: col('#424242') }); mb.box(x - 0.3, 0.45, 5.6, x + 0.3, 0.52, 6.0, { col: col('#e53935') }); }
+    /* mini ramp and a spring rider */
+    mb.push(); mb.translate(1.0, 0, 4.6); mb.rotateZ(0.3); mb.box(0, -0.1, 0, 1.8, 0.12, 1.6, { mat: L().wood, col: WHITE }); mb.pop();
+    mb.cylinder(5.8, 0, 2.0, 0.08, 0.5, 6, SOLID, col('#9e9e9e'));
+    mb.box(5.4, 0.5, 1.75, 6.3, 0.95, 2.25, { col: col('#ff6a13') });
+    mb.box(W / 2 - 0.05, 0, D - 1.0, W / 2 + 0.05, 1.8, D - 0.9, { col: col('#6d4c41') });
+    sign(mb, 'sign_infantil', W / 2 - 1.3, 1.8, W / 2 + 1.3, 2.35, D - 0.9);
+  };
+  M.parts = (mb, W, D) => {
+    mb.box(0.3, 0, 0.4, W - 0.3, 2.9, D - 0.6, { mat: L().metal, col: col('#eceff1'), top: L().roofmetal, topCol: col('#90a4ae') });
+    mb.quad([0.7, 0.05, D - 0.58], [W - 0.7, 0.05, D - 0.58], [W - 0.7, 2.2, D - 0.58], [0.7, 2.2, D - 0.58], [0, 0, (W - 1.4) / 16, 2.15 / 16], L().glass, WHITE);
+    sign(mb, 'sign_recambios', 0.4, 2.25, W - 0.4, 2.85, D - 0.58);
+    for (let k = 0; k < 4; k++) mb.cylinder(W - 0.4, k * 0.2, D - 0.2, 0.32, 0.18, 9, SOLID, col('#212121'));
+    crate(mb, 0.3, D - 0.5, 0.5, '#c62828');
+  };
+  M.wash = (mb, W, D) => {
+    /* two bays under a canopy, wet concrete, pressure washer columns */
+    mb.quad([0.2, 0.05, D - 0.2], [W - 0.2, 0.05, D - 0.2], [W - 0.2, 0.05, 0.2], [0.2, 0.05, 0.2], [0, 0, W / 16, D / 16], L().concrete, col('#8fa3ad'));
+    for (const x of [0.4, W / 2, W - 0.4]) mb.box(x - 0.1, 0, 0.4, x + 0.1, 2.9, 0.6, { col: col('#90a4ae') });
+    mb.shed(0, 0, W, D - 0.6, 2.8, 3.2, L().roofmetal, col('#0288d1'), 0.1);
+    for (const x of [W / 4, W * 3 / 4]) {
+      mb.box(x - 0.25, 0, 0.7, x + 0.25, 1.4, 1.1, { col: col('#fdd835') });
+      mb.quad([x - 1.4, 0.07, 3.2], [x + 1.4, 0.07, 3.2], [x + 1.4, 0.07, 1.4], [x - 1.4, 0.07, 1.4], null, SOLID, col('#5b8fb0'));
+    }
+    sign(mb, 'sign_lavadero', W / 2 - 1.3, 2.3, W / 2 + 1.3, 2.75, 0.62);
+  };
+  M.rental = (mb, W, D) => {
+    const wall = col('#c8e6c9');
+    mb.box(0.3, 0, 0.3, W - 0.3, 3.2, 3.8, { mat: L().concrete, col: wall, top: L().roofmetal, topCol: col('#607d8b') });
+    mb.quad([0.8, 0.05, 3.82], [4.8, 0.05, 3.82], [4.8, 2.6, 3.82], [0.8, 2.6, 3.82], [0, 0, 4 / 16, 2.6 / 16], L().roller, col('#a5d6a7'));
+    sign(mb, 'sign_alquiler', W / 2 - 1.4, 2.6, W / 2 + 1.4, 3.15, 3.82);
+    sign(mb, 'door_glass', W - 1.6, 0, W - 0.7, 2.1, 3.82);
+    mb.quad([0.3, 0.04, D - 0.3], [W - 0.3, 0.04, D - 0.3], [W - 0.3, 0.04, 4.2], [0.3, 0.04, 4.2], [0, 0, W / 16, 0.25], L().paddockfloor, WHITE);
+    /* a row of small rental bikes in the house colours */
+    for (let k = 0; k < 4; k++) bakeModel(mb, 'mx_kawara_2t', 1.3 + k * 1.7, 0, 5.8 + (k % 2) * 0.4, -Math.PI / 2 + 0.25, null, 0.72);
+  };
   M.shop = (mb, W, D) => {
     mb.box(0.5, 0, 0.5, W - 0.5, 2.5, D - 0.8, { mat: L().wood, col: col('#d7ccc8'), noTop: true });
     mb.shed(0.4, 0.4, W - 0.4, D - 0.3, 2.5, 3.2, L().stripes, col('#7b1fa2'), 0.2);
@@ -302,7 +388,7 @@
     (M[b.type] || M.office)(mb, W, D, b);
     mb.pop();
   }
-  const OPEN_FLOOR = { paddock: 1, parking: 1, camping: 1, school: 1, depot: 0 };
+  const OPEN_FLOOR = { paddock: 1, parking: 1, camping: 1, school: 1, playground: 1, wash: 1, depot: 0 };
   /* Mesh for a ghost preview at the origin (local footprint centred). */
   function preview(type, rot) {
     const d = Cat.buildings[type];
@@ -363,7 +449,7 @@
       mb.box(-1.0, 0, -1.0, 1.0, 1.4, 1.0, { mat: L().concrete, col: col('#bdbdbd') });
       mb.box(-1.2, 0, -1.2, 1.2, 0.3, 1.2, { mat: L().concrete, col: col('#9e9e9e') });
       mb.pop();
-      bakeModel(mb, 'rider_stand', x, y + 1.4, z, o.rot || 0, [[212, 175, 55], [190, 150, 40], [212, 175, 55], [230, 190, 70]], 1.25);
+      for (const part of ['mx_kronos_4t', 'rb_stand']) bakeModel(mb, part, x, y + 1.4, z, o.rot || 0, null, 1.25, [222, 182, 66]);
       return;
     }
     mb.pop();

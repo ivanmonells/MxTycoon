@@ -95,7 +95,7 @@
         const cam = MX.App.renderer.cam;
         const amt = g.rainAmount();
         const n = Math.round(dt * 900 * amt * Math.min(1.5, 8 / cam.zoom + 0.5));
-        const span = MX.App.renderer.cam.w / cam.zoom * 0.7;
+        const span = cam.w / (cam.zoom * cam.zoomMul) * 0.7;
         for (let i = 0; i < n; i++) {
           const x = cam.tx + U.rng.range(-span, span), z = cam.tz + U.rng.range(-span, span);
           const gy = this.groundY(x, z);

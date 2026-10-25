@@ -159,9 +159,17 @@
   function finPrices(body) {
     const g = game(), P = g.econ.prices;
     const fairT = 7 + g.rep / 80, fairR = 24 + g.rep / 35;
+    /* each discipline charges its own share of the base fee */
+    const feeBy = h('small', { class: 'muted fee-by' });
+    const feeTxt = () => {
+      const types = Cat.trackTypeOrder.filter(k => k !== 'mx' && (g.tracks.some(t => t.type === k) || g.trackTypeUnlocked(k)));
+      feeBy.textContent = types.length ? 'Otras disciplinas: ' + types.map(k => Cat.trackTypes[k].name + ' ' + U.fmtMoney(g.riderFeeFor(k))).join(' · ') + '.' : '';
+    };
+    feeTxt();
     body.append(
       slider('p-ticket', 'Entrada de espectadores', 0, 60, 1, P.ticket, (v) => U.fmtMoney(v), (v) => { P.ticket = v; }, 'Precio justo ahora: unos ' + U.fmtMoney(Math.round(fairT)) + '. Con buenos circuitos y servicios el público paga más.'),
-      slider('p-fee', 'Tarifa de pista para pilotos', 0, 90, 1, P.riderFee, (v) => U.fmtMoney(v), (v) => { P.riderFee = v; }, 'Precio justo ahora: unos ' + U.fmtMoney(Math.round(fairR)) + ' por día de rodaje.'),
+      slider('p-fee', 'Tarifa de pista para pilotos', 0, 90, 1, P.riderFee, (v) => U.fmtMoney(v), (v) => { P.riderFee = v; feeTxt(); }, 'Precio justo ahora: unos ' + U.fmtMoney(Math.round(fairR)) + ' por día de rodaje de motocross.'),
+      feeBy,
       slider('p-pass', 'Abono de temporada (mensual)', 20, 260, 5, P.pass, (v) => U.fmtMoney(v), (v) => { P.pass = v; }, 'Los pilotos satisfechos se abonan. Abonados actuales: ' + g.passHolders.length + '.'),
       slider('p-food', 'Nivel de precios de comida y bebida', 0.6, 1.8, 0.05, P.food, (v) => 'Bocadillo ' + U.fmtMoney(Math.round(7 * v)) + ' · bebida ' + U.fmtMoney(Math.round(3 * v)), (v) => { P.food = v; }),
       slider('p-merch', 'Nivel de precios del merchandising', 0.6, 1.8, 0.05, P.merch, (v) => 'Camiseta ' + U.fmtMoney(Math.round(20 * v)), (v) => { P.merch = v; }),
@@ -239,15 +247,20 @@
   }
   function evOrganize(body) {
     const g = game();
-    const st = { type: app().evSel || 'training', track: (g.openTracks()[0] || g.tracks[0] || {}).id, day: g.comp.nextDates()[0], ticket: null };
+    /* an event runs on a track of its own discipline, open ones first */
+    const tracksFor = (type) => { const want = Cat.events[type].track; return g.tracks.filter(t => !want || t.type === want).sort((a, b) => (b.state === 'open') - (a.state === 'open')); };
+    const st = { type: app().evSel || 'training', track: null, day: g.comp.nextDates()[0], ticket: null };
+    const fitTrack = () => { const list = tracksFor(st.type); if (!list.some(t => t.id === st.track)) st.track = list.length ? list[0].id : null; };
+    fitTrack();
     const types = h('div', { class: 'ev-types' });
     const detail = h('div', { class: 'ev-detail' });
     body.append(types, detail);
     for (const k of Cat.eventOrder) {
       const d = Cat.events[k];
       const locked = !g.isUnlocked(d);
-      types.append(h('button', { class: 'evt' + (st.type === k ? ' on' : '') + (locked ? ' locked' : ''), onclick: (e) => { st.type = k; app().evSel = k; st.ticket = null; for (const b of types.children) b.classList.remove('on'); e.currentTarget.classList.add('on'); draw(); } },
-        h('b', null, d.name), h('small', null, locked ? 'Bloqueado' : 'Reputación ' + d.rep + '+')));
+      const td = d.track && Cat.trackTypes[d.track];
+      types.append(h('button', { class: 'evt' + (st.type === k ? ' on' : '') + (locked ? ' locked' : ''), onclick: (e) => { st.type = k; app().evSel = k; st.ticket = null; fitTrack(); for (const b of types.children) b.classList.remove('on'); e.currentTarget.classList.add('on'); draw(); } },
+        h('b', null, td ? h('span', { class: 'type-tag', style: { background: td.color }, title: td.name }, td.short) : null, d.name), h('small', null, locked ? 'Bloqueado' : 'Reputación ' + d.rep + '+')));
     }
     const draw = () => {
       clear(detail);
@@ -256,9 +269,14 @@
       if (st.ticket == null) st.ticket = d.ticket || 0;
       detail.append(h('p', null, d.desc));
       if (st.type !== 'training') {
-        const sel = h('select', { id: 'ev-track', class: 'inp', onchange: (e) => { st.track = +e.target.value; draw(); } });
-        for (const t of g.tracks) sel.append(h('option', { value: t.id, selected: t.id === st.track }, t.name + (t.state === 'open' ? '' : ' (' + MX.Panels1.STATE[t.state][0].toLowerCase() + ')')));
-        detail.append(h('div', { class: 'row gap center' }, h('label', { for: 'ev-track' }, 'Circuito'), sel));
+        const list = tracksFor(st.type), td = Cat.trackTypes[d.track];
+        if (!list.length) detail.append(h('div', { class: 'callout warn' }, icon('warn'), 'Hace falta un circuito de ' + td.name.toLowerCase() + '. Créalo en Circuitos, con «Nuevo circuito».'));
+        else {
+          const sel = h('select', { id: 'ev-track', class: 'inp', onchange: (e) => { st.track = +e.target.value; draw(); } });
+          for (const t of list) sel.append(h('option', { value: t.id, selected: t.id === st.track }, t.name + (t.state === 'open' ? '' : ' (' + MX.Panels1.STATE[t.state][0].toLowerCase() + ')')));
+          detail.append(h('div', { class: 'row gap center' }, h('label', { for: 'ev-track' }, 'Circuito'), sel));
+        }
+        if (d.format === 'crono') detail.append(h('p', { class: 'muted small' }, 'Contrarreloj: los pilotos salen de uno en uno y gana el mejor tiempo.'));
       }
       const dsel = h('select', { id: 'ev-day', class: 'inp', onchange: (e) => { st.day = +e.target.value; } });
       for (const dd of g.comp.nextDates()) dsel.append(h('option', { value: dd, selected: dd === st.day }, g.dateText(dd)));
@@ -269,7 +287,7 @@
         detail.append(slider('ev-ticket', 'Precio de la entrada', 0, d.ticket * 3, 1, st.ticket, (v) => U.fmtMoney(v), (v) => { st.ticket = v; upd(); }));
         detail.append(h('div', { class: 'kv' }, h('span', null, 'Asistencia prevista'), att));
         upd();
-        detail.append(statRow('Pilotos inscritos', d.riders + ' · ' + U.fmtMoney(d.entryFee) + ' de inscripción'), statRow('Vueltas', tr ? g.comp.lapsFor(st.type, tr) : '-'),
+        detail.append(statRow(d.track === 'carcross' ? 'Pilotos inscritos (buggies)' : 'Pilotos inscritos', d.riders + ' · ' + U.fmtMoney(d.entryFee) + ' de inscripción'), statRow('Vueltas', tr ? g.comp.lapsFor(st.type, tr) : '-'),
           statRow('Patrocinio del evento', U.fmtMoney(d.sponsor) + (d.tv ? ' · TV hasta ' + U.fmtMoney(Math.round(d.tv * 1.5)) : '')), statRow('Premios', U.fmtMoney(d.prize)));
       }
       detail.append(statRow('Coste de organización', U.fmtMoney(d.cost)));
@@ -332,7 +350,7 @@
           order.slice(0, 20).forEach((x, i) => {
             const gap = i === 0 ? '' : x.done && lead.done ? '+' + U.fmt1((x.finishT || 0) - (lead.finishT || 0)) + ' s' : x.raceDist != null ? '-' + Math.max(0, Math.round((lead.raceDist - x.raceDist))) + ' m' : '';
             tbl.append(h('div', { class: 'race-row' + (i < 3 ? ' top' : '') + (x.m && x.m.crash ? ' crash' : ''), onclick: () => app().follow(x) },
-              h('span', { class: 'pos' }, (i + 1) + 'º'), h('span', { class: 'num' }, '#' + x.num), h('span', { class: 'nm' }, x.name),
+              h('span', { class: 'pos' }, (i + 1) + 'º'), h('span', { class: 'num' }, '#' + x.num), h('i', { class: 'brand-dot', title: x.bikeName, style: { background: Cat.brands[x.brand] ? Cat.brands[x.brand].main : '#777' } }), h('span', { class: 'nm' }, x.name),
               h('small', null, x.done ? 'Meta' : (x.lapsDone != null ? 'V' + Math.min(r.laps, x.lapsDone + 1) : '')), h('small', null, gap), h('small', null, x.bestRace ? U.fmtLap(x.bestRace) : '')));
           });
           clear(feed);
@@ -380,10 +398,11 @@
             el.append(h('div', { class: 'row gap center' }, icon('research'), h('b', null, d.name), h('small', null, Math.floor(R.progress) + '/' + d.days + ' días')), bar(R.progress, d.days, 'info'),
               h('small', { class: 'muted' }, d.desc + (g.count('office') ? ' La oficina acelera la investigación un 25%.' : '')));
           });
-          keyed(list, R.done.join(',') + ':' + (R.current || '') + ':' + R.queue.join(','), (el) => {
+          const repLow = (d) => d.minRep && g.mode !== 'sandbox' && g.rep < d.minRep;
+          keyed(list, R.done.join(',') + ':' + (R.current || '') + ':' + R.queue.join(',') + ':' + Cat.research.filter(repLow).length, (el) => {
             for (const d of Cat.research) {
               const done = R.done.includes(d.id), avail = g.prog.researchAvailable(d.id), queued = R.queue.includes(d.id), current = R.current === d.id;
-              const reqTxt = (d.req || []).filter(r => !R.done.includes(r)).map(r => g.prog.researchDef(r).name).join(', ');
+              const reqTxt = (d.req || []).filter(r => !R.done.includes(r)).map(r => g.prog.researchDef(r).name).concat(!done && repLow(d) ? ['reputación ' + d.minRep] : []).join(', ');
               el.append(h('div', { class: 'res' + (done ? ' done' : '') + (current ? ' on' : '') },
                 h('div', { class: 'grow' }, h('b', null, d.name), h('small', null, d.desc + ' ' + U.fmtMoney(d.cost) + ' · ' + d.days + ' días.' + (reqTxt ? ' Requiere: ' + reqTxt + '.' : ''))),
                 done ? chip('Hecho', 'good') : current ? h('button', { class: 'btn small', onclick: () => g.prog.cancelResearch(d.id) }, 'Detener') :
@@ -459,6 +478,10 @@
       el.append(h('h4', null, 'Estadísticas'), statRow('Vueltas totales', U.fmtInt(g.totals.laps || g.tracks.reduce((a, t) => a + t.totals.laps, 0))),
         statRow('Caídas · lesiones', g.totals.crashes + ' · ' + g.totals.injuries), statRow('Abonados de temporada', g.passHolders.length),
         statRow('Personal', g.staff.length), statRow('Eventos organizados', g.totals.events), statRow('Patrocinadores', g.sponsors.length));
+      const byDisc = {};
+      for (const r of g.riders) byDisc[r.disc] = (byDisc[r.disc] || 0) + 1;
+      const discs = Cat.trackTypeOrder.filter(k => byDisc[k]);
+      if (discs.length > 1 || g.tracks.some(t => t.type !== 'mx')) el.append(statRow('Pilotos por disciplina', discs.length ? discs.map(k => Cat.trackTypes[k].name + ' ' + byDisc[k]).join(' · ') : '-'));
     });
   }
   function parkThoughts(body) {
@@ -482,7 +505,7 @@
       const arr = g[which].filter(a => !a.dead).slice(0, 80);
       if (!arr.length) el.append(h('p', { class: 'muted' }, which === 'riders' ? 'No hay pilotos en este momento.' : 'No hay visitantes en este momento.'));
       for (const a of arr) el.append(h('button', { class: 'person', onclick: () => agentPanel(a) }, portrait(a.cols, which === 'riders' && !a.onFoot ? 'rider' : 'person'),
-        h('span', { class: 'grow' }, h('b', null, a.displayName || a.name), h('small', null, which === 'riders' ? MX.Agents.CAT_NAMES[a.cat] + ' · ' + riderStatus(a) : visitorStatus(a))),
+        h('span', { class: 'grow' }, h('b', null, a.displayName || a.name), h('small', null, which === 'riders' ? (a.disc !== 'mx' ? Cat.trackTypes[a.disc].name + ' · ' : '') + (Cat.brands[a.brand] ? Cat.brands[a.brand].name + ' · ' : '') + MX.Agents.CAT_NAMES[a.cat] + ' · ' + riderStatus(a) : visitorStatus(a))),
         bar(a.satisfaction ? a.satisfaction() : a.happy, 100, (a.satisfaction ? a.satisfaction() : a.happy) > 60 ? 'good' : 'bad')));
     });
   }
@@ -491,10 +514,22 @@
   }
   function riderStatus(r) {
     if (r.race) return 'Compitiendo';
-    return ({ prep: 'Preparando la moto', toTrack: 'Va a la pista', wait: 'Esperando para entrar', ride: 'Rodando', toPaddock: 'Vuelve al paddock', rest: 'Descansando', foot: { workshop: 'Va al taller', shower: 'Va a la ducha', food: 'Va a comer', school: 'Va a la escuela' }[r.footWhat] || 'Caminando', inside: 'En una instalación', leave: 'Se marcha', carried: 'En el puesto médico', grid: 'En parrilla' })[r.state] || r.state;
+    return ({ prep: 'Preparando la moto', toTrack: 'Va a la pista', wait: 'Esperando para entrar', ride: 'Rodando', toPaddock: 'Vuelve al paddock', rest: 'Descansando', foot: { workshop: 'Va al taller', shower: 'Va a la ducha', food: 'Va a comer', school: 'Va a la escuela', wash: 'Va al lavadero', parts: 'Va a la tienda de recambios' }[r.footWhat] || 'Caminando', inside: 'En una instalación', leave: 'Se marcha', carried: 'En el puesto médico', grid: 'En parrilla' })[r.state] || r.state;
   }
 
   /* ================= Info windows ================= */
+  /* the rider on their machine, seen from the right-hand side, in their kit */
+  const shots = {};
+  function bikeShot(a) {
+    const body = a.veh.car ? null : a.veh.sit;
+    const key = a.bikeModel + ':' + body + ':' + a.cols.map(c => c.join('.')).join(':') + ':' + (a.disc === 'kids' ? 1 : 0);
+    if (shots[key]) return shots[key];
+    const mb = new MX.MeshBuilder(16384);
+    for (const m of [a.bikeModel, body]) if (m) MX.BuildModels.bakeModel(mb, m, 0, 0, 0, 0, a.cols, 1);
+    const mesh = mb.build();
+    try { shots[key] = app().renderer.thumbnail(mesh.data, mesh.count, 128, [0, a.veh.car ? 0.7 : 0.82, 0], a.veh.car ? 1.55 : 1.2, [0.3, 0.28, 0.91]); } catch (e) { shots[key] = ''; }
+    return shots[key];
+  }
   function agentPanel(a) {
     const id = 'agent-' + a.id;
     app().selectedAgent = a;
@@ -509,7 +544,10 @@
           a.kind === 'staff' ? h('button', { class: 'btn danger', onclick: () => app().confirm('Despedir a ' + a.name, 'Pagarás una indemnización de ' + U.fmtMoney(Math.round(a.salary * 0.5)) + '.', () => { game().fire(a.id); WM.close(id); }) }, 'Despedir') : null);
         const info = h('div');
         const th = h('div', { class: 'thoughts' });
-        body.append(top, acts, info, h('h4', null, a.kind === 'staff' ? '' : 'Pensamientos'), th);
+        const brand = a.kind === 'rider' && Cat.brands[a.brand];
+        const shot = a.kind === 'rider' ? h('div', { class: 'bike-shot' }, h('img', { src: bikeShot(a), width: 128, height: 128, alt: a.bikeName }),
+          h('div', null, h('small', null, a.veh.car ? 'Buggy' : 'Su moto'), h('b', null, a.bikeName), brand ? h('span', { class: 'brand-tag', style: { background: brand.main, color: brand.main === '#f4f4f4' || brand.main === '#ffd400' || brand.main === '#78d21a' ? '#151515' : '#fff' } }, brand.name) : null)) : null;
+        body.append(top, acts, shot, info, h('h4', null, a.kind === 'staff' ? '' : 'Pensamientos'), th);
         return () => {
           if (a.dead) { clear(info); info.append(h('p', { class: 'muted' }, a.kind === 'staff' ? 'Ya no trabaja aquí.' : 'Se ha marchado del complejo.')); return; }
           top.querySelector('.agent-st').textContent = a.kind === 'rider' ? riderStatus(a) : a.kind === 'visitor' ? visitorStatus(a) : staffStatus(a);
@@ -521,9 +559,10 @@
             } else if (a.kind === 'rider') {
               const at = a.attr;
               const a2 = (l, v) => h('div', { class: 'kv' }, h('span', null, l), bar(v, 100, 'info'), h('b', null, Math.round(v)));
-              el.append(statRow('Categoría', MX.Agents.CAT_NAMES[a.cat] + ' · dorsal #' + a.num + (a.passHolder ? ' · abonado' : '')),
+              el.append(statRow('Disciplina', Cat.trackTypes[a.disc].name + (a.rental ? ' · moto de alquiler' : '')),
+                statRow('Categoría', MX.Agents.CAT_NAMES[a.cat] + ' · dorsal #' + a.num + (a.passHolder ? ' · abonado' : '')),
                 a2('Técnica', at.skill), a2('Velocidad', at.speed), a2('Resistencia', at.stamina), a2('Salto', at.jump), a2('Agresividad', at.aggr * 100), a2('Experiencia', at.exp), a2('Popularidad', at.pop),
-                statRow('Moto', a.bike.name + ' · estado ' + Math.round(a.bikeCond * 100) + '%'),
+                statRow(a.veh.car ? 'Estado del buggy' : 'Estado de la moto', Math.round(a.bikeCond * 100) + '%'),
                 statRow('Vueltas · mejor vuelta', a.stats.laps + ' · ' + (a.stats.best ? U.fmtLap(a.stats.best) : '-')),
                 statRow('Saltos limpios · caídas', a.stats.clean + ' · ' + a.stats.crashes),
                 a.m ? statRow('Velocidad', U.fmtKmh(a.m.v) + (a.m.air ? ' · en el aire' : '')) : null,
@@ -572,22 +611,26 @@
       build: (body) => {
         const st = tr.stats;
         if (!st) { body.append(h('p', null, 'Sin datos.')); return; }
-        body.append(h('p', { class: 'muted small' }, 'Tres pilotos de prueba (novato, amateur y experto) ruedan dos vueltas. Así se comporta el trazado:'));
-        const names = { 20: 'Principiante', 45: 'Amateur', 70: 'Experto', 92: 'Profesional' };
+        const td = tr.typeDef;
+        body.append(h('p', { class: 'muted small' }, 'Cuatro pilotos de prueba de ' + td.name.toLowerCase() + ', del menos al más rápido, ruedan dos vueltas. Así se comporta el trazado:'));
+        const names = ['Principiante', 'Amateur', 'Experto', 'Profesional'];
         const tbl = h('div', { class: 'fin-table' });
         tbl.append(h('div', { class: 'fin-row head' }, h('span', null, 'Nivel'), h('b', null, 'Vuelta'), h('b', null, 'Aire'), h('small', null, 'Saltos')));
-        for (const r of st.runs) tbl.append(h('div', { class: 'fin-row' }, h('span', null, names[r.skill]), h('b', null, U.fmtLap(r.lap)), h('b', null, U.fmt1(r.air) + ' s'), h('small', null, r.jumps + (r.hard ? ' · ' + r.hard + ' duros' : ''))));
+        for (const [i, r] of st.runs.entries()) tbl.append(h('div', { class: 'fin-row' }, h('span', null, names[i]), h('b', null, U.fmtLap(r.lap)), h('b', null, U.fmt1(r.air) + ' s'), h('small', null, r.jumps + (r.hard ? ' · ' + r.hard + ' duros' : ''))));
         body.append(tbl, h('div', { class: 'big-stats' },
           h('div', null, h('small', null, 'Dificultad'), h('b', null, U.fmt1(st.diff)), h('em', null, MX.TrackAnalyzer.difficultyLabel(st.diff))),
           h('div', null, h('small', null, 'Valoración'), h('b', null, U.fmt1(st.rating)), h('em', null, '/10')),
           h('div', null, h('small', null, 'Seguridad'), h('b', null, Math.round(st.safety * 100) + '%'), h('em', null, ''))));
         const tips = [];
-        if (st.jumps === 0) tips.push('Añade saltos: sin ellos el público se aburre.');
-        if (st.rating < 5) tips.push('Varía los elementos: rítmicos, peraltes, desnivel y algo de decoración suben la valoración.');
+        if (td.jumps && st.jumps === 0) tips.push('Añade saltos: sin ellos el público se aburre.');
+        if (tr.type === 'enduro' && !st.natural) tips.push('Pon troncos, pedreras o vadeos: es lo que buscan los pilotos de enduro. Los árboles alrededor también suman.');
+        if (tr.type === 'carcross' && st.rating < 5) tips.push('Una pista ancha con cambios de rasante, un vadeo y curvas de varios radios gusta más a los pilotos de buggy.');
+        if (tr.type === 'flat' && st.rating < 5) tips.push('Un óvalo ancho de arcilla con dos curvas largas da las carreras más igualadas.');
+        if (st.rating < 5 && (tr.type === 'mx' || tr.type === 'sx' || tr.type === 'kids')) tips.push('Varía los elementos: rítmicos, peraltes, desnivel y algo de decoración suben la valoración.');
         if (st.safety < 0.55) tips.push('Coloca balas de paja o neumáticos junto a los saltos y curvas rápidas.');
         if (st.diff > 7) tips.push('Es un circuito muy exigente: los principiantes evitarán venir.');
         if (st.diff < 2.5) tips.push('Demasiado fácil para los pilotos con nivel.');
-        if (st.longest > 130) tips.push('La recta más larga mide ' + Math.round(st.longest) + ' m: rómpela con una curva o un salto.');
+        if (st.longest > 130 && tr.type !== 'flat') tips.push('La recta más larga mide ' + Math.round(st.longest) + ' m: rómpela con una curva' + (td.jumps ? ' o un salto.' : '.'));
         for (const t of tips) body.append(h('div', { class: 'callout' }, icon('info'), t));
       }
     });

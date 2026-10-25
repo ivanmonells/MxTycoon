@@ -141,7 +141,7 @@
     }
     panBy(dx, dy) {
       const r = this.app.renderer, cam = r.cam;
-      const k = 1 / (cam.zoom * r.cssScale);
+      const k = 1 / (cam.zoom * cam.zoomMul * r.cssScale);
       const fx = cam.fwd[0], fz = cam.fwd[2];
       const fl = Math.hypot(fx, fz) || 1;
       const sinP = Math.sin(cam.pitch);

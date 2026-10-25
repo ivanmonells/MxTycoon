@@ -179,7 +179,7 @@
     locate() {
       const c = this.center;
       if (!c) return;
-      const Tr = MX.Track, n = Tr.pieceUnits({ t: 'start' }, this.h), v = Tr.DIRV[this.h];
+      const Tr = MX.Track, n = Tr.pieceUnits(Tr.startPiece(this.tr ? this.tr.type : 'mx', 8, 'dirt'), this.h), v = Tr.DIRV[this.h];
       const lx = Math.round(c.x / T - v[0] * n / 2), lz = Math.round(c.z / T - v[1] * n / 2);
       if (this.lat && this.lat.x === lx && this.lat.z === lz && this.lat.h === this.h) return;
       this.lat = { x: lx, z: lz, h: this.h };
@@ -228,7 +228,7 @@
     labels() {
       const pr = this.probe;
       if (!pr || !pr.tmp || !pr.tmp.S) return [];
-      const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.START_GATE / C.TRACK_DS));
+      const S = pr.tmp.S, i = Math.min(S.n - 1, Math.round(MX.Track.gateOff(pr.tmp.pieces[0]) / C.TRACK_DS));
       return [{ x: S.x[i], y: S.y[i] + 5, z: S.z[i], text: pr.ok ? 'Parrilla de salida · ' + U.fmtMoney(pr.cost) + (pr.warn ? ' · ' + pr.warn : '') : pr.reason, bad: !pr.ok, warn: pr.ok && !!pr.warn }];
     }
   };

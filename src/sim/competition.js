@@ -19,6 +19,10 @@
       const add = (label, have, need, ok, fmt) => out.push({ label, have, need, ok: ok != null ? ok : have >= need, fmt });
       if (g.mode !== 'sandbox') add('Reputación', Math.round(g.rep), def.rep);
       if (def.unlock && g.mode !== 'sandbox') add('Categoría desbloqueada', g.isUnlocked(def) ? 1 : 0, 1, g.isUnlocked(def), 'bool');
+      if (def.track && type !== 'training') {
+        const td = Cat.trackTypes[def.track];
+        add('Circuito de ' + td.name.toLowerCase(), track && track.type === def.track ? 1 : 0, 1, !!track && track.type === def.track, 'bool');
+      }
       if (track && type !== 'training') {
         const st = track.stats;
         add('Circuito abierto', track.state === 'open' ? 1 : 0, 1, track.state === 'open', 'bool');
@@ -40,7 +44,7 @@
     lapsFor(type, track) {
       const def = Cat.events[type];
       const lap = track.stats ? track.stats.lapExp : track.length / 12;
-      return U.clamp(Math.round(200 / Math.max(15, lap)), def.laps[0], def.laps[1]);
+      return U.clamp(Math.round((def.format === 'crono' ? 120 : 200) / Math.max(15, lap)), def.laps[0], def.laps[1]);
     }
     capacity() {
       const g = this.g;
@@ -166,11 +170,12 @@
       const rng = g.rng;
       const tier = def.tier;
       const usedNum = new Set(), usedName = new Set();
+      const cls = tr.typeDef.vehicle;
       for (let i = 0; i < def.riders; i++) {
         const sk = rng.range(def.skill[0], def.skill[1]);
-        const bike = sk < 40 ? Cat.bikes[1] : rng.pick([Cat.bikes[2], Cat.bikes[3], Cat.bikes[4]]);
+        const bike = cls === 'mx' ? (sk < 40 ? Cat.bikes[1] : rng.pick([Cat.bikes[2], Cat.bikes[3], Cat.bikes[4]])) : MX.RiderPhysics.vehicleFor(cls, sk);
         let r = null;
-        for (let k = 0; k < 8; k++) { r = new A.Rider(g, rng, { skill: sk, bike, intl: tier >= 4 && rng.chance(0.7), race: this }); if (!usedName.has(r.name)) break; }
+        for (let k = 0; k < 8; k++) { r = new A.Rider(g, rng, { skill: sk, bike, disc: tr.type, intl: tier >= 4 && rng.chance(0.7), race: this }); if (!usedName.has(r.name)) break; }
         usedName.add(r.name);
         let num = rng.int(1, 99);
         while (usedNum.has(num)) num = num % 99 + 1;
@@ -190,11 +195,14 @@
       const tr = this.tr, S = tr.S;
       const i0 = tr.sIndex(tr.startS);
       const w = S.w[i0];
-      const perRow = Math.max(4, Math.floor(w / 1.25));
+      const half = (Cat.vehicles[tr.typeDef.vehicle] || Cat.vehicles.mx).half;
+      /* a time trial lines riders up in single file; buggies need more room */
+      const perRow = this.def.format === 'crono' ? 1 : Math.max(2, Math.floor(w / (half * 1.65)));
+      const rowGap = this.def.format === 'crono' ? 2.8 : half > 1 ? 5.2 : 2.6;
       this.riders.forEach((r, k) => {
         const row = Math.floor(k / perRow), col = k % perRow;
-        const s = tr.wrapS(tr.startS - 1.4 - row * 2.6);
-        const lane = (col - (perRow - 1) / 2) * (w - 1.2) / Math.max(1, perRow - 1);
+        const s = tr.wrapS(tr.startS - 1.4 - row * rowGap);
+        const lane = perRow === 1 ? 0 : (col - (perRow - 1) / 2) * (w - half * 1.6) / Math.max(1, perRow - 1);
         const p = tr.poseAt(s, lane, {});
         r.gridS = s; r.gridLane = lane;
         r.x = p.x; r.z = p.z; r.y = p.yRide; r.yaw = p.hdg;
@@ -210,14 +218,17 @@
       } else if (this.phase === 'grid') {
         if (this.t > 9) {
           this.phase = 'race'; this.t = 0; this.tr.gateDown = true;
-          for (const r of this.riders) {
-            r.joinTrack(g, this.tr, r.gridS, r.gridLane, 0.3);
-            r.raceDist = 0; r.lastS = r.gridS; r.laps = 0; r.lapT0 = null; r.raceLaps = [];
-          }
           this.startT = g.time;
           this.finishOffset = U.mod(this.tr.finishS - this.tr.startS, this.tr.length);
+          if (this.def.format === 'crono') {
+            /* time trial: one rider every few seconds from the start line */
+            this.riders.forEach((r, k) => { r.cronoAt = k * 6; });
+            g.notify('¡Arranca la crono! Los pilotos salen de uno en uno cada 6 segundos.', 'event');
+          } else {
+            for (const r of this.riders) this.launch(r, r.gridS, r.gridLane);
+            g.notify('¡Cae la parrilla! Comienza la carrera a ' + this.laps + ' vueltas.', 'event');
+          }
           MX.Bus.emit('race:start', { race: this });
-          g.notify('¡Cae la parrilla! Comienza la carrera a ' + this.laps + ' vueltas.', 'event');
         }
       } else if (this.phase === 'race') {
         this.track(dt);
@@ -225,9 +236,18 @@
         if (this.t > 9) this.end();
       }
     }
+    launch(r, s, lane) {
+      r.joinTrack(this.g, this.tr, s, lane, 0.3);
+      r.raceDist = 0; r.lastS = s; r.laps = 0; r.lapT0 = null; r.raceLaps = [];
+      r.startedT = this.g.time;
+    }
     /* progress, laps, positions and finish logic */
     track(dt) {
       const g = this.g, L = this.tr.length;
+      const crono = this.def.format === 'crono';
+      if (crono) for (const r of this.riders) {
+        if (!r.m && !r.done && r.cronoAt != null && g.time - this.startT >= r.cronoAt) { r.cronoAt = null; this.launch(r, this.tr.wrapS(this.tr.startS - 1.4), 0); }
+      }
       for (const r of this.riders) {
         if (!r.m || r.done) continue;
         const ds = U.mod(r.m.s - r.lastS, L);
@@ -245,9 +265,15 @@
           }
           r.lapT0 = g.time;
           r.lapsDone = k;
-          if (this.leaderDone || k >= this.laps) {
-            r.done = true; r.finishT = g.time - this.startT;
+          if ((this.leaderDone && !crono) || k >= this.laps) {
+            r.done = true; r.finishT = g.time - (crono ? r.startedT : this.startT);
             this.finishOrder.push(r);
+            if (crono) {
+              this.finishOrder.sort((a, b) => a.finishT - b.finishT);
+              if (this.finishOrder[0] === r) this.pushFeed(r.name + ' marca el mejor tiempo: ' + U.fmtLap(r.finishT));
+              r.leaveTrack(g, this.tr);
+              continue;
+            }
             if (!this.leaderDone) {
               this.leaderDone = true; this.leaderT = g.time;
               g.notify('¡' + r.name + ' gana el ' + this.def.name + '!', 'success', { agent: r });
@@ -274,12 +300,21 @@
         }
         this.order = order;
       }
-      const allDone = this.riders.every(r => r.done || !r.m || (r.m.crash && r.m.crash.injured));
+      const allDone = this.riders.every(r => r.done || (!r.m && r.cronoAt == null) || (r.m && r.m.crash && r.m.crash.injured));
+      if (crono) {
+        if (allDone || this.t > 900) {
+          const w = this.finishOrder[0];
+          if (w && !this.leaderDone) { this.leaderDone = true; g.notify('¡' + w.name + ' gana el ' + this.def.name + ' con ' + U.fmtLap(w.finishT) + '!', 'success', { agent: w }); MX.Bus.emit('race:winner', { rider: w }); w.think(g, 'race_win', true); }
+          this.results();
+        }
+        return;
+      }
       if ((this.leaderDone && (allDone || g.time - this.leaderT > 40)) || this.t > 600) this.results();
     }
     pushFeed(t) { this.feed.unshift({ t, at: this.g.time }); if (this.feed.length > 6) this.feed.pop(); MX.Bus.emit('race:feed', t); }
     standings() {
       const done = this.finishOrder.slice();
+      if (this.def.format === 'crono') done.sort((a, b) => a.finishT - b.finishT);
       const rest = this.riders.filter(r => !r.done).sort((a, b) => (b.raceDist || 0) - (a.raceDist || 0));
       return done.concat(rest);
     }

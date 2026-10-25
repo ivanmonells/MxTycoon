@@ -93,6 +93,7 @@
     researchAvailable(id) {
       const d = this.researchDef(id);
       if (!d || this.research.done.includes(id)) return false;
+      if (d.minRep && this.g.mode !== 'sandbox' && this.g.rep < d.minRep) return false;
       return !(d.req || []).some(r => !this.research.done.includes(r));
     }
     startResearch(id) {

@@ -339,9 +339,17 @@
         const p = ren.worldToCss(sel.x, (sel.y || g.world.heightAt(sel.x, sel.z)) + 2.6, sel.z);
         ctx.font = '700 12px "Saira Condensed", "Arial Narrow", sans-serif';
         const name = sel.displayName || sel.name;
-        const w = ctx.measureText(name).width + 12;
-        ctx.fillStyle = 'rgba(26,20,16,0.85)'; roundRect(ctx, p[0] - w / 2, p[1] - 9, w, 18, 4); ctx.fill();
-        ctx.fillStyle = '#ffd22e'; ctx.fillText(name, p[0], p[1]);
+        /* riders also show their machine, with a dot in the colour of the make */
+        const bike = sel.kind === 'rider' ? sel.bikeName : '', make = bike && MX.Catalog.brands[sel.brand];
+        const up = bike ? 15 : 0;
+        const w = Math.max(ctx.measureText(name).width, bike ? ctx.measureText(bike).width + (make ? 13 : 0) : 0) + 12;
+        ctx.fillStyle = 'rgba(26,20,16,0.85)'; roundRect(ctx, p[0] - w / 2, p[1] - 9 - up, w, 18 + up, 4); ctx.fill();
+        ctx.fillStyle = '#ffd22e'; ctx.fillText(name, p[0], p[1] - up);
+        if (bike) {
+          const bw = ctx.measureText(bike).width, x0 = p[0] - (bw + (make ? 13 : 0)) / 2;
+          if (make) { ctx.fillStyle = make.main; ctx.beginPath(); ctx.arc(x0 + 4, p[1] - 0.5, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.stroke(); }
+          ctx.fillStyle = '#e8ddd0'; ctx.textAlign = 'left'; ctx.fillText(bike, x0 + (make ? 13 : 0), p[1]); ctx.textAlign = 'center';
+        }
       }
       /* tool labels */
       const tool = MX.Tools.current;

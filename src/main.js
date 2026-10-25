@@ -6,8 +6,9 @@
   const U = MX.U, C = MX.C, Cat = MX.Catalog;
   const T = C.TILE;
 
-  const DEFAULTS = { sound: true, sfx: true, music: true, sfxVol: 0.7, musicVol: 0.45, pixelScale: 2, shadows: true, outline: true, grid: false, bubbles: true, floatMoney: false, edgeScroll: false, autosaveWeeks: 1 };
+  const DEFAULTS = { sound: true, sfx: true, music: true, sfxVol: 0.7, musicVol: 0.45, pixelScale: 1, shadows: true, outline: true, grid: false, bubbles: true, floatMoney: false, edgeScroll: false, autosaveWeeks: 1 };
   const SKIN_RIDER = [236, 196, 160];
+  const HAIR_RIDER = [[40, 30, 25], [70, 45, 25], [110, 70, 35], [200, 160, 90], [30, 30, 30], [140, 60, 30]];
 
   const App = {
     game: null, renderer: null, demo: false, settings: null,
@@ -17,6 +18,8 @@
 
     async boot() {
       this.settings = MX.Save.settings(DEFAULTS);
+      /* the sharper pixels became the default with the detailed riders and bikes */
+      if (this.settings.gfxVer !== 2) { this.settings.pixelScale = 1; this.settings.gfxVer = 2; MX.Save.saveSettings(this.settings); }
       this.el = document.getElementById('app');
       this.view = document.getElementById('view');
       this.uiRoot = document.getElementById('ui');
@@ -420,29 +423,37 @@
         r.pushInst(m, x, y, z, yaw, 0, 0, v.kid ? 0.72 : 1, v.cols[0], v.cols[1], v.cols[2], v.cols[3]);
       }
       for (const a of g.riders) {
-        const m = a.model();
-        if (!m) continue;
-        let y = a.y;
+        if (a.state === 'inside' || a.state === 'leave' || a.state === 'carried') continue;
+        /* the machine (make and model) and the rider's body are two models with the same
+           transform; each discipline has its own machine and minicross riders are kids */
+        const body = a.model(), bike = a.bikeModel;
         const c = a.cols;
+        const V = a.veh, sc = V.scale, ps = a.disc === 'kids' ? 0.72 : 1;
         if (a.m) {
           if (!r.inView(a.m.x, a.m.y, a.m.z, 40)) continue;
           if (a.m.crash) {
-            r.pushInst('bike', a.m.x, a.m.gy, a.m.z, a.m.hdg, 0, a.m.roll, 1, c[0], c[1], c[2], c[3]);
             const side = a.m.crash.side;
-            const ox = -Math.sin(a.m.hdg) * side * 1.3, oz = Math.cos(a.m.hdg) * side * 1.3;
-            r.pushInst('person_lie', a.m.x + ox, a.m.gy + 0.05, a.m.z + oz, a.m.hdg + a.m.crash.spin, 0, 0, 1, c[2], c[1], c[3], SKIN_RIDER);
-          } else r.pushInst(m, a.m.x, a.m.y, a.m.z, a.m.hdg, a.m.pitch, a.m.roll, 1, c[0], c[1], c[2], c[3]);
+            if (V.car) { r.pushInst(bike, a.m.x, a.m.gy, a.m.z, a.m.hdg, 0, side * Math.min(1.45, a.m.crash.t * 3), sc, c[0], c[1], c[2], c[3]); continue; }
+            r.pushInst(bike, a.m.x, a.m.gy, a.m.z, a.m.hdg, 0, a.m.roll, sc, c[0], c[1], c[2], c[3]);
+            const ox = -Math.sin(a.m.hdg) * side * 1.3 * sc, oz = Math.cos(a.m.hdg) * side * 1.3 * sc;
+            r.pushInst('person_lie', a.m.x + ox, a.m.gy + 0.05, a.m.z + oz, a.m.hdg + a.m.crash.spin, 0, 0, ps, c[2], c[1], HAIR_RIDER[a.id % 6], SKIN_RIDER);
+            continue;
+          }
+          r.pushInst(bike, a.m.x, a.m.y, a.m.z, a.m.hdg, a.m.pitch, a.m.roll, sc, c[0], c[1], c[2], c[3]);
+          if (body) r.pushInst(body, a.m.x, a.m.y, a.m.z, a.m.hdg, a.m.pitch, a.m.roll, sc, c[0], c[1], c[2], c[3]);
           continue;
         }
-        y = w.heightAt(a.x, a.z) + 0.05;
+        const y = w.heightAt(a.x, a.z) + 0.05;
         if (!r.inView(a.x, y, a.z, 30)) continue;
         if (a.state === 'prep' || a.state === 'rest') {
-          r.pushInst('bike', a.x + Math.cos(a.yaw + 1.5) * 1.2, y, a.z + Math.sin(a.yaw + 1.5) * 1.2, a.yaw, 0, 0.08, 1, c[0], c[1], c[2], c[3]);
-          r.pushInst('person_0', a.x, y, a.z, a.yaw + Math.PI / 2, 0, 0, 1, c[2], c[1], c[3], SKIN_RIDER);
+          const off = V.car ? 2.0 : 1.2;
+          r.pushInst(bike, a.x + Math.cos(a.yaw + 1.5) * off, y, a.z + Math.sin(a.yaw + 1.5) * off, a.yaw, 0, V.car ? 0 : 0.08, sc, c[0], c[1], c[2], c[3]);
+          r.pushInst('person_0', a.x, y, a.z, a.yaw + Math.PI / 2, 0, 0, ps, c[2], c[1], HAIR_RIDER[a.id % 6], SKIN_RIDER);
           continue;
         }
-        if (a.onFoot || m.startsWith('person')) r.pushInst(m, a.x, y, a.z, a.yaw, 0, 0, 1, c[2], c[1], c[3], SKIN_RIDER);
-        else r.pushInst(m, a.x, y, a.z, a.yaw, 0, 0, 1, c[0], c[1], c[2], c[3]);
+        if (a.onFoot) { if (body) r.pushInst(body, a.x, y, a.z, a.yaw, 0, 0, ps, c[2], c[1], HAIR_RIDER[a.id % 6], SKIN_RIDER); continue; }
+        r.pushInst(bike, a.x, y, a.z, a.yaw, 0, 0, sc, c[0], c[1], c[2], c[3]);
+        if (body) r.pushInst(body, a.x, y, a.z, a.yaw, 0, 0, sc, c[0], c[1], c[2], c[3]);
       }
       for (const s of g.staff) {
         const m = s.model();
@@ -468,7 +479,7 @@
           const offs = [[2, 1.4], [0.8, 1.0], [3.2, 0.7]];
           g.race.podium.forEach((rd, i) => {
             const p = g.localToWorld(pod, offs[i][0], 2);
-            r.pushInst('person_cheer', p.x, pod.y + offs[i][1], p.z, pod.frontYaw, 0, 0, 1, rd.cols[2], rd.cols[1], rd.cols[3], SKIN_RIDER);
+            r.pushInst('person_cheer', p.x, pod.y + offs[i][1], p.z, pod.frontYaw, 0, 0, 1, rd.cols[2], rd.cols[1], HAIR_RIDER[rd.id % 6], SKIN_RIDER);
           });
         }
       }

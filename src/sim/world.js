@@ -202,7 +202,9 @@
       if (mode === 'sandbox') {
         for (let i = 0; i < PN * PN; i++) this.parcels[i] = 2;
       } else {
-        for (let pz = 5; pz <= 9; pz++) for (let px = 3; px <= 6; px++) this.parcels[px + pz * PN] = 2;
+        /* 6 x 6 parcels (192 m square) against the road in the middle of the map */
+        const px0 = Math.max(0, Math.floor(PN / 2) - 3);
+        for (let pz = Math.max(0, PN - 6); pz < PN; pz++) for (let px = px0; px < Math.min(PN, px0 + 6); px++) this.parcels[px + pz * PN] = 2;
       }
       for (let pz = 0; pz < PN; pz++) for (let px = 0; px < PN; px++) {
         if (this.parcels[px + pz * PN] !== 2) continue;

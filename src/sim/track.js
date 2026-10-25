@@ -95,6 +95,32 @@
         p.rampTo(hs[k], 0.64, 0.5, 0.55, -0.64, k < hs.length - 1).rampTo(0.12, -0.64, 0, 0.5, 0);
       }
       out.len = p.u; out.lips = p.lips; out.fn = (u) => p.heightAt(u);
+    } else if (d.kind === 'logs') {
+      /* logs lying across the track: round bumps the size of a log */
+      const L = d.n * d.pitch, R = d.H / 2;
+      out.len = L;
+      out.fn = (u) => {
+        if (u <= 0 || u >= L) return 0;
+        const k = Math.floor(u / d.pitch), c = (k + 0.5) * d.pitch, x = u - c;
+        return Math.abs(x) < R ? R + Math.sqrt(R * R - x * x) : 0;
+      };
+      out.noLip = true;
+    } else if (d.kind === 'rocks') {
+      /* loose stones: irregular low bumps fading in and out */
+      const L = d.len;
+      out.len = L;
+      out.fn = (u) => {
+        if (u <= 0 || u >= L) return 0;
+        const env = U.smoothstep(0, 1.5, u) * U.smoothstep(0, 1.5, L - u);
+        return d.H * env * (0.55 * Math.abs(Math.sin(u * 2.1)) + 0.45 * Math.abs(Math.sin(u * 3.7 + 1)));
+      };
+      out.noLip = true;
+    } else if (d.kind === 'water') {
+      /* a dip that fills with water (drawn by the renderer) */
+      const L = d.len;
+      out.len = L;
+      out.fn = (u) => (u <= 0 || u >= L) ? 0 : -d.depth * U.smoothstep(0, 2.2, u) * U.smoothstep(0, 2.2, L - u);
+      out.noLip = true;
     } else if (d.kind === 'berm') {
       out.bermH = d.H;
       out.fn = null;
@@ -140,6 +166,9 @@
   const GRADE = [-0.2, -0.1, 0, 0.1, 0.2];     // by slope class -2..2
   const ELEV_MAX = 8;
   const START_LEN = 36, START_GATE = 15;       // gate 15 m into the start straight: grid behind it
+  /* minicross circuits use a shorter start straight (its length rides on the piece as sl) */
+  const startLenFor = (type) => type === 'kids' ? 24 : START_LEN;
+  const gateOff = (p) => Math.min(START_GATE, (p.sl || START_LEN) * 0.42);
   const SPECIAL_OFF = 1.5;                     // clearance between a special piece edge and its feature
 
   function specialUnits(type, h) {
@@ -147,7 +176,7 @@
     return Math.max(2, Math.ceil(((sh ? sh.len : 4) + 2 * SPECIAL_OFF) / unitLen(h) - 1e-6));
   }
   function pieceUnits(p, h) {
-    if (p.t === 'start') return Math.ceil(START_LEN / unitLen(h) - 1e-6);
+    if (p.t === 'start') return Math.ceil((p.sl || START_LEN) / unitLen(h) - 1e-6);
     if (p.t === 'special') return specialUnits(p.f, h);
     return p.n || 1;
   }
@@ -239,8 +268,10 @@
       this.ver = 0;
       this.entry = null;
       this.crashMarks = [];
+      this.type = 'mx';       // discipline: a key of Catalog.trackTypes
     }
     get bit() { return 1 << this.slot; }
+    get typeDef() { return Cat.trackTypes[this.type] || Cat.trackTypes.mx; }
 
     /* ---------- node editing ---------- */
     addNode(x, z, w, surf) {
@@ -716,7 +747,7 @@
       /* curvature restrictions */
       const needStraight = d.kind !== 'berm' && d.kind !== 'finish' && !(fixed && fixed.pin != null);
       if (needStraight) {
-        const lim = d.kind === 'start' ? 1 / 40 : (d.kind === 'bumps' ? 1 / 22 : 1 / 30);
+        const lim = d.kind === 'start' ? 1 / 40 : d.kind === 'water' || d.kind === 'rocks' ? 1 / 12 : (d.kind === 'bumps' || d.kind === 'logs' ? 1 / 22 : 1 / 30);
         const from = d.kind === 'start' ? s0 - 6 : s0, to = d.kind === 'start' ? s0 + len + 22 : s0 + len;
         for (let q = from; q <= to; q += 1) {
           if (Math.abs(S.curv[this.sIndex(q)]) > lim)
@@ -789,7 +820,7 @@
     }
     /* Try the start straight at lattice (x, z) facing h without building it. */
     probeStart(world, x, z, h, w, surf) {
-      const tmp = Track.probeTrack(x, z, h, 0, { t: 'start', slope: 0, bank: 0, w, surf }, this.slot);
+      const tmp = Track.probeTrack(x, z, h, 0, Track.startPiece(this.type, w, surf), this.slot, this.type);
       tmp.rebuild(world);
       const res = { ok: true, tmp, g: tmp.pieces[0]._g, cost: 0, reason: '' };
       const why = this._probeTiles(world, tmp);
@@ -804,14 +835,14 @@
       if (this.closed) return { ok: false, reason: 'El circuito ya está cerrado' };
       if (!this.endPose) this.rebuild(world);
       const e = this.endPose;
-      const tmp = Track.probeTrack(e.x, e.z, e.h, e.e, p, this.slot);
+      const tmp = Track.probeTrack(e.x, e.z, e.h, e.e, p, this.slot, this.type);
       tmp.rebuild(world);
       const g = tmp.pieces[0]._g;
       const res = { ok: true, tmp, g, closes: false, cost: 0, reason: '' };
       const fail = (r) => { res.ok = false; res.reason = r; res.cost = this._probeCost(world, tmp); return res; };
       if (g.e1 < -0.01) return fail('No se puede bajar más: la pista ya va a ras de suelo');
       if (g.e1 > ELEV_MAX + 0.01) return fail('Demasiado alto: máximo ' + ELEV_MAX + ' m sobre el terreno');
-      if (this.length + g.len > C.MAX_TRACK_LEN) return fail('El circuito sería demasiado largo');
+      if (this.length + g.len > this.typeDef.len[1]) return fail('Demasiado largo para ' + this.typeDef.name.toLowerCase() + ': máximo ' + this.typeDef.len[1] + ' m');
       const o = this.origin;
       if (g.x1 === o.x && g.z1 === o.z) {
         if (g.h1 !== o.h) return fail('Llegas a la salida en otra dirección');
@@ -927,8 +958,9 @@
         this.issues = issues; this.valid = false; return issues;
       }
       S.bad.fill(0);
-      if (this.length < C.MIN_TRACK_LEN) issues.push({ level: 'error', msg: 'Demasiado corto: ' + Math.round(this.length) + ' m (mínimo ' + C.MIN_TRACK_LEN + ' m).' });
-      if (this.length > C.MAX_TRACK_LEN) issues.push({ level: 'error', msg: 'Demasiado largo: máximo ' + C.MAX_TRACK_LEN + ' m.' });
+      const td = this.typeDef;
+      if (this.length < td.len[0]) issues.push({ level: 'error', msg: 'Demasiado corto para ' + td.name.toLowerCase() + ': ' + Math.round(this.length) + ' m (mínimo ' + td.len[0] + ' m).' });
+      if (this.length > td.len[1]) issues.push({ level: 'error', msg: 'Demasiado largo para ' + td.name.toLowerCase() + ': máximo ' + td.len[1] + ' m.' });
       /* radius */
       let radiusBad = -1;
       for (let i = 0; i < S.n; i++) if (Math.abs(S.curv[i]) > 1 / C.MIN_RADIUS) { S.bad[i] = 1; if (radiusBad < 0) radiusBad = i; }
@@ -995,8 +1027,9 @@
       }
       if (!this.entry) issues.push({ level: 'error', msg: 'No hay sitio junto a la parrilla para la entrada de pilotos.' });
       const jumps = this.features.filter(f => Cat.features[f.type].group === 'jump').length;
-      if (!jumps) issues.push({ level: 'warn', msg: 'Sin saltos: los pilotos se aburrirán.' });
-      if (this.length < 400) issues.push({ level: 'warn', msg: 'Un circuito corto se satura con pocos pilotos.' });
+      if (td.jumps && !jumps) issues.push({ level: 'warn', msg: 'Sin saltos: los pilotos se aburrirán.' });
+      if (this.type === 'enduro' && !this.features.some(f => Cat.features[f.type].group === 'natural')) issues.push({ level: 'warn', msg: 'Sin troncos, pedreras ni vadeos la especial resultará sosa.' });
+      if (this.length < td.len[0] * 1.6) issues.push({ level: 'warn', msg: 'Un circuito corto se satura con pocos pilotos.' });
       this.issues = issues;
       this.valid = !issues.some(i => i.level === 'error');
       return issues;
@@ -1005,7 +1038,7 @@
     /* Surface share and simple descriptors used by the analyzer and UI. */
     describe() {
       const S = this.S;
-      const d = { surf: [0, 0, 0, 0], avgW: 0, minW: 99, corners: 0, tight: 0, medium: 0, open: 0, straights: 0, longestStraight: 0, elevRange: 0, climb: 0, berms: 0 };
+      const d = { surf: Cat.surfaceOrder.map(() => 0), avgW: 0, minW: 99, corners: 0, tight: 0, medium: 0, open: 0, straights: 0, longestStraight: 0, elevRange: 0, climb: 0, berms: 0 };
       if (!S) return d;
       let ymin = Infinity, ymax = -Infinity;
       for (let i = 0; i < S.n; i++) {
@@ -1042,9 +1075,9 @@
     /* ---------- serialization ---------- */
     serialize() {
       return {
-        id: this.id, name: this.name, slot: this.slot, closed: this.closed, state: this.state,
+        id: this.id, name: this.name, slot: this.slot, closed: this.closed, state: this.state, type: this.type,
         nodes: this.nodes.map(n => [+n.x.toFixed(2), +n.z.toFixed(2), n.w, n.surf, n.elev]),
-        pieces: this.pieces ? this.pieces.map(p => [p.t, p.t === 'curve' ? p.k : (p.n || 0), p.dir || 0, p.slope || 0, p.bank || 0, p.f || '', p.w, p.surf]) : null,
+        pieces: this.pieces ? this.pieces.map(p => [p.t, p.t === 'curve' ? p.k : p.t === 'start' ? (p.sl || 0) : (p.n || 0), p.dir || 0, p.slope || 0, p.bank || 0, p.f || '', p.w, p.surf]) : null,
         origin: this.origin ? [this.origin.x, this.origin.z, this.origin.h] : null,
         features: this.features.map(f => [f.type, +f.s.toFixed(2), +(f.len || 0).toFixed(2), +f.ax.toFixed(2), +f.az.toFixed(2), f.side || 0, f.pin != null ? f.pin : -1, f.off || 0, f.auto || '']),
         paid: this.paid, featPaid: this.featPaid, records: this.records, totals: this.totals,
@@ -1055,11 +1088,12 @@
     static deserialize(d, world) {
       const t = new Track(d.id, d.name);
       t.slot = d.slot; t.closed = d.closed; t.state = d.state;
+      t.type = Cat.trackTypes[d.type] ? d.type : 'mx';
       t.nodes = d.nodes.map(a => ({ x: a[0], z: a[1], w: a[2], surf: a[3], elev: a[4] || 0 }));
       if (d.pieces) {
         t.pieces = d.pieces.map(a => {
           const p = { t: a[0], slope: a[3] || 0, bank: a[4] || 0, w: a[6], surf: a[7] };
-          if (a[0] === 'curve') { p.k = a[1]; p.dir = a[2]; } else if (a[0] === 'straight') p.n = a[1];
+          if (a[0] === 'curve') { p.k = a[1]; p.dir = a[2]; } else if (a[0] === 'straight') p.n = a[1]; else if (a[0] === 'start' && a[1]) p.sl = a[1];
           if (a[5]) p.f = a[5];
           return p;
         });
@@ -1082,12 +1116,13 @@
   }
 
   /* A one-piece scratch track used to preview and check the next piece. */
-  Track.probeTrack = function (x, z, h, e, p, slot) {
+  Track.probeTrack = function (x, z, h, e, p, slot, type) {
     const t = new Track(-1, 'tmp');
     t.slot = slot || 0;
+    t.type = type || 'mx';
     t.pieces = [Object.assign({}, p)];
     t.origin = { x, z, h }; t.e0 = e || 0;
-    if (p.t === 'start') t.pinFeature('start', 0, START_GATE);
+    if (p.t === 'start') t.pinFeature('start', 0, gateOff(p));
     else if (p.t === 'special') t.pinFeature(p.f, 0, SPECIAL_OFF);
     return t;
   };
@@ -1229,8 +1264,9 @@
       for (const p of pieces) { const g = pieceGeom(p, x, z, h, 0); lens.push(g.len); x = g.x1; z = g.z1; h = g.h1; }
       const drop = (p, sl, len) => -slopeDelta({ t: p.t, slope: sl }, len);
       pieces.forEach((p, i) => { const d = drop(p, -1, lens[i]); if (left >= d - 1e-6) { p.slope = -1; left -= d; } });
+      const steep = tr.typeDef.slopes.includes(-2);
       pieces.forEach((p, i) => {
-        if (left <= 1e-6 || p.slope !== -1) return;
+        if (left <= 1e-6 || p.slope !== -1 || !steep) return;
         const extra = drop(p, -2, lens[i]) - drop(p, -1, lens[i]);
         if (left >= extra - 1e-6) { p.slope = -2; left -= extra; }
       });
@@ -1251,6 +1287,8 @@
   Track.LAT = LAT;
   Track.ELEV_MAX = ELEV_MAX;
   Track.START_GATE = START_GATE;
+  Track.gateOff = gateOff;
+  Track.startPiece = (type, w, surf) => { const p = { t: 'start', slope: 0, bank: 0, w, surf }; if (startLenFor(type) !== START_LEN) p.sl = startLenFor(type); return p; };
   Track.SPECIAL_OFF = SPECIAL_OFF;
   Track.SURF_IDX = SURF_IDX;
   Track.THICK = THICK;

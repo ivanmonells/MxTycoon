@@ -115,6 +115,8 @@ export default async ({ page, shot, wait, ev, logs }) => {
   /* track features: a suggested loop, then a tabletop on it */
   await tap('[data-id="tracks"]');
   await tap('.win .btn:has-text("Trazado sugerido")');
+  /* in sandbox every discipline is available, so it asks which one first */
+  if (await ev(() => !!document.querySelector('.type-card'))) { await shot('t-type-picker'); await tap('.type-card:has-text("Motocross")'); }
   await wait(800);
   const tr = await ev(() => { const t = MX.App.game.selectedTrack; return t ? { closed: t.closed, feats: t.features.length } : null; });
   logs.push('suggested ' + JSON.stringify(tr));

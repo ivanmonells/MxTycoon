@@ -8,6 +8,16 @@
   const FRONT = [[0, 1], [1, 0], [0, -1], [-1, 0]];
   const OPEN_AREA = { paddock: 1, parking: 1, camping: 1 };
 
+  /* Suggested loops: curve size, specials on each of the four legs and leg limits. */
+  const SUGGEST = {
+    mx: { k: 2, legs: [['tabletop_m'], ['rollers', 'tabletop_s'], ['tabletop_s', 'whoops'], ['whoops']] },
+    kids: { k: 1, maxA: 10, maxB: 6, legs: [['minijump'], ['rollers'], ['tabletop_s'], ['minijump']] },
+    sx: { k: 1, maxA: 22, maxB: 10, legs: [['tabletop_l', 'double_s'], ['rhythm', 'dubbies'], ['whoops', 'triple'], ['double_l', 'tabletop_m']] },
+    flat: { k: 3, maxB: 2, legs: [[], [], [], []] },
+    enduro: { k: 1, legs: [['logs', 'rollers'], ['rocks'], ['ford', 'logs'], ['rocks', 'rollers']] },
+    carcross: { k: 3, legs: [['crest'], ['rollers'], ['splash'], ['crest']] }
+  };
+
   class Game {
     constructor() {
       this.mode = 'career';
@@ -459,12 +469,19 @@
     }
 
     /* ---------------- tracks ---------------- */
-    newTrack() {
+    trackTypeUnlocked(type) {
+      const d = Cat.trackTypes[type];
+      return !!d && this.isUnlocked(d);
+    }
+    newTrack(type) {
       const used = new Set(this.tracks.map(t => t.slot));
       let slot = 0; while (used.has(slot) && slot < 15) slot++;
       if (used.has(slot)) return null;
-      const tr = new MX.Track(null, 'Circuito ' + (this.tracks.length + 1));
+      type = Cat.trackTypes[type] ? type : 'mx';
+      const same = this.tracks.filter(t => t.type === type).length;
+      const tr = new MX.Track(null, (type === 'mx' ? 'Circuito' : Cat.trackTypes[type].name) + ' ' + (same + 1));
       tr.slot = slot;
+      tr.type = type;
       tr.pieces = [];
       this.tracks.push(tr);
       this.selectedTrack = tr;
@@ -521,6 +538,7 @@
     }
     addFeature(tr, type, s) {
       const d = Cat.features[type];
+      if (!tr.typeDef.features.includes(type)) return { ok: false, reason: d.name + ': no se usa en ' + tr.typeDef.name.toLowerCase() };
       if (!this.isUnlocked(d)) return { ok: false, reason: 'Bloqueado: necesitas investigarlo' };
       const chk = tr.checkFeature(type, s);
       if (!chk.ok) return chk;
@@ -552,12 +570,16 @@
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
       return this.editTrack(tr, (t) => {
         t.origin = { x, z, h }; t.e0 = 0; t.closed = false;
-        t.pieces = [{ t: 'start', slope: 0, bank: 0, w, surf }];
+        t.pieces = [MX.Track.startPiece(t.type, w, surf)];
         t.features = [];
-        t.pinFeature('start', 0, MX.Track.START_GATE);
+        t.pinFeature('start', 0, MX.Track.gateOff(t.pieces[0]));
       });
     }
     buildPiece(tr, p) {
+      const td = tr.typeDef;
+      if (p.t === 'special' && !td.specials.includes(p.f)) return { ok: false, reason: Cat.features[p.f].name + ': no se usa en ' + td.name.toLowerCase() };
+      if (p.t !== 'special' && p.slope && !td.slopes.includes(p.slope)) return { ok: false, reason: 'Esa pendiente no se usa en ' + td.name.toLowerCase() };
+      if (p.t === 'curve' && p.bank && !td.banks.includes(p.bank)) return { ok: false, reason: 'Ese peralte no se usa en ' + td.name.toLowerCase() };
       if (p.t === 'special' && !this.isUnlocked(Cat.features[p.f])) return { ok: false, reason: 'Bloqueado: necesitas investigarlo' };
       if (p.t === 'curve' && p.bank === 2 && !this.isUnlocked(Cat.features.berm_big)) return { ok: false, reason: 'El peralte grande necesita investigación' };
       if (!this.isUnlocked(Cat.surfaces[p.surf])) return { ok: false, reason: 'Superficie bloqueada: investígala' };
@@ -604,10 +626,14 @@
     suggestLoop(tr, rect, w, surf) {
       if (!tr.pieces) return { ok: false, reason: 'Este circuito usa el trazado libre antiguo' };
       const m = Math.ceil((w * 0.5 + 2.5) / C.TILE);
-      const startU = MX.Track.pieceUnits({ t: 'start' }, 0);
-      let k = 2, a = rect.w - 2 * m - 6 * k - startU, b = rect.h - 2 * m - 6 * k;
-      if (a < 0 || b < 2) { k = 1; a = rect.w - 2 * m - 6 * k - startU; b = rect.h - 2 * m - 6 * k; }
-      if (a < 0 || b < 2) return { ok: false, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
+      const startP = MX.Track.startPiece(tr.type, w, surf);
+      const startU = MX.Track.pieceUnits(startP, 0);
+      const plan = SUGGEST[tr.type] || SUGGEST.mx;
+      let k = plan.k, a = rect.w - 2 * m - 6 * k - startU, b = rect.h - 2 * m - 6 * k;
+      if (plan.maxB) b = Math.min(b, plan.maxB);
+      if (plan.maxA) a = Math.min(a, plan.maxA);
+      while ((a < 0 || b < 2) && k > 1) { k--; a = rect.w - 2 * m - 6 * k - startU; b = rect.h - 2 * m - 6 * k; if (plan.maxB) b = Math.min(b, plan.maxB); if (plan.maxA) a = Math.min(a, plan.maxA); }
+      if (a < 0 || b < 2) return { ok: false, short: true, reason: 'No hay sitio para un circuito: deja libre al menos ' + (startU + 6 + 2 * m) + ' x ' + (8 + 2 * m) + ' casillas' };
       const P = (o) => Object.assign({ slope: 0, bank: 0, w, surf }, o);
       const unlocked = (f) => this.isUnlocked(Cat.features[f]);
       const leg = (units, specials) => {
@@ -620,18 +646,22 @@
         while (units > 0) { const n = Math.min(6, units); out.push(P({ t: 'straight', n })); units -= n; }
         return out;
       };
-      const turn = (bank) => [P({ t: 'curve', k, dir: 1, bank }), P({ t: 'curve', k, dir: 1, bank })];
-      const pieces = [P({ t: 'start' })]
-        .concat(leg(a, ['tabletop_m']), turn(1), leg(b, ['rollers', 'tabletop_s']), turn(0), leg(startU + a, ['finish', 'tabletop_s', 'whoops']), turn(1), leg(b, ['whoops']), turn(0));
+      const banks = tr.typeDef.banks;
+      const turn = (bank) => { bank = banks.includes(bank) ? bank : 0; return [P({ t: 'curve', k, dir: 1, bank }), P({ t: 'curve', k, dir: 1, bank })]; };
+      const L = plan.legs;
+      const pieces = [startP]
+        .concat(leg(a, L[0]), turn(1), leg(b, L[1]), turn(0), leg(startU + a, ['finish'].concat(L[2])), turn(1), leg(b, L[3]), turn(0));
       const ox = rect.x0 + m + 3 * k, oz = rect.z0 + m;
-      let x = ox, z = oz, h = 0;
-      for (const p of pieces) { const g = MX.Track.pieceGeom(p, x, z, h, 0); x = g.x1; z = g.z1; h = g.h1; }
+      let x = ox, z = oz, h = 0, len = 0;
+      for (const p of pieces) { const g = MX.Track.pieceGeom(p, x, z, h, 0); x = g.x1; z = g.z1; h = g.h1; len += g.len; }
       if (x !== ox || z !== oz || h !== 0) return { ok: false, reason: 'No se pudo cerrar el trazado sugerido' };
+      const minLen = tr.typeDef.len[0];
+      if (len < minLen + 4) return { ok: false, short: true, reason: 'No cabe un circuito de ' + tr.typeDef.name.toLowerCase() + ' de al menos ' + minLen + ' m en el terreno libre' };
       return this.editTrack(tr, (t) => {
         t.origin = { x: ox, z: oz, h: 0 }; t.e0 = 0; t.closed = true;
         t.pieces = pieces; t.features = [];
         pieces.forEach((p, i) => {
-          if (p.t === 'start') t.pinFeature('start', i, MX.Track.START_GATE);
+          if (p.t === 'start') t.pinFeature('start', i, MX.Track.gateOff(p));
           else if (p.t === 'special') t.pinFeature(p.f, i, MX.Track.SPECIAL_OFF);
         });
       });
@@ -687,8 +717,9 @@
         tr.state = 'testing';
         /* three test riders of different levels ride two laps */
         const s0 = tr.startS != null ? tr.startS + 3 : 0;
-        [26, 55, 86].forEach((sk, k) => {
-          const rd = new A.Rider(this, this.rng, { skill: sk, bike: Cat.bikes[sk < 40 ? 1 : sk < 70 ? 2 : 4] });
+        const td = tr.typeDef;
+        [0.2, 0.55, 0.9].map(k => Math.round(td.skill[0] + (td.skill[1] - td.skill[0]) * k)).forEach((sk, k) => {
+          const rd = new A.Rider(this, this.rng, { skill: sk, disc: tr.type, bike: MX.RiderPhysics.vehicleFor(td.vehicle, sk) });
           rd.name = ['Probador Novato', 'Probador Amateur', 'Probador Experto'][k];
           rd.test = tr.id; rd.cols = [[255, 255, 255], [40, 40, 40], [255, 106, 19], [255, 210, 40]];
           rd.joinTrack(this, tr, s0 - k * 6, (k - 1) * 1.6, 0.5);
@@ -727,6 +758,8 @@
       let best = null, bs = -1;
       for (const tr of this.openTracks()) {
         if (!tr.entry) continue;
+        if (tr.type !== (rider.disc || 'mx')) continue;
+        if (rider.rental && tr.stats && tr.stats.diff > 4.5) continue;
         if (this.race && this.race.trackId === tr.id) continue;
         const crowd = this.ridersOn(tr) / Math.max(4, tr.stats ? tr.stats.capacity : 12);
         const s = this.trackFit(rider, tr) - crowd * 0.35 + rng.range(0, 0.15);
@@ -796,11 +829,12 @@
         return out;
       };
       F.set('entrance', PF.bfs(N, srcPath(['entrance']), walk));
-      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant']), walk));
+      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant', 'restaurant_big']), walk));
       F.set('toilet', PF.bfs(N, srcPath(['toilets']), walk));
-      F.set('shop', PF.bfs(N, srcPath(['shop']), walk));
+      F.set('shop', PF.bfs(N, srcPath(['shop', 'megastore']), walk));
       F.set('camping', PF.bfs(N, srcPath(['camping']), walk));
-      const seatSrc = srcPath(['grandstand', 'grandstand_cov', 'restaurant']);
+      F.set('play', PF.bfs(N, srcPath(['playground']), walk));
+      const seatSrc = srcPath(['grandstand', 'grandstand_cov', 'restaurant', 'restaurant_big']);
       for (let i = 0; i < N * N; i++) if (w.addon[i] === MX.World.ADDON.BENCH && w.isWalkable(i % N, (i / N) | 0)) seatSrc.push(i);
       F.set('seat', PF.bfs(N, seatSrc, walk));
       /* viewing spots: path tiles close to open tracks */
@@ -828,7 +862,10 @@
       F.set('r_paddock', PF.bfs(N, srcOpen(['paddock']), rpass));
       F.set('r_shower', PF.bfs(N, srcOpen(['showers']), rpass));
       F.set('r_workshop', PF.bfs(N, srcOpen(['workshop']), rpass));
-      F.set('r_food', PF.bfs(N, srcOpen(['foodtruck', 'restaurant']), rpass));
+      F.set('r_food', PF.bfs(N, srcOpen(['foodtruck', 'restaurant', 'restaurant_big']), rpass));
+      F.set('r_wash', PF.bfs(N, srcOpen(['wash']), rpass));
+      for (const b of this.buildingsOf('rental')) F.set('r_rental_' + b.id, PF.bfs(N, srcOpen(['rental'], (x) => x === b), rpass));
+      F.set('r_parts', PF.bfs(N, srcOpen(['parts']), rpass));
       F.set('r_toilet', PF.bfs(N, srcOpen(['toilets']), rpass));
       F.set('r_school', PF.bfs(N, srcOpen(['school']), rpass));
       F.set('r_depot', PF.bfs(N, srcOpen(['depot']), rpass));
@@ -1084,7 +1121,8 @@
       for (const r of this.riders) {
         if (r.state !== 'ride' || !r.m) continue;
         const cx = Math.floor(r.x / g.cell), cz = Math.floor(r.z / g.cell);
-        const val = 0.1 + Math.min(r.m.v, 25) / 60 + (r.race ? 0.25 : 0);
+        const rt = this.trackById(r.trackId);
+        const val = (0.1 + Math.min(r.m.v, 25) / 60 + (r.race ? 0.25 : 0)) * (rt ? rt.typeDef.crowd : 1);
         for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
           const X = cx + dx, Z = cz + dz;
           if (X < 0 || Z < 0 || X >= n || Z >= n) continue;
@@ -1130,6 +1168,7 @@
       list.sort((a, b) => a.m.s - b.m.s);
       const L = tr.length;
       const n = list.length;
+      const wide = list.length ? list[0].veh.half / 0.75 : 1;
       for (let k = 0; k < n; k++) {
         const r = list[k], m = r.m;
         r.capV = null; m.laneBias *= 0.96;
@@ -1143,16 +1182,16 @@
           if (gap > 10) break;
           const lateral = Math.abs(om.lane - m.lane);
           if (om.crash) {
-            if (gap < 9 && lateral < 1.6) { m.laneBias += (m.lane >= om.lane ? 1 : -1) * 0.3; }
-            if (gap < 1.4 && lateral < 0.9 && m.v > 5 && !m.air && this.rng.chance(m.flagSlow > 0 ? 0.05 : 0.25)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this._ctx.emit, 'pileup');
+            if (gap < 9 * wide && lateral < 1.6 * wide) { m.laneBias += (m.lane >= om.lane ? 1 : -1) * 0.3; }
+            if (gap < 1.4 * wide && lateral < 0.9 * wide && m.v > 5 && !m.air && this.rng.chance(m.flagSlow > 0 ? 0.05 : 0.25)) MX.RiderPhysics.crash(m, tr, 0.5, this.rng, this._ctx.emit, 'pileup');
             continue;
           }
-          if (lateral < 1.5 && gap < 6) {
-            const hw = tr.S.w[tr.sIndex(m.s)] * 0.5 - 0.7;
+          if (lateral < 1.5 * wide && gap < 6 * wide) {
+            const hw = tr.S.w[tr.sIndex(m.s)] * 0.5 - 0.7 * wide;
             const leftRoom = hw - om.lane, rightRoom = om.lane + hw;
             const dir = leftRoom > rightRoom ? 1 : -1;
             m.laneBias = U.clamp(m.laneBias + dir * 0.25, -hw, hw);
-            if (gap < 3.2 && Math.max(leftRoom, rightRoom) < 1.7) r.capV = Math.max(2, om.v - 0.3);
+            if (gap < 3.2 * wide && Math.max(leftRoom, rightRoom) < 1.7 * wide) r.capV = Math.max(2, om.v - 0.3);
           }
         }
       }
@@ -1186,10 +1225,13 @@
       for (const m of this.marketing) { const d = Cat.marketing.find(x => x.id === m.id); if (d && d[key]) s += d[key]; }
       return s;
     }
+    /* what the open tracks offer to spectators: rating weighted by each discipline's appeal */
+    showRating() { return this.openTracks().reduce((a, t) => Math.max(a, t.stats ? t.stats.rating * Math.min(1.25, t.typeDef.crowd) : 0), 0); }
     ticketValue(event) {
       if (event && this.race) return this.race.def.ticket * 1.5;
-      const best = this.openTracks().reduce((a, t) => Math.max(a, t.stats ? t.stats.rating : 0), 0);
-      return (7 + this.rep / 80) * (0.75 + best / 20) * (1 + this.facilityScore() * 0.4);
+      const best = this.showRating();
+      const variety = Math.min(0.25, (new Set(this.openTracks().map(t => t.type)).size - 1) * 0.08);
+      return (7 + this.rep / 80) * (0.75 + best / 20) * (1 + this.facilityScore() * 0.4 + variety);
     }
     eventTicketPrice() { return this.race ? this.race.ticket : this.econ.prices.ticket; }
     parkingCapacity() { let n = 0; for (const b of this.buildings.values()) if (b.type === 'parking') n += b.slots.length; return n; }
@@ -1197,7 +1239,9 @@
       if (!this.count('entrance')) return 0;
       const open = this.openTracks();
       const riding = this.ridersOnTracks();
-      let attraction = open.length ? (0.3 + 0.7 * Math.min(1, riding / 6)) * (0.7 + 0.06 * open.reduce((a, t) => Math.max(a, t.stats ? t.stats.rating : 0), 0)) : 0.1;
+      const variety = new Set(open.map(t => t.type)).size;
+      let attraction = open.length ? (0.3 + 0.7 * Math.min(1, riding / 6)) * (0.7 + 0.06 * this.showRating()) * (1 + (variety - 1) * 0.12) : 0.1;
+      if (this.count('playground')) attraction *= 1.08;
       const m = this.date().month;
       const fair = 7 + this.rep / 80;
       const priceF = U.clamp(1.25 - 0.07 * (this.econ.prices.ticket - fair), 0.12, 1.4);
@@ -1209,18 +1253,26 @@
       if (present > C.MAX_VISITORS * 0.85) rate = 0;
       return rate;
     }
-    riderRate() {
+    /* arrival rate of riders of each discipline with an open track */
+    riderRates() {
       const open = this.openTracks();
-      if (!open.length) return 0;
+      const out = {};
+      if (!open.length) return out;
       const m = this.date().month;
-      const best = open.reduce((a, t) => Math.max(a, t.stats ? t.stats.rating : 0), 0);
-      const appeal = 0.6 + best / 15 + Math.min(0.6, (open.length - 1) * 0.3);
       const fair = 24 + this.rep / 35;
       const feeF = U.clamp(1.3 - 0.045 * (this.econ.prices.riderFee - fair), 0.15, 1.4);
-      let rate = 0.05 * (0.45 + this.rep / 260) * appeal * Cat.seasonVisitors[m] * (this.isWeekend() ? 1.5 : 0.9) * this.weatherDef().visitors * (1 + this.marketingBoost('riders')) * feeF;
-      if (this.flags.trainingDays > 0) rate *= 2.3;
-      return rate;
+      const base = 0.05 * (0.45 + this.rep / 260) * Cat.seasonVisitors[m] * (this.isWeekend() ? 1.5 : 0.9) * this.weatherDef().visitors * (1 + this.marketingBoost('riders')) * feeF * (this.flags.trainingDays > 0 ? 2.3 : 1);
+      for (const type of Cat.trackTypeOrder) {
+        const ts = open.filter(t => t.type === type);
+        if (!ts.length) continue;
+        const best = ts.reduce((a, t) => Math.max(a, t.stats ? t.stats.rating : 0), 0);
+        const appeal = 0.6 + best / 15 + Math.min(0.6, (ts.length - 1) * 0.3);
+        out[type] = base * appeal * Cat.trackTypes[type].demand * (type === 'kids' && this.schoolOpen() ? 1.3 : 1);
+      }
+      return out;
     }
+    riderRate() { const r = this.riderRates(); let s = 0; for (const k in r) s += r[k]; return s; }
+    riderFeeFor(disc) { return Math.round(this.econ.prices.riderFee * (Cat.trackTypes[disc] || Cat.trackTypes.mx).fee); }
     paddockCapacity() { return this.buildingsOf('paddock').length * Cat.buildings.paddock.capacity; }
     roadEnds() { const N = this.world.N, row = this.world.roadRow; return [row * N, row * N + N - 1]; }
     routeTo(goalTiles) {
@@ -1289,14 +1341,17 @@
       void N;
       return r || [];
     }
-    riderSkill(rng) {
+    riderSkill(rng, disc) {
       const rep = this.rep;
       const school = this.schoolOpen() ? 0.15 : 0;
       const mag = this.marketingBoost('experts');
       const w = [Math.max(0.08, 0.42 - rep / 3000 + school), 0.33, 0.18 + rep / 2500 + mag * 0.5, 0.05 + rep / 2200 + mag * 0.3];
       const k = rng.weighted([0, 1, 2, 3], (i) => w[i]);
       const ranges = [[12, 31], [32, 55], [56, 77], [78, 96]];
-      return rng.range(ranges[k][0], ranges[k][1]);
+      const td = Cat.trackTypes[disc] || Cat.trackTypes.mx;
+      /* squeeze the usual spread into the discipline's range (kids are kids, supercross is for the best) */
+      const v = rng.range(ranges[k][0], ranges[k][1]);
+      return td.skill[0] + (v - 12) / 84 * (td.skill[1] - td.skill[0]);
     }
     spawnRiderVan() {
       const pads = this.buildingsOf('paddock').filter(b => b.slots.some(s => !s.used) && this.doorTiles(b, 'road').length);
@@ -1304,26 +1359,32 @@
       const present = this.riders.filter(r => !r.race && !r.test).length;
       if (present >= this.paddockCapacity()) return false;
       const b = this.rng.pick(pads);
+      /* which discipline this van comes for */
+      const rates = this.riderRates();
+      const discs = Object.keys(rates);
+      if (!discs.length) return false;
+      const disc = this.rng.weighted(discs, (k) => rates[k]);
       const n = this.rng.chance(0.25) ? 3 : this.rng.chance(0.45) ? 2 : 1;
       const car = this.spawnCarTo(b, 'van', (g, van) => {
         for (let i = 0; i < n; i++) {
           let profile = null;
           if (g.passHolders.length && g.rng.chance(0.3)) {
-            const free = g.passHolders.filter(p => !g.riders.some(r => r.profileId === p.pid));
+            const free = g.passHolders.filter(p => (p.data.disc || 'mx') === disc && !g.riders.some(r => r.profileId === p.pid));
             if (free.length) profile = g.rng.pick(free);
           }
-          const sk = g.riderSkill(g.rng);
-          const r = new A.Rider(g, g.rng, { skill: sk, profile: profile ? profile.data : null, vanId: van.id, paddockId: b.id });
+          const sk = g.riderSkill(g.rng, disc);
+          const r = new A.Rider(g, g.rng, { skill: sk, profile: profile ? profile.data : null, vanId: van.id, paddockId: b.id, disc });
           if (profile) { r.profileId = profile.pid; r.passHolder = true; }
           r.x = van.x + Math.cos(van.yaw + Math.PI / 2) * 1.6 + i; r.z = van.z + Math.sin(van.yaw + Math.PI / 2) * 1.6;
           r.tx = Math.floor(r.x / T); r.tz = Math.floor(r.z / T);
           r.vanSlot = { x: r.x, z: r.z, yaw: van.yaw };
           /* fee */
           if (!r.passHolder) {
-            const val = { principiante: 24, amateur: 30, experto: 38, pro: 48 }[r.cat] * (0.75 + g.bestRating() / 20);
+            const fee = g.riderFeeFor(disc);
+            const val = { principiante: 24, amateur: 30, experto: 38, pro: 48 }[r.cat] * (0.75 + g.bestRating(disc) / 20) * Cat.trackTypes[disc].fee;
             r.feeOk = val;
-            if (g.econ.prices.riderFee > val * 1.25) { r.think(g, 'expensive_fee', true); g.stats.refusedFee++; r.goLeave(g); g.riders.push(r); continue; }
-            g.earn('tarifas', g.econ.prices.riderFee, r.x, r.z);
+            if (fee > val * 1.25) { r.think(g, 'expensive_fee', true); g.stats.refusedFee++; r.goLeave(g); g.riders.push(r); continue; }
+            g.earn('tarifas', fee, r.x, r.z);
           }
           g.stats.ridersToday++; g.totals.riders++;
           g.riders.push(r);
@@ -1332,7 +1393,30 @@
       });
       return !!car;
     }
-    bestRating() { return this.openTracks().reduce((a, t) => Math.max(a, t.stats ? t.stats.rating : 0), 0); }
+    bestRating(disc) { return this.openTracks().reduce((a, t) => (!disc || t.type === disc) ? Math.max(a, t.stats ? t.stats.rating : 0) : a, 0); }
+    /* people without a bike who rent one at the rental shop and try an easy track */
+    spawnRentalRider() {
+      const shops = this.buildingsOf('rental');
+      if (!shops.length) return false;
+      const easy = this.openTracks().filter(t => (t.type === 'kids' || t.type === 'mx') && t.entry && (!t.stats || t.stats.diff <= 4.5));
+      if (!easy.length) return false;
+      const disc = easy.some(t => t.type === 'kids') && this.rng.chance(0.6) ? 'kids' : easy.some(t => t.type === 'mx') ? 'mx' : 'kids';
+      const b = this.rng.pick(shops);
+      const busy = this.riders.filter(r => r.rental === b.id).length;
+      if (busy >= Cat.buildings.rental.capacity) return false;
+      const d = this.doorWorldPos(b);
+      /* the rental fleet is all one make, in the house green */
+      const r = new A.Rider(this, this.rng, { skill: this.rng.range(4, disc === 'kids' ? 20 : 26), disc, paddockId: null, brand: 'kawara' });
+      r.rental = b.id;
+      r.x = d.x; r.z = d.z; r.tx = d.tx; r.tz = d.tz;
+      r.vanSlot = { x: d.x, z: d.z, yaw: b.frontYaw || 0 };
+      r.passHolder = true; r.maxSessions = 1;
+      this.sale(b, 'alquiler', Cat.buildings.rental.price, 0.2);
+      r.think(this, 'rental_ok');
+      this.stats.ridersToday++; this.totals.riders++;
+      this.riders.push(r);
+      return true;
+    }
     paddockPos(r) {
       if (r.vanSlot) return { x: r.vanSlot.x, z: r.vanSlot.z, tx: Math.floor(r.vanSlot.x / T), tz: Math.floor(r.vanSlot.z / T), yaw: r.vanSlot.yaw };
       const b = this.buildingsOf('paddock')[0];
@@ -1343,8 +1427,8 @@
       if (r.test || r.race) return;
       const sat = r.satisfaction();
       this.satR.push(sat); if (this.satR.length > 50) this.satR.shift();
-      if (!r.passHolder && sat > 70 && this.rng.chance(0.16 * (1 + this.marketingBoost('passes') * 2))) {
-        const val = { principiante: 24, amateur: 30, experto: 38, pro: 48 }[r.cat] * 3.4;
+      if (!r.passHolder && !r.rental && sat > 70 && this.rng.chance(0.16 * (1 + this.marketingBoost('passes') * 2))) {
+        const val = { principiante: 24, amateur: 30, experto: 38, pro: 48 }[r.cat] * 3.4 * Math.max(1, (Cat.trackTypes[r.disc] || Cat.trackTypes.mx).fee);
         if (this.econ.prices.pass <= val) {
           r.passHolder = true;
           const pid = U.rng.int(1, 1e9);
@@ -1362,8 +1446,9 @@
     /* ---------------- reputation ---------------- */
     facilityScore() {
       const has = (t) => this.count(t) > 0 ? 1 : 0;
-      const s = has('toilets') + has('foodtruck') * 0.7 + has('restaurant') * 0.5 + has('shop') * 0.5 + has('showers') + has('workshop')
-        + has('medical') + Math.min(1, this.seatsTotal() / 72) + has('parking') + has('entrance') + has('boxes') * 0.5 + has('school') * 0.5;
+      const s = has('toilets') + has('foodtruck') * 0.7 + Math.max(has('restaurant'), has('restaurant_big')) * 0.5 + Math.max(has('shop'), has('megastore')) * 0.5 + has('showers') + has('workshop')
+        + has('medical') + Math.min(1, this.seatsTotal() / 72) + has('parking') + has('entrance') + has('boxes') * 0.5 + has('school') * 0.5
+        + (has('restaurant_big') + has('megastore') + has('playground') + has('parts') + has('wash') + has('rental')) * 0.2;
       return U.clamp(s / 9, 0, 1);
     }
     updateReputation() {
@@ -1419,6 +1504,10 @@
       if (this.riders.length < C.MAX_RIDERS && this.paddockCapacity()) {
         this.spawnAccR += this.riderRate() * dt;
         while (this.spawnAccR >= 1) { this.spawnAccR -= 1; this.spawnRiderVan(); }
+      }
+      if (this.riders.length < C.MAX_RIDERS && this.count('rental')) {
+        this.spawnAccRent = (this.spawnAccRent || 0) + this.visitorRate() * 0.12 * dt;
+        while (this.spawnAccRent >= 1) { this.spawnAccRent -= 1; this.spawnRentalRider(); }
       }
       if (this.comp) this.comp.update(dt);
       /* traffic per track */

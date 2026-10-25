@@ -13,6 +13,8 @@
       this.yawIndex = 0; this.yaw = Math.PI / 4; this.pitch = Math.PI / 6;
       this.zoom = 8; this.targetZoom = 8;
       this.minZoom = 2.2; this.maxZoom = 36;
+      /* zoom counts half CSS pixels per metre whatever the pixel size: finer pixels show more detail, not more map */
+      this.zoomMul = 1;
       this.view = M4.create(); this.proj = M4.create(); this.viewProj = M4.create(); this.inv = M4.create();
       this.w = 640; this.h = 360;
       this.dist = 600;
@@ -45,7 +47,8 @@
       const ux = ry * fz - rz * fy, uy = rz * fx - rx * fz, uz = rx * fy - ry * fx;
       this.right = [rx, ry, rz]; this.up = [ux, uy, uz]; this.fwd = [fx, fy, fz];
       /* pixel snap the target so static geometry never shimmers while panning */
-      const px = 1 / this.zoom;
+      const zr = this.zoom * this.zoomMul;
+      const px = 1 / zr;
       let tx = this.tx, ty = this.ty, tz = this.tz;
       if (this.shake > 0) { tx += (Math.random() - 0.5) * this.shake; tz += (Math.random() - 0.5) * this.shake; }
       const tr = tx * rx + ty * ry + tz * rz, tu = tx * ux + ty * uy + tz * uz;
@@ -54,7 +57,7 @@
       this.stx = tx; this.sty = ty; this.stz = tz;
       const ex = tx + d[0] * this.dist, ey = ty + d[1] * this.dist, ez = tz + d[2] * this.dist;
       M4.lookAt(this.view, ex, ey, ez, tx, ty, tz, 0, 1, 0);
-      const hw = this.w / 2 / this.zoom, hh = this.h / 2 / this.zoom;
+      const hw = this.w / 2 / zr, hh = this.h / 2 / zr;
       M4.ortho(this.proj, -hw, hw, -hh, hh, 1, 1500);
       M4.mul(this.viewProj, this.proj, this.view);
       M4.invert(this.inv, this.viewProj);
@@ -220,6 +223,7 @@
       this.canvas.style.height = (h * ps / dpr) + 'px';
       this.cssScale = ps / dpr; // css px per render px
       this.cam.w = w; this.cam.h = h;
+      this.cam.zoomMul = 2 / this.cssScale;
       if (this.gl) this.mainTarget = GLU.makeTarget(this.gl, w, h, true, this.mainTarget);
     }
     cssToRender(x, y) { return [x / this.cssScale, y / this.cssScale]; }
@@ -231,7 +235,7 @@
       this.versions = {};
       for (const c of this.chunks) if (c) this._freeMesh(c);
       this.chunks = [];
-      for (const [, m] of this.trackMeshes) { this._freeMesh(m.main); if (m.gate) this._freeMesh(m.gate); }
+      for (const [, m] of this.trackMeshes) { this._freeMesh(m.main); if (m.gate) this._freeMesh(m.gate); if (m.decor) this._freeMesh(m.decor); }
       this.trackMeshes.clear();
       for (const [, m] of this.bldChunks) this._freeMesh(m);
       this.bldChunks.clear();
@@ -336,15 +340,23 @@
         let tm = this.trackMeshes.get(tr.id);
         const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0);
         if (!tm || tm.key !== key || tr._meshVer === -1) {
-          if (!tm) { tm = { main: null, gate: null }; this.trackMeshes.set(tr.id, tm); }
-          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr });
+          if (!tm) { tm = { main: null, gate: null, decor: null, decorKey: null }; this.trackMeshes.set(tr.id, tm); }
+          const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false });
           if (g) tm.main = GLU.makeMeshVAO(gl, g.data, g.count, tm.main); else if (tm.main) tm.main.count = 0;
           const gg = MX.Geom.startGate(tr, world, tr.gateDown);
           if (gg) tm.gate = GLU.makeMeshVAO(gl, gg.data, gg.count, tm.gate); else if (tm.gate) tm.gate.count = 0;
+          /* stakes, walls and obstacles only change with the layout, not with wear or rain */
+          if (tr._meshVer === -1) tm.decorGen = (tm.decorGen || 0) + 1;
+          const dk = tr.ver + ':' + tr.type + ':' + (tm.decorGen || 0);
+          if (tm.decorKey !== dk) {
+            const d = MX.Geom.trackDecor(tr, world);
+            if (d && d.count) tm.decor = GLU.makeMeshVAO(gl, d.data, d.count, tm.decor); else if (tm.decor) tm.decor.count = 0;
+            tm.decorKey = dk;
+          }
           tm.key = key; tr._meshVer = tr.ver;
         }
       }
-      for (const [id, tm] of this.trackMeshes) if (!live.has(id)) { this._freeMesh(tm.main); this._freeMesh(tm.gate); this.trackMeshes.delete(id); }
+      for (const [id, tm] of this.trackMeshes) if (!live.has(id)) { this._freeMesh(tm.main); this._freeMesh(tm.gate); if (tm.decor) this._freeMesh(tm.decor); this.trackMeshes.delete(id); }
       /* buildings */
       if (V.bld !== game.bldVer && MX.BuildModels) {
         const CH = MX.Geom.CH;
@@ -539,7 +551,7 @@
       for (const m of this.chunks) if (m) list.push(['terrain', m]);
       if (this.skirtMesh) list.push(['terrain', this.skirtMesh]);
       if (this.pathMesh) list.push(['mesh', this.pathMesh]);
-      for (const [, tm] of this.trackMeshes) { if (tm.main) list.push(['mesh', tm.main]); if (tm.gate) list.push(['mesh', tm.gate]); }
+      for (const [, tm] of this.trackMeshes) { if (tm.main) list.push(['mesh', tm.main]); if (tm.gate) list.push(['mesh', tm.gate]); if (tm.decor) list.push(['mesh', tm.decor]); }
       for (const [, m] of this.bldChunks) list.push(['mesh', m]);
       if (this.decorMesh) list.push(['mesh', this.decorMesh]);
       return list;
@@ -713,13 +725,14 @@
       }
       return t0;
     }
-    /* Render a small thumbnail of a mesh (used for build menu icons). */
-    thumbnail(data, count, size, center, radius) {
+    /* Render a small thumbnail of a mesh (build menu icons, a rider on their bike);
+       dir: direction from the target to the camera, isometric by default. */
+    thumbnail(data, count, size, center, radius, dir) {
       const gl = this.gl;
       const tgt = GLU.makeTarget(gl, size, size, true);
       const mesh = GLU.makeMeshVAO(gl, data, count);
       const view = M4.create(), proj = M4.create(), vp = M4.create();
-      const d = [0.612, 0.5, 0.612];
+      const d = dir || [0.612, 0.5, 0.612];
       M4.lookAt(view, center[0] + d[0] * 100, center[1] + d[1] * 100, center[2] + d[2] * 100, center[0], center[1], center[2], 0, 1, 0);
       M4.ortho(proj, -radius, radius, -radius, radius, 1, 300);
       M4.mul(vp, proj, view);
