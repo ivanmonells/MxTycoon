@@ -664,6 +664,14 @@
       this.chute = c;
       c.joinU = null;
       c.joinU = this.chuteJoinU();
+      /* where the strip of ground between the two narrows below 2 m it is filled with dirt
+         up to the circuit (a narrow ditch between two embankments looks like a hole) */
+      c.fillS = c.mergeAt; c.fillU = F.uM;
+      for (let j = c.sIndex(c.gateS); j < CS.n; j++) {
+        const hdg = CS.hdg[j], dv = Math.abs(-Math.sin(hdg) * F.nx + Math.cos(hdg) * F.nz);
+        const vIn = this.chuteV(CS.x[j], CS.z[j]) - CS.w[j] * 0.5 * dv;
+        if (vIn - F.w0 / 2 < 2) { c.fillS = j * DS; c.fillU = this.chuteU(CS.x[j], CS.z[j]); break; }
+      }
     }
     /* lateral position (v) of a world point in the start straight's frame */
     chuteV(x, z) { const F = this.chute && this.chute.frame; return F ? (x - F.ox) * F.nx + (z - F.oz) * F.nz : 0; }
@@ -704,12 +712,15 @@
       const S = this.S, s = i * DS;
       if (this.isChute) {
         if (Math.abs(s - this.gateS) < 1.2 || s > this.mergeAt) return true;
-        /* the inner edge stops where it runs into the circuit */
+        /* the inner edge stops where the ground up to the circuit is filled */
         const hdg = S.hdg[i], hw = S.w[i] * 0.5, P = this.parent;
         const v = P.chuteV(S.x[i] - Math.sin(hdg) * hw * side, S.z[i] + Math.cos(hdg) * hw * side);
-        return v < P.chuteV(S.x[i], S.z[i]) && v < this.frame.w0 / 2 + 1;
+        return v < P.chuteV(S.x[i], S.z[i]) && (s >= this.fillS - 0.5 || v < this.frame.w0 / 2 + 1);
       }
-      if (this.chute) return side === this.chuteSide && s > this.chute.joinU - 1.5 && s < this.chute.frame.uM - 0.5;
+      if (this.chute) {
+        const u = S.closed && s > S.L / 2 ? s - S.L : s;
+        return side === this.chuteSide && u > this.chute.fillU - 1.5 && u < this.chute.frame.uM - 0.5;
+      }
       return S.feat[i] >= 0 && Cat.features[this.features[S.feat[i]].type].kind === 'start';
     }
 

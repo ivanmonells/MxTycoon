@@ -68,9 +68,10 @@
     const mb = new MB((S.n + (c ? c.S.n : 0)) * 40);
     /* crossings with itself and the other circuits: bridges over, tunnels under */
     const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
-    surface(mb, tr, world, opts, null, xs.length ? crossingMarks(tr, xs) : null);
+    const vg = c ? vergeOf(tr) : null;
+    surface(mb, tr, world, opts, null, xs.length ? crossingMarks(tr, xs) : null, vg);
     /* the wide start straight, tucked just under the circuit where the two overlap */
-    if (c) surface(mb, c, world, opts, tr, null);
+    if (c) { surface(mb, c, world, opts, tr, null, vg); verge(mb, tr, world, vg); }
     for (const x of xs) if (x.L === tr) tunnel(mb, x, world);
     if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
@@ -123,26 +124,90 @@
       }
     }
   }
-  function surface(mb, tr, world, opts, parent, marks) {
+  /* The ground between a start straight and the circuit running beside it: a grass verge
+     from one edge to the other while they are within a few metres (two embankments
+     dropping into a narrow ditch read as a dark hole), closing to a point where they meet.
+     pts[i]: {e, m} for start straight sample i (its inner edge and the circuit's edge),
+     inner[i]: the lane side of that edge; skip[i]: no slope on that side; u0..u1: where the
+     circuit's own slope on that side is left out. */
+  function vergeOf(tr) {
+    const c = tr.chute, S = c.S, M = tr.S, F = c.frame, side = tr.chuteSide, n = S.n;
+    const wIn = F.w0 * 0.5, pts = new Array(n).fill(null), inner = new Int8Array(n), skip = new Uint8Array(n);
+    let u0 = Infinity, first = -1;
+    for (let i = 0; i < n; i++) {
+      const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), hw = S.w[i] * 0.5;
+      inner[i] = nx * F.nx + nz * F.nz > 0 ? -1 : 1;
+      const ex = S.x[i] + nx * hw * inner[i], ez = S.z[i] + nz * hw * inner[i];
+      const u = tr.chuteU(ex, ez), v = tr.chuteV(ex, ez);
+      /* past the point where it reaches the circuit its edge lies under it */
+      if (v - wIn < 0.05) { if (first >= 0) for (let k = i; k < n; k++) skip[k] = 1; break; }
+      const mi = tr.sIndex(u < 0 ? M.L + u : u), mh = M.hdg[mi], mw = M.w[mi] * 0.5;
+      const m = [M.x[mi] - Math.sin(mh) * mw * side, M.y[mi], M.z[mi] + Math.cos(mh) * mw * side];
+      /* only beside the circuit's straight first piece, not where it bends away */
+      if (v - wIn > 7 || Math.abs(tr.chuteV(m[0], m[2]) - wIn) > 0.8) continue;
+      pts[i] = { e: [ex, S.y[i] + c.bankAt(i, hw * inner[i]), ez], m };
+      skip[i] = 1;
+      if (first < 0) first = i;
+      u0 = Math.min(u0, u);
+    }
+    return { pts, inner, skip, u0, u1: F.uM - 0.5 };
+  }
+  /* a quad facing up whichever way round its corners come */
+  function upQuad(mb, a, b, c, d, mat, col) {
+    const uv = (p) => [p[0] / 16, p[2] / 16];
+    const ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+    if (ny >= 0) mb.quad4(a, b, c, d, uv(a), uv(b), uv(c), uv(d), mat, col);
+    else mb.quad4(a, d, c, b, uv(a), uv(d), uv(c), uv(b), mat, col);
+  }
+  function verge(mb, tr, world, vg) {
+    const P = vg.pts, n = P.length, step = 2, grass = L().grass, em = L().embank;
+    const col = [0.94, 0.97, 0.9, 1], ec = [0.9, 0.88, 0.86, 1];
+    const foot = (p) => [p[0], Math.min(p[1], world.heightAt(p[0], p[2])) - 0.12, p[2]];
+    let prev = -1;
+    for (let k = 0; k < n; k += step) {
+      const q = P[k];
+      if (q && prev >= 0 && P[prev]) upQuad(mb, P[prev].e, P[prev].m, q.m, q.e, grass, col);
+      /* where it begins or breaks off, close its end down to the ground */
+      if (q && (prev < 0 || !P[prev]) || (!q && prev >= 0 && P[prev] && !vg.skip[k])) {
+        const r = q || P[prev], a = r.e, b = r.m;
+        const quad = [a, b, foot(b), foot(a)];
+        mb.quad4(quad[0], quad[1], quad[2], quad[3], [0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], em, ec);
+        mb.quad4(quad[1], quad[0], quad[3], quad[2], [0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], em, ec);
+      }
+      prev = k;
+    }
+  }
+  function surface(mb, tr, world, opts, parent, marks, vg) {
     const S = tr.S;
     const step = 2;
     const n = S.n;
     const lastI = parent ? Math.min(n - 1, tr.sIndex(tr.mergeAt) + step) : S.closed ? n : n - 1;
+    /* steps along the path ending exactly on its last sample (a loop back on its first one) */
+    const ks = [];
+    for (let k = step; k < lastI; k += step) ks.push(k);
+    ks.push(lastI);
     /* the start straight is wide and ramps down to the circuit: finer across */
     const lanes = parent ? [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1] : [-1, -0.5, 0, 0.5, 1];
     const last = lanes.length - 1;
-    const w0 = parent ? tr.frame.w0 * 0.5 + 0.5 : 0;
+    const wIn = parent ? tr.frame.w0 * 0.5 : 0;
     const cross = (i) => {
       const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg);
       const hw = S.w[i] * 0.5;
-      const pts = lanes.map((f) => {
-        const l = f * hw;
+      const ls = lanes.map(f => f * hw);
+      const pts = ls.map((l) => {
         const p = [S.x[i] + nx * l, S.y[i] + tr.bankAt(i, l), S.z[i] + nz * l];
         /* just under the circuit where it lies on it */
-        if (parent && parent.chuteV(p[0], p[2]) < w0) p[1] -= 0.06;
+        if (parent && parent.chuteV(p[0], p[2]) < wIn) p[1] -= 0.06;
         return p;
       });
-      return { pts, nx, nz, hw, i };
+      return { pts, ls, nx, nz, hw, i };
+    };
+    /* the slopes on either side of the verge between a start straight and its circuit */
+    const vergeSide = (i, side) => {
+      if (!vg) return false;
+      if (parent) return vg.skip[i] && vg.inner[i] === side;
+      const s = i * C.TRACK_DS, u = S.closed && s > S.L / 2 ? s - S.L : s;
+      return side === tr.chuteSide && u >= vg.u0 - 0.5 && u <= vg.u1;
     };
     const tint = (i) => {
       let c = [1, 1, 1, 1];
@@ -153,23 +218,40 @@
       if (opts.highlight) c = [c[0] * 1.08, c[1] * 1.06, c[2] * 0.96, 1];
       return c;
     };
-    let prev = cross(0);
-    for (let k = step; k <= lastI; k += step) {
-      const i = S.closed ? k % n : Math.min(k, n - 1);
-      const cur = cross(i);
+    /* cross-sections first, then a normal at each point from its neighbours along and across,
+       so curved and twisted stretches (berms, ramps) shade smoothly instead of in facets */
+    const rows = [cross(0)];
+    for (const k of ks) { const r = cross(S.closed ? k % n : Math.min(k, n - 1)); r.k = k; rows.push(r); }
+    rows[0].k = 0;
+    const R = rows.length;
+    for (let j = 0; j < R; j++) {
+      const pa = rows[j > 0 ? j - 1 : S.closed ? R - 2 : 0].pts, pb = rows[j < R - 1 ? j + 1 : S.closed ? 1 : j].pts, r = rows[j].pts;
+      rows[j].nrm = r.map((p, q) => {
+        const qa = r[Math.max(0, q - 1)], qb = r[Math.min(last, q + 1)];
+        const ax = pb[q][0] - pa[q][0], ay = pb[q][1] - pa[q][1], az = pb[q][2] - pa[q][2];
+        const bx = qb[0] - qa[0], by = qb[1] - qa[1], bz = qb[2] - qa[2];
+        let x = by * az - bz * ay, y = bz * ax - bx * az, z = bx * ay - by * ax;
+        if (y < 0) { x = -x; y = -y; z = -z; }
+        const l = Math.hypot(x, y, z) || 1;
+        return [x / l, y / l, z / l];
+      });
+    }
+    for (let j = 1; j < R; j++) {
+      const prev = rows[j - 1], cur = rows[j], i = cur.i, k = cur.k;
       const mat = L()[TRACK_LAYER[S.surf[i]]];
       const col = tint(i);
-      const v0 = (k - step) * C.TRACK_DS / 16, v1 = k * C.TRACK_DS / 16;
+      const v0 = prev.k * C.TRACK_DS / 16, v1 = k * C.TRACK_DS / 16;
       for (let q = 0; q < last; q++) {
         const a = prev.pts[q], b = prev.pts[q + 1], c = cur.pts[q + 1], d = cur.pts[q];
-        const u0 = (lanes[q] + 1) * prev.hw / 16, u1 = (lanes[q + 1] + 1) * prev.hw / 16;
-        /* order chosen so the normal points up for a track heading +X with left normal +Z */
-        mb.quad4(a, b, c, d, [u0, v0], [u1, v0], [u1, v1], [u0, v1], mat, col);
+        const u0 = (prev.ls[q] + prev.hw) / 16, u1 = (prev.ls[q + 1] + prev.hw) / 16;
+        /* order chosen so the face points up for a track heading +X with left normal +Z */
+        mb.quadN(a, b, c, d, prev.nrm[q], prev.nrm[q + 1], cur.nrm[q + 1], cur.nrm[q], [u0, v0], [u1, v0], [u1, v1], [u0, v1], mat, col);
       }
       /* embankments on both sides */
       for (const side of [-1, 1]) {
         const ea = side < 0 ? prev.pts[0] : prev.pts[last];
         const eb = side < 0 ? cur.pts[0] : cur.pts[last];
+        if (vergeSide(prev.i, side) && vergeSide(cur.i, side)) continue;
         if (marks) {
           const wa = marks.wall[prev.i], wb = marks.wall[cur.i];
           /* a bridge: concrete walls instead of slopes, open where the path below passes */
@@ -208,7 +290,6 @@
           mb.quad4(A.r, B.r, B.o, A.o, [0.03, v0], [0.03, v1], [0.2, v1], [0.2, v0], em, ec);
         }
       }
-      prev = cur;
     }
   }
 

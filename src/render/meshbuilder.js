@@ -111,6 +111,22 @@
       this._v(A, n, ua[0], ua[1], mat, col); this._v(Cc, n, uc[0], uc[1], mat, col); this._v(D, n, ud[0], ud[1], mat, col);
     }
     /* Quad with explicit per-corner uvs (for terrain-like surfaces). */
+    /* Quad with its own normal at each corner (smooth shading across curved surfaces). */
+    quadN(a, b, c, d, na, nb, nc, nd, uva, uvb, uvc, uvd, mat, col) {
+      this.ensure(6);
+      const t = this.t;
+      const A = this.xf(a), B = this.xf(b), Cc = this.xf(c), D = this.xf(d);
+      const N = (n) => {
+        const x = t[0] * n[0] + t[3] * n[1] + t[6] * n[2], y = t[1] * n[0] + t[4] * n[1] + t[7] * n[2], z = t[2] * n[0] + t[5] * n[1] + t[8] * n[2];
+        const l = Math.hypot(x, y, z) || 1;
+        return [x / l, y / l, z / l];
+      };
+      const NA = N(na), NB = N(nb), NC = N(nc), ND = N(nd);
+      col = col || this.col;
+      mat = mat == null ? MAT_SOLID : mat;
+      this._v(A, NA, uva[0], uva[1], mat, col); this._v(B, NB, uvb[0], uvb[1], mat, col); this._v(Cc, NC, uvc[0], uvc[1], mat, col);
+      this._v(A, NA, uva[0], uva[1], mat, col); this._v(Cc, NC, uvc[0], uvc[1], mat, col); this._v(D, ND, uvd[0], uvd[1], mat, col);
+    }
     quad4(a, b, c, d, uva, uvb, uvc, uvd, mat, col) {
       this.ensure(6);
       const A = this.xf(a), B = this.xf(b), Cc = this.xf(c), D = this.xf(d);
