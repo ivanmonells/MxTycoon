@@ -451,15 +451,15 @@
       mb.pop();
       for (const part of ['mx_kronos_4t', 'rb_stand']) bakeModel(mb, part, x, y + 1.4, z, o.rot || 0, null, 1.25, [222, 182, 66]);
       return;
-    }
+    } else if (MX.DecorModels && MX.DecorModels.has(t)) MX.DecorModels.build(mb, o);
     mb.pop();
     void game;
   }
-  function decorPreview(type) {
+  function decorPreview(type, rot) {
     const mb = new MB(2048);
-    const o = { type, rot: 0, v: 0, id: 1, sponsor: null };
+    const o = { type, rot: rot || 0, v: 0, id: 1, sponsor: null };
     if (MX.Models.lib[type]) {
-      bakeModel(mb, type, 0, 0, 0, 0.6, [[120, 190, 100], [255, 255, 255], [255, 255, 255], [255, 255, 255]]);
+      bakeModel(mb, type, 0, 0, 0, 0.6 + (rot || 0), [[120, 190, 100], [255, 255, 255], [255, 255, 255], [255, 255, 255]]);
     } else decor(mb, o, 0, 0, 0, null);
     return mb.build();
   }

@@ -152,9 +152,55 @@
     haybales: { name: 'Balas de paja', cost: 300, safety: 1, desc: 'Protección junto a saltos y curvas. Mejora la seguridad.' },
     tires: { name: 'Muro de neumáticos', cost: 400, safety: 1.2, desc: 'Barrera de neumáticos. Mejora la seguridad.' },
     safetyfence: { name: 'Valla de seguridad', cost: 350, safety: 0.9, desc: 'Separa al público de la pista. Mejora la seguridad.' },
-    statue: { name: 'Estatua del campeón', cost: 8000, scenery: 3, desc: 'Homenaje a los grandes. Gusta mucho al público.' },
-    arch: { name: 'Arco hinchable', cost: 1500, scenery: 1.2, banner: true, desc: 'Arco de patrocinador para ambientar.' }
+    statue: { name: 'Estatua del campeón', cost: 8000, scenery: 3, h: 5, desc: 'Homenaje a los grandes. Gusta mucho al público.' },
+    arch: { name: 'Arco hinchable', cost: 1500, scenery: 1.2, banner: true, h: 5, desc: 'Arco de patrocinador para ambientar.' },
+    /* themed packs (decorThemes): a few of one theme together make a themed zone */
+    mm_wreck: { theme: 'madmax', name: 'Coche desguazado', cost: 900, scenery: 0.8, h: 2, desc: 'Chatarra oxidada con pinchos en el capó.' },
+    mm_barrels: { theme: 'madmax', name: 'Bidones en llamas', cost: 600, scenery: 0.7, h: 2.2, desc: 'Fuego para los fríos del páramo.' },
+    mm_spikes: { theme: 'madmax', name: 'Barricada de pinchos', cost: 500, scenery: 0.5, h: 1.8, desc: 'Que nadie se acerque a tu chatarra.' },
+    mm_tower: { theme: 'madmax', name: 'Torre vigía de chatarra', cost: 1800, scenery: 1.3, h: 6, desc: 'Chapas, cadenas y una bandera hecha jirones.' },
+    mm_skull: { theme: 'madmax', name: 'Tótem de calavera', cost: 700, scenery: 0.8, h: 3.6, desc: 'Calavera con cuernos sobre un poste.' },
+    mm_rig: { theme: 'madmax', name: 'Camión de guerra', cost: 2500, scenery: 1.6, h: 3.4, desc: 'Cabina blindada con rejilla de pinchos y escapes al cielo.' },
+    ds_saguaro: { theme: 'desert', loose: true, name: 'Cactus saguaro', cost: 250, scenery: 0.5, h: 4, desc: 'El cactus gigante de las películas del oeste.' },
+    ds_pear: { theme: 'desert', loose: true, name: 'Chumberas', cost: 180, scenery: 0.4, h: 1.6, desc: 'Palas verdes con higos chumbos.' },
+    ds_arch: { theme: 'desert', name: 'Arco de roca', cost: 1500, scenery: 1.4, h: 3.6, desc: 'Arenisca tallada por el viento.' },
+    ds_skull: { theme: 'desert', loose: true, name: 'Calavera de vaca', cost: 200, scenery: 0.4, h: 1, desc: 'Un recuerdo del último que se perdió.' },
+    ds_windpump: { theme: 'desert', name: 'Molino de agua', cost: 1200, scenery: 1.0, h: 6.5, desc: 'Molino de aspas sobre su depósito.' },
+    ds_tumble: { theme: 'desert', loose: true, name: 'Planta rodadora', cost: 100, scenery: 0.2, h: 1.2, desc: 'Rueda con el viento.' },
+    sf_palm: { theme: 'surf', loose: true, name: 'Palmera', cost: 400, scenery: 0.8, h: 6, desc: 'Con cocos y todo.' },
+    sf_boards: { theme: 'surf', name: 'Tablas de surf', cost: 500, scenery: 0.6, h: 2.4, desc: 'Un soporte con tablas de colores.' },
+    sf_umbrella: { theme: 'surf', name: 'Sombrilla y hamacas', cost: 450, scenery: 0.6, h: 2.6, desc: 'Para ver las motos a la sombra.' },
+    sf_lifeguard: { theme: 'surf', name: 'Torre de socorrista', cost: 1600, scenery: 1.2, h: 4.6, desc: 'Caseta en alto con bandera roja.' },
+    sf_tiki: { theme: 'surf', name: 'Chiringuito tiki', cost: 2200, scenery: 1.4, h: 3.6, desc: 'Barra de bambú con techo de paja.' },
+    sf_van: { theme: 'surf', name: 'Furgoneta surfera', cost: 1800, scenery: 1.1, h: 2.8, desc: 'Con las tablas en el techo.' },
+    fm_barn: { theme: 'farm', name: 'Granero', cost: 3000, scenery: 1.5, h: 4.4, desc: 'Rojo, con su pajar y su portón.' },
+    fm_bales: { theme: 'farm', loose: true, name: 'Pacas redondas', cost: 300, scenery: 0.4, h: 2, desc: 'Paja recién recogida.' },
+    fm_tractor: { theme: 'farm', name: 'Tractor antiguo', cost: 1500, scenery: 1.0, h: 2.6, desc: 'Un clásico que aún arranca.' },
+    fm_scarecrow: { theme: 'farm', loose: true, name: 'Espantapájaros', cost: 250, scenery: 0.5, h: 2.4, desc: 'Vigila los campos con su sombrero.' },
+    fm_cow: { theme: 'farm', loose: true, name: 'Vaca', cost: 600, scenery: 0.7, h: 1.8, desc: 'Mira las motos con mucha calma.' },
+    fm_silo: { theme: 'farm', name: 'Silo', cost: 2000, scenery: 1.2, h: 7.5, desc: 'Torre de grano galvanizada.' },
+    mx_flags: { theme: 'mxgp', name: 'Banderas de las naciones', cost: 900, scenery: 0.9, h: 5, desc: 'Las banderas de los equipos del mundial.' },
+    mx_gantry: { theme: 'mxgp', name: 'Pórtico del Mundial', cost: 3500, scenery: 1.8, h: 5.4, desc: 'Estructura de luces y pantalla para la gran cita.' },
+    mx_trophy: { theme: 'mxgp', name: 'Trofeo gigante', cost: 4000, scenery: 2.2, h: 4.4, desc: 'Copa dorada de las naciones.' },
+    mx_teamtruck: { theme: 'mxgp', name: 'Camión de equipo oficial', cost: 5000, scenery: 1.6, h: 3.4, desc: 'Hospitalidad de un equipo de fábrica.' },
+    mx_camera: { theme: 'mxgp', name: 'Torre de televisión', cost: 2500, scenery: 1.2, h: 5, desc: 'Cámara y operador para la retransmisión.' },
+    mx_inflatable: { theme: 'mxgp', name: 'Moto hinchable gigante', cost: 3000, scenery: 1.8, h: 3.6, desc: 'Una moto de cross de casi cuatro metros.' },
+    fs_stage: { theme: 'festival', name: 'Escenario de conciertos', cost: 6000, scenery: 2.2, h: 4.6, desc: 'Música en directo entre carrera y carrera.' },
+    fs_lights: { theme: 'festival', name: 'Guirnalda de luces', cost: 400, scenery: 0.6, h: 3.6, desc: 'Bombillas de colores entre dos postes.' },
+    fs_balloons: { theme: 'festival', loose: true, name: 'Racimo de globos', cost: 200, scenery: 0.4, h: 3.4, desc: 'Globos de colores para la fiesta.' },
+    fs_ferris: { theme: 'festival', name: 'Noria', cost: 8000, scenery: 2.8, h: 5, desc: 'Pequeña noria con vistas al circuito.' },
+    fs_tent: { theme: 'festival', name: 'Carpa de feria', cost: 1200, scenery: 1.0, h: 4.2, desc: 'Carpa de rayas con banderín.' }
   };
+  /* the packs of the decoration window, in order */
+  const decorThemes = [
+    { id: 'basic', name: 'Básicos', desc: 'Naturaleza, seguridad y patrocinio.' },
+    { id: 'madmax', name: 'Mad Max', desc: 'Un páramo postapocalíptico: chatarra, fuego y pinchos. Luce más sobre tierra o hierba seca (Terreno > Pintar suelo).' },
+    { id: 'desert', name: 'Desierto', desc: 'Cactus, rocas y molinos del oeste. Pinta el suelo de arena en Terreno para completar el paisaje.' },
+    { id: 'surf', name: 'Surf', desc: 'Playa, palmeras y chiringuito. Con arena alrededor y junto a un estanque parece la costa.' },
+    { id: 'farm', name: 'Granja', desc: 'Granero, tractor y animales, ideal para un circuito de campo entre árboles.' },
+    { id: 'mxgp', name: 'Mundial MX', desc: 'Ambiente de gran premio y de motocross de las naciones. Junto a la recta de meta y las gradas luce más.' },
+    { id: 'festival', name: 'Festival', desc: 'Música, luces y atracciones para los caminos con más público.' }
+  ];
 
   const paths = {
     1: { id: 'path_gravel', name: 'Camino de grava', cost: 25, comfort: 0 },
@@ -552,11 +598,17 @@
     rental_ok: { t: ['¡Mi primera vez en una moto de cross!', 'Alquilar ha sido una gran idea'], mood: 2 },
     kids_fun: { t: ['¡Los columpios molan!', 'Mamá, ¿podemos volver mañana?'], mood: 2 },
     big_meal: { t: ['Qué bien se come aquí', 'La terraza tiene unas vistas geniales'], mood: 2 },
-    trees: { t: ['Rodar entre árboles es lo mejor', 'Qué especial más bonita'], mood: 2 }
+    trees: { t: ['Rodar entre árboles es lo mejor', 'Qué especial más bonita'], mood: 2 },
+    theme_madmax: { t: ['¡Qué ambiente Mad Max!', 'Parece el fin del mundo... ¡y me encanta!'], mood: 2 },
+    theme_desert: { t: ['Me siento en el desierto de Arizona', 'Qué paisaje del oeste más chulo'], mood: 2 },
+    theme_surf: { t: ['¡Esto huele a playa y a gasolina!', 'Qué rollo surfero tiene esta zona'], mood: 2 },
+    theme_farm: { t: ['Qué granja tan bonita', 'Hasta la vaca está viendo la carrera'], mood: 2 },
+    theme_mxgp: { t: ['¡Esto parece el Mundial!', 'Ambiente de gran premio de verdad'], mood: 2 },
+    theme_festival: { t: ['¡Esto es una fiesta!', 'Música, luces y motos: plan perfecto'], mood: 2 }
   };
 
   MX.Catalog = {
-    buildings, decor, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
+    buildings, decor, decorThemes, paths, addons, surfaces, surfaceOrder, features, featureGroups, trackTypes, trackTypeOrder,
     bikes, vehicles, brands, brandsFor, bikeModel, bikeName, staff, staffOrder, events, eventOrder, research, marketing, sponsors, objectives,
     weather, names, thoughts,
     buildingCats: [

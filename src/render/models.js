@@ -715,5 +715,5 @@
     return lib;
   }
 
-  MX.Models = { lib, buildAll, person, car, mxBike, flatBike, riderBody, RJ };
+  MX.Models = { lib, buildAll, person, car, mxBike, flatBike, riderBody, RJ, geo: { loft, ring, limb, slab, trunk, tube, ellipsoid, panel, panels, wheel } };
 })(window.MX);

@@ -214,6 +214,7 @@
       if (!free) this.spend('construccion', chk.cost, b.cx, b.cz);
       this.touchBuildings(b);
       this.fieldsDirty = true;
+      this.surroundingsChanged();
       MX.Bus.emit('build', { b });
       if (chk.warn && chk.warn.length) this.notify(Cat.buildings[type].name + ': ' + chk.warn[0].toLowerCase() + '.', 'warn', { x: b.cx, z: b.cz });
       return { ok: true, b, cost: chk.cost };
@@ -279,6 +280,7 @@
       this.buildings.delete(id);
       this.touchBuildings(b);
       this.fieldsDirty = true;
+      this.surroundingsChanged();
       const back = refund === false ? 0 : Math.round(Cat.buildings[b.type].cost * 0.4);
       if (back) this.econ.refund('construccion', back);
       /* evict agents that depended on it */
@@ -413,9 +415,11 @@
       const sp = d.banner && this.sponsors.length ? this.sponsors[this.rng.int(0, this.sponsors.length - 1)].id : null;
       w.addScenery(type, tx, tz, this.rng, { rot: rot != null ? rot : undefined, sponsor: sp });
       this.spend('construccion', d.cost, (tx + 0.5) * T, (tz + 0.5) * T);
-      for (const tr of this.tracks) tr.statsStale = true;
+      this.surroundingsChanged();
       return { ok: true, cost: d.cost };
     }
+    /* scenery or grandstands changed: the analysed tracks update their rating and safety */
+    surroundingsChanged() { for (const tr of this.tracks) tr.statsStale = true; }
     removeScenery(tx, tz) {
       const w = this.world;
       const o = w.sceneryAt(tx, tz);
@@ -426,6 +430,7 @@
       w.removeSceneryAt(tx, tz);
       if (cost) this.spend('terreno', cost, (tx + 0.5) * T, (tz + 0.5) * T);
       else if (Cat.decor[o.type]) this.econ.refund('construccion', Math.round(Cat.decor[o.type].cost * 0.3));
+      this.surroundingsChanged();
       return { ok: true, cost };
     }
     terrainEdit(op, tx0, tz0, tx1, tz1, opts) {
@@ -589,11 +594,12 @@
       if (!pr.ok) return pr;
       if (!this.canAfford(pr.cost)) return { ok: false, reason: 'No tienes suficiente dinero', cost: pr.cost };
       const r = this.editTrack(tr, (t) => {
-        t.pieces.push(Object.assign({}, p));
+        /* a closing piece may come re-sloped to meet the start at its height */
+        for (const q of pr.fix || [p]) t.pieces.push(Object.assign({}, q));
         if (p.t === 'special') t.pinFeature(p.f, t.pieces.length - 1, MX.Track.SPECIAL_OFF);
         if (pr.closes) t.closed = true;
       });
-      if (r.ok && pr.closes) { r.closes = true; MX.Bus.emit('track:closed-loop', { track: tr }); }
+      if (r.ok && pr.closes) { r.closes = true; r.adjusted = !!(pr.fix && (pr.fix.length > 1 || pr.fix[0].slope !== p.slope)); MX.Bus.emit('track:closed-loop', { track: tr }); }
       return r;
     }
     removeLastPiece(tr) {
@@ -606,22 +612,46 @@
         t.features = t.features.filter(f => f.pin != null ? f.pin < i : (f.s >= 0 && f.s + (f.len || 0) <= cut - 0.5));
       });
     }
-    /* Finish the loop automatically with the shortest free chain of pieces. */
+    /* Finish the loop automatically with the cheapest free chain of pieces. When the
+       end is boxed in (facing a wall, too close or too high), the last plain pieces
+       (up to about 50 m) are replaced as well; jumps and other specials are kept. */
     autoComplete(tr, w, surf) {
       if (!tr.pieces || !tr.pieces.length) return { ok: false, reason: 'Coloca primero la parrilla de salida' };
       if (tr.closed) return { ok: false, reason: 'El circuito ya está cerrado' };
       if (!tr.endPose) tr.rebuild(this.world);
-      const plan = MX.Track.planClosure(this.world, tr, w, surf);
-      if (!plan.ok) return plan;
-      /* check the whole loop on a copy before touching the real one */
-      const copy = MX.Track.deserialize(tr.serialize(), this.world);
-      copy.pieces.push(...plan.pieces.map(p => Object.assign({}, p)));
-      copy.closed = true;
-      copy.rebuild(this.world);
-      const geomErr = copy.validate(this.world).find(i => i.level === 'error' && /cruza|terreno|edificios|agua|otro circuito|Pendiente|imposible|largo/.test(i.msg));
-      if (geomErr) return { ok: false, reason: 'No encuentro un cierre limpio: ' + geomErr.msg.toLowerCase() };
-      const r = this.editTrack(tr, (t) => { for (const p of plan.pieces) t.pieces.push(Object.assign({}, p)); t.closed = true; });
-      if (r.ok) { r.closes = true; r.added = plan.pieces.length; MX.Bus.emit('track:closed-loop', { track: tr }); }
+      const n = tr.pieces.length;
+      let firstFail = null, done = null;
+      for (let k = 0; k <= Math.min(10, n - 1) && !done; k++) {
+        if (k > 0) {
+          const p = tr.pieces[n - k];
+          if (p.t === 'start' || p.t === 'special' || tr.length - p._s0 > 52) break;
+        }
+        const keep = n - k, last = tr.pieces[keep - 1]._g;
+        const from = k ? { x: last.x1, z: last.z1, h: last.h1, e: last.e1 } : tr.endPose;
+        const cutS = k ? tr.pieces[keep]._s0 : tr.length;
+        const plan = MX.Track.planClosure(this.world, tr, w, surf, { from, cutS });
+        if (!plan.ok) { firstFail = firstFail || plan; if (plan.fatal) break; continue; }
+        /* check the whole loop on a copy before touching the real one */
+        const copy = MX.Track.deserialize(tr.serialize(), this.world);
+        copy.pieces.length = keep;
+        copy.features = copy.features.filter(f => f.pin == null || f.pin < keep);
+        copy.pieces.push(...plan.pieces.map(p => Object.assign({}, p)));
+        copy.closed = true;
+        copy.rebuild(this.world);
+        const geomErr = copy.validate(this.world).find(i => i.level === 'error' && /cruza|terreno|edificios|agua|otro circuito|Pendiente|imposible|largo/.test(i.msg));
+        if (geomErr) { firstFail = firstFail || { ok: false, reason: 'No encuentro un cierre limpio: ' + geomErr.msg.toLowerCase() }; continue; }
+        done = { k, keep, cutS, plan };
+      }
+      if (!done) return firstFail || { ok: false, reason: 'No encuentro un camino libre hasta la salida' };
+      const r = this.editTrack(tr, (t) => {
+        if (done.k) {
+          t.pieces.length = done.keep;
+          t.features = t.features.filter(f => f.pin != null ? f.pin < done.keep : (f.s >= 0 && f.s + (f.len || 0) <= done.cutS - 0.5));
+        }
+        for (const p of done.plan.pieces) t.pieces.push(Object.assign({}, p));
+        t.closed = true;
+      });
+      if (r.ok) { r.closes = true; r.added = done.plan.pieces.length; r.replaced = done.k; MX.Bus.emit('track:closed-loop', { track: tr }); }
       return r;
     }
     /* Rounded-rectangle loop with a few elements inside rect {x0, z0, w, h} (tiles). */
@@ -1535,7 +1565,10 @@
       if (this.medicJobs.some(j => j.dead)) this.medicJobs = this.medicJobs.filter(j => !j.dead);
       this.cleanupDead();
       this.gridT -= dt;
-      if (this.gridT <= 0) { this.updateGrids(0.2); this.gridT = 0.2; }
+      if (this.gridT <= 0) {
+        this.updateGrids(0.2); this.gridT = 0.2;
+        for (const tr of this.tracks) if (tr.statsStale) { tr.statsStale = false; MX.TrackAnalyzer.rescore(tr, this.world, this); }
+      }
       if (this.amb) this.amb.update(dt);
       this.updateTrackSurfaces(dt);
     }

@@ -321,6 +321,8 @@ p { margin: 6px 0; }
 .card-info { margin-top: 10px; padding: 8px 10px; min-height: 84px; background: var(--well); border: 2px solid var(--ink); border-radius: 4px; }
 .card-info > b { font: 700 16px var(--f-num); color: var(--yellow); }
 .card-info p { font-size: 13px; }
+.theme-desc { margin: 0 0 8px; }
+.theme-zone { color: var(--good); font-weight: 700; }
 
 /* ---------- people, staff ---------- */
 .cands, .staff-list, .slots, .mk-list, .res-list, .people { display: flex; flex-direction: column; gap: 4px; }
@@ -889,3 +891,6 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone .rk-row { flex-wrap: wrap; }
 .phone .rk-acts { flex-direction: row; width: 100%; justify-content: flex-end; }
 .rk-acct small b { color: var(--text); }
+#bld-auto.glow { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(255, 210, 46, .45); animation: bld-glow 1.1s ease-in-out infinite; }
+@keyframes bld-glow { 50% { box-shadow: 0 0 0 4px rgba(255, 210, 46, .2); } }
+.bld-preview em.fix { color: var(--yellow); font-style: normal; }

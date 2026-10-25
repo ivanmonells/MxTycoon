@@ -7,11 +7,12 @@ No necesita instalación ni servidor: abre `dist/mx-tycoon.html` en un navegador
 ## Cómo se juega
 
 1. **Circuitos > Nuevo circuito**: haz clic en tu terreno para colocar la parrilla de salida (R la gira en pasos de 45 grados).
-2. Construye el circuito **pieza a pieza**, como en los tycoon clásicos: elige la dirección (recta corta, media o larga, o curva cerrada, media o abierta a cada lado), la pendiente (bajada fuerte, bajada, llano, subida, subida fuerte), el peralte de las curvas y, si quieres, una **pieza especial** (meta, tabletops, dobles, triples, escalones, mesetas, whoops, rollers, dubbies, secciones rítmicas). La pieza fantasma enseña dónde irá y cuánto cuesta. Vuelve hasta la salida para cerrar el circuito o pulsa **Cerrar automáticamente**. Teclado: Intro construye, Retroceso quita la última pieza y las flechas cambian dirección y pendiente.
+2. Construye el circuito **pieza a pieza**, como en los tycoon clásicos: elige la dirección (recta corta, media o larga, o curva cerrada, media o abierta a cada lado), la pendiente (bajada fuerte, bajada, llano, subida, subida fuerte), el peralte de las curvas y, si quieres, una **pieza especial** (meta, tabletops, dobles, triples, escalones, mesetas, whoops, rollers, dubbies, secciones rítmicas). La pieza fantasma enseña dónde irá y cuánto cuesta. Vuelve hasta la salida para cerrar el circuito o pulsa **Cerrar automáticamente** (en el móvil, **Cerrar**): el juego busca el camino de vuelta salvando la diferencia de altura y, si el final está encajonado, rehace las últimas piezas. Si llegas a la salida un poco más alto o más bajo, la última pieza ajusta su pendiente sola. Teclado: Intro construye, Retroceso quita la última pieza y las flechas cambian dirección y pendiente.
 3. Con el circuito cerrado, en **Elementos** añades más saltos sobre las rectas y en **Superficie** cambias tierra, arena, barro o tierra compacta y la anchura de cada pieza.
 4. Construye un **paddock** y un **aparcamiento** tocando la carretera, una **taquilla**, **baños** y comida, y únelos con **caminos**.
-5. **Valida**, **prueba** con pilotos de test y **abre al público**. Llegan furgonetas con pilotos y coches con espectadores.
-6. Contrata personal, ajusta precios, lanza marketing, investiga mejoras, organiza carreras (de la jornada de entrenamiento al Gran Premio) y cumple los objetivos del modo carrera.
+5. **Decorar** tiene una pestaña por temática: básicos (árboles, seguridad y patrocinio), **Mad Max**, **Desierto**, **Surf**, **Granja**, **Mundial MX** y **Festival**. Tres o más piezas de una temática junto a un circuito forman una **zona temática**: sube la valoración del circuito y el público que pasea al lado disfruta y la comenta.
+6. **Valida**, **prueba** con pilotos de test y **abre al público**. Llegan furgonetas con pilotos y coches con espectadores.
+7. Contrata personal, ajusta precios, lanza marketing, investiga mejoras, organiza carreras (de la jornada de entrenamiento al Gran Premio) y cumple los objetivos del modo carrera.
 
 Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Continuar** (última partida guardada) y **Modo sandbox** (dinero y desbloqueos sin límite).
 
@@ -57,6 +58,9 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `node build.mjs` genera `dist/mx-tycoon.html`, un único archivo autocontenido.
 - `node tools/sim-test.cjs` simula un complejo durante varios meses en Node y muestra la economía.
 - `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
+- `node tools/close-test.cjs` prueba el cierre de circuitos: llegar a la salida a otra altura, cerrar desde lejos, desde muy arriba y con el final encajonado.
+- `node tools/theme-test.cjs` prueba las temáticas de decoración: zonas temáticas, valoración, guardado y visitantes.
+- `node tools/shotpage.mjs "tools/decor.html?theme=all" <captura.png>` dibuja todas las piezas temáticas (o una temática: `theme=madmax`, `desert`, `surf`, `farm`, `mxgp`, `festival`).
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/phone.mjs <carpeta> 390 844` repite el recorrido con toques en un móvil simulado (prueba también `844 390` en horizontal).
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/touchplace.mjs <carpeta> 390 844` coloca edificios, decoración, saltos, caminos y terreno solo con toques y arrastres.

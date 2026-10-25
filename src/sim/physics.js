@@ -492,8 +492,45 @@
       rating -= desc.longestStraight > (type === 'kids' ? 60 : 130) ? 0.6 : 0;
       rating -= (desc.tight > desc.corners * 0.7 && desc.corners > 3 && type !== 'sx') ? 0.4 : 0;
     }
-    /* scenery and atmosphere near the track */
-    let scen = 0, stands = 0, safetyItems = [];
+    /* what the riding asks for, before the surroundings (see surroundings and rescore) */
+    const base = {
+      rating,
+      safety: 0.42 + (desc.avgW >= 8 ? 0.08 : 0) + (desc.minW >= 7 ? 0.04 : -0.06) - U.clamp(pro.crashRisk * 0.04 + mid.crashRisk * 0.03, 0, 0.25) - gaps * 0.02
+    };
+    const env = surroundings(track, world, game);
+    rating = U.clamp(base.rating + env.bonus, 0, 10);
+    const safety = U.clamp(base.safety + 0.42 * env.protectedRatio, 0.05, 1);
+    const maint = Math.round(track.length * 0.9 * desc.surf.reduce((a, f, k) => a + f * SURF[k].maint, 0) + track.features.length * 30);
+    const capacity = Math.max(4, Math.floor(track.length / td.cap));
+    const stats = {
+      length: track.length, diff, rating, safety, maint, capacity, homolog: homologFor(track, diff, safety, desc.avgW),
+      lapPro: pro.lap, lapAm: mid.lap, lapBeg: runs[0].lap, lapExp: runs[2].lap,
+      maxSpeed: pro.maxV, avgSpeed: pro.avgV, airPro: pro.air, airMid: mid.air, airBeg: runs[0].air,
+      jumps: jumpCount, rhythm: rhythmCount, corners: desc.corners, tight: desc.tight, berms: desc.berms,
+      elev: desc.elevRange, width: desc.avgW, longest: desc.longestStraight, hazards: env.hazards,
+      protectedRatio: env.protectedRatio, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: env.scen, themes: env.themes, base
+    };
+    track.stats = stats;
+    return stats;
+  }
+
+  /* official homologation tiers only exist for motocross */
+  function homologFor(track, diff, safety, avgW) {
+    let homolog = 'local';
+    if (track.type === 'mx') {
+      if (track.length >= 550 && diff >= 2.5 && diff <= 7.5 && safety >= 0.45) homolog = 'regional';
+      if (track.length >= 750 && diff >= 4 && diff <= 8.5 && safety >= 0.6 && avgW >= 7.8) homolog = 'nacional';
+      if (track.length >= 900 && diff >= 5 && diff <= 9 && safety >= 0.7 && avgW >= 8.4) homolog = 'internacional';
+      if (track.length >= 1050 && diff >= 5.5 && diff <= 9.5 && safety >= 0.8 && avgW >= 9) homolog = 'gp';
+    }
+    return homolog;
+  }
+  /* scenery, grandstands and themed zones near the track, and how well the safety
+     items cover its hazards (jump landings and tight corners after fast sections) */
+  function surroundings(track, world, game) {
+    const S = track.S, type = track.type;
+    let scen = 0, stands = 0;
+    const safetyItems = [], themeN = {};
     if (world) {
       const near = new Set();
       for (let i = 0; i < S.n; i += 16) {
@@ -509,6 +546,7 @@
           const o = world.scenery.get(sc);
           const dd = Cat.decor[o.type];
           if (dd && dd.scenery) scen += dd.scenery;
+          if (dd && dd.theme) themeN[dd.theme] = (themeN[dd.theme] || 0) + 1;
           if (dd && dd.safety) safetyItems.push({ x: o.tx * C.TILE + o.ox, z: o.tz * C.TILE + o.oz, v: dd.safety });
         }
         if (game && world.bld[t] >= 0) {
@@ -517,10 +555,11 @@
         }
       }
     }
-    rating += U.clamp(scen / (type === 'enduro' ? 18 : 30), 0, 1) * (type === 'enduro' ? 1.6 : 0.8);
-    rating += U.clamp(stands / 8, 0, 1) * (type === 'enduro' ? 0.2 : type === 'sx' ? 0.9 : 0.5);
-    rating = U.clamp(rating, 0, 10);
-    /* safety: hazards are jump landings and tight corners after fast sections */
+    /* themed zones: enough pieces of one pack around the track */
+    const themes = Object.keys(themeN).filter(k => themeN[k] >= C.THEME_ZONE);
+    const bonus = U.clamp(scen / (type === 'enduro' ? 18 : 30), 0, 1) * (type === 'enduro' ? 1.6 : 0.8)
+      + U.clamp(stands / 8, 0, 1) * (type === 'enduro' ? 0.2 : type === 'sx' ? 0.9 : 0.5)
+      + Math.min(themes.length, 2) * 0.2;
     const hazards = [];
     for (const f of track.features) {
       const k = Cat.features[f.type].kind;
@@ -545,36 +584,25 @@
       for (const it of safetyItems) if (U.dist2(h.x, h.z, it.x, it.z) < 16 * 16) p += it.v;
       protectedW += h.w * U.clamp(p / 2, 0, 1);
     }
-    let safety = 0.42 + 0.42 * (totalW ? protectedW / totalW : 1) + (desc.avgW >= 8 ? 0.08 : 0) + (desc.minW >= 7 ? 0.04 : -0.06)
-      - U.clamp(pro.crashRisk * 0.04 + mid.crashRisk * 0.03, 0, 0.25) - gaps * 0.02;
-    safety = U.clamp(safety, 0.05, 1);
-    const maint = Math.round(track.length * 0.9 * desc.surf.reduce((a, f, k) => a + f * SURF[k].maint, 0) + track.features.length * 30);
-    const capacity = Math.max(4, Math.floor(track.length / td.cap));
-    /* official homologation tiers only exist for motocross */
-    let homolog = 'local';
-    if (type === 'mx') {
-      if (track.length >= 550 && diff >= 2.5 && diff <= 7.5 && safety >= 0.45) homolog = 'regional';
-      if (track.length >= 750 && diff >= 4 && diff <= 8.5 && safety >= 0.6 && desc.avgW >= 7.8) homolog = 'nacional';
-      if (track.length >= 900 && diff >= 5 && diff <= 9 && safety >= 0.7 && desc.avgW >= 8.4) homolog = 'internacional';
-      if (track.length >= 1050 && diff >= 5.5 && diff <= 9.5 && safety >= 0.8 && desc.avgW >= 9) homolog = 'gp';
-    }
-    const stats = {
-      length: track.length, diff, rating, safety, maint, capacity, homolog,
-      lapPro: pro.lap, lapAm: mid.lap, lapBeg: runs[0].lap, lapExp: runs[2].lap,
-      maxSpeed: pro.maxV, avgSpeed: pro.avgV, airPro: pro.air, airMid: mid.air, airBeg: runs[0].air,
-      jumps: jumpCount, rhythm: rhythmCount, corners: desc.corners, tight: desc.tight, berms: desc.berms,
-      elev: desc.elevRange, width: desc.avgW, longest: desc.longestStraight, hazards: hazards.length,
-      protectedRatio: totalW ? protectedW / totalW : 1, maxReq, gaps, runs, surf: desc.surf, natural: natural.length, scenery: scen
-    };
-    track.stats = stats;
-    return stats;
+    return { scen, stands, themes, bonus, hazards: hazards.length, protectedRatio: totalW ? protectedW / totalW : 1 };
+  }
+  /* decoration or grandstands changed around an analysed track: update what depends on them */
+  function rescore(track, world, game) {
+    const st = track.stats;
+    if (!st || !st.base || !track.S || !track.closed) return null;
+    const env = surroundings(track, world, game);
+    st.rating = U.clamp(st.base.rating + env.bonus, 0, 10);
+    st.safety = U.clamp(st.base.safety + 0.42 * env.protectedRatio, 0.05, 1);
+    st.homolog = homologFor(track, st.diff, st.safety, st.width);
+    st.scenery = env.scen; st.themes = env.themes; st.hazards = env.hazards; st.protectedRatio = env.protectedRatio;
+    return st;
   }
 
   const HOMOLOG_NAMES = { local: 'Local', regional: 'Regional', nacional: 'Nacional', internacional: 'Internacional', gp: 'Gran Premio' };
   const HOMOLOG_RANK = { local: 1, regional: 2, nacional: 3, internacional: 4, gp: 5 };
 
   MX.RiderPhysics = { makeMotion, step, cornerSpeed, topSpeed, crash, decide, targetSpeed, vehicleFor };
-  MX.TrackAnalyzer = { analyze, HOMOLOG_NAMES, HOMOLOG_RANK, difficultyLabel };
+  MX.TrackAnalyzer = { analyze, rescore, HOMOLOG_NAMES, HOMOLOG_RANK, difficultyLabel };
   function difficultyLabel(d) {
     if (d < 2) return 'Muy fácil';
     if (d < 3.5) return 'Fácil';

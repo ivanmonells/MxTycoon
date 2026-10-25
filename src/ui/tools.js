@@ -283,15 +283,15 @@
       const r = game().buildPiece(tr, this.piece());
       if (result(r)) {
         sfx('build');
-        if (r.closes) this.closed(tr);
+        if (r.closes) this.closed(tr, r.adjusted ? 'He ajustado la pendiente del último tramo para llegar a la salida a su altura.' : null);
       }
       this.refresh();
       app().panels.tracks();
       this.frame();
     },
-    closed(tr) {
+    closed(tr, note) {
       sfx('success');
-      toast('¡Circuito cerrado! Revisa los elementos, valida y ábrelo al público.', 'good');
+      toast('¡Circuito cerrado!' + (note ? ' ' + note : '') + ' Revisa los elementos, valida y ábrelo al público.', 'good');
       app().trackUI.section = 'features';
       Tools.set(TrackFeature);
       MX.WM.rebuild('tracks');
@@ -309,7 +309,7 @@
       const tr = this.tr, ui = app().trackUI;
       if (!tr) return;
       const r = game().autoComplete(tr, ui.width, ui.surface);
-      if (result(r)) { toast('Circuito cerrado con ' + r.added + ' piezas', 'good'); this.closed(tr); }
+      if (result(r)) this.closed(tr, r.replaced ? 'He rehecho ' + (r.replaced === 1 ? 'la última pieza' : 'las últimas ' + r.replaced + ' piezas') + ' y añadido ' + r.added + ' para unirlo con la salida.' : 'He añadido ' + r.added + (r.added === 1 ? ' pieza.' : ' piezas.'));
       this.refresh();
     },
     key(e) {
@@ -890,15 +890,15 @@
       if (!p) return;
       this.t = tileOf(p);
       const w = game().world;
-      const key = 'decor:' + this.type;
-      if (!meshCache[key]) meshCache[key] = MX.BuildModels.decorPreview(this.type);
+      const key = 'decor:' + this.type + ':' + this.rot;
+      if (!meshCache[key]) meshCache[key] = MX.BuildModels.decorPreview(this.type, this.rot * Math.PI / 2);
       const x = (this.t.tx + 0.5) * T, z = (this.t.tz + 0.5) * T, y = w.heightAt(x, z);
       const g = translated(meshCache[key], x, y, z);
       this.why = decorWhy(this.t.tx, this.t.tz);
       R().setGhostMesh(g.data, g.count, this.why ? GHOST_B_BAD : GHOST_B_OK, GHOST_B_DITHER);
       const fp = footprintMesh(this.t.tx, this.t.tz, 1, 1, MB.rgba(this.why ? '#ff4a3d' : '#7dff7a'));
       R().setOverlayMesh(fp.data, fp.count);
-      this.box = { x0: this.t.tx * T, x1: (this.t.tx + 1) * T, y0: y, y1: y + (DECOR_H[this.type] || 2.5), z0: this.t.tz * T, z1: (this.t.tz + 1) * T };
+      this.box = { x0: this.t.tx * T, x1: (this.t.tx + 1) * T, y0: y, y1: y + (DECOR_H[this.type] || Cat.decor[this.type].h || 2.5), z0: this.t.tz * T, z1: (this.t.tz + 1) * T };
     },
     exit() { R().setGhostMesh(null); R().setOverlayMesh(null); },
     /* touch: a finger on the preview drags it */

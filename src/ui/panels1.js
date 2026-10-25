@@ -23,8 +23,9 @@
       mesh = MX.BuildModels.preview(type, 0);
       center = [0, d.height * 0.42, 0]; radius = Math.max(d.w, d.h) * T * 0.62 + 1;
     } else {
+      const d = Cat.decor[type], ht = (d && d.h) || 2.5;
       mesh = MX.BuildModels.decorPreview(type);
-      center = [0, 1.4, 0]; radius = 3.2;
+      center = [0, ht * 0.45, 0]; radius = Math.max(2.6, ht * 0.62 + 1.2);
     }
     try { thumbs[key] = r.thumbnail(mesh.data, mesh.count, 72, center, radius); } catch (e) { thumbs[key] = MX.DOM.iconURL('build', 4); }
     return thumbs[key];
@@ -373,7 +374,7 @@
       h('div', { class: 'row gap wrap bld-actions' },
         h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir pieza'),
         h('button', { id: 'bld-undo', class: 'btn', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar la última'),
-        h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino más corto hasta la salida y lo construye', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
+        h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino de vuelta a la salida salvando la altura y lo construye; si el final está encajonado, rehace las últimas piezas', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
       h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'),
       h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
     el._upd = constructorStatus(tr, status, preview);
@@ -389,7 +390,10 @@
           h('span', null, 'Invertido ', h('b', null, U.fmtMoney(tr.paid))));
       }
       const pr = TL().TrackBuild.probe;
-      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + JSON.stringify(currentPiece()) : 'none';
+      /* near the start the «Cerrar» button lights up: it joins the loop by itself */
+      const near = !!(e && o && !tr.closed && tr.pieces.length > 2 && Math.hypot(e.x - o.x, e.z - o.z) * C.TILE < 70 && !(pr && pr.ok && pr.closes));
+      for (const b of document.querySelectorAll('#bld-auto')) b.classList.toggle('glow', near);
+      const key = pr ? (pr.ok ? 'ok' : 'no') + pr.reason + pr.cost + (pr.closes ? 'c' : '') + (pr.fix ? 'f' : '') + (near ? 'n' : '') + JSON.stringify(currentPiece()) : 'none';
       if (preview._k === key) return;
       preview._k = key;
       clear(preview);
@@ -398,7 +402,9 @@
       preview.className = 'bld-preview ' + (pr.ok ? (pr.closes ? 'closes' : 'ok') : 'bad');
       preview.append(icon(pr.ok ? (pr.closes ? 'trophy' : 'check') : 'cross'),
         h('span', null, h('b', null, pieceName(p)), pr.g ? ' · ' + U.fmtMeters(pr.g.len) : '', pr.ok ? ' · ' + U.fmtMoney(pr.cost) : '', pr.ok && pr.closes ? ' · ¡cierra el circuito!' : '',
-          !pr.ok ? h('em', null, pr.reason) : null));
+          pr.ok && pr.fix ? h('em', { class: 'fix' }, 'Ajusto la pendiente para llegar a la salida a su altura') : null,
+          !pr.ok ? h('em', null, pr.reason) : null,
+          near && pr.ok ? h('em', { class: 'fix' }, 'Estás cerca de la salida: pulsa «Cerrar» y lo uno yo') : null));
     };
   }
   /* Phones: directions, slopes and the build buttons first; the rest folds away. */
@@ -431,7 +437,7 @@
       h('div', { class: 'row gap bld-actions' },
         h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir'),
         h('button', { id: 'bld-undo', class: 'btn', title: 'Quitar la última pieza', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar'),
-        h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino más corto hasta la salida', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
+        h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino de vuelta a la salida salvando la altura', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
         opt('btn bld-dots', !!b.more, 'Más opciones: piezas especiales, anchura, superficie', () => { b.more = b.more ? null : 'menu'; changed(); }, h('span', { class: 'dots' }, '•••'))));
     if (b.more) box.append(h('div', { class: 'row gap bld-more' },
       opt('btn small', b.more === 'sp', 'Piezas especiales: meta y obstáculos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
@@ -503,6 +509,7 @@
       statRow('Curvas (cerradas)', st.corners + ' (' + st.tight + ')'),
       statRow('Desnivel', U.fmt1(st.elev) + ' m'),
       statRow('Zonas de riesgo protegidas', Math.round(st.protectedRatio * 100) + '% de ' + st.hazards),
+      ...(st.themes && st.themes.length ? [statRow('Zonas temáticas', st.themes.map(id => (Cat.decorThemes.find(t => t.id === id) || { name: id }).name).join(', '))] : []),
       statRow('Capacidad', st.capacity + ' pilotos a la vez'),
       statRow('Mantenimiento', U.fmtMoney(st.maint) + ' al mes'),
       statRow('Estado de la pista', Math.round((1 - tr.avgWear()) * 100) + '%', bar(1 - tr.avgWear(), 1, tr.avgWear() > 0.5 ? 'bad' : 'good')),
@@ -696,22 +703,54 @@
   }
 
   /* ================= Decoration ================= */
-  function decorPanel() {
+  /* one tab per pack (Catalog.decorThemes); the basic one holds safety and sponsor items */
+  function decorPanel(theme) {
+    const tool = TL().DecorTool;
+    const cur = MX.Tools.current === tool && Cat.decor[tool.type] ? (Cat.decor[tool.type].theme || 'basic') : null;
     WM.open('decor', {
-      title: 'Decoración y seguridad', icon: 'decor', width: 440,
-      build: (body) => {
-        const g = game();
-        const grid = h('div', { class: 'card-grid' });
-        for (const k in Cat.decor) {
-          const d = Cat.decor[k];
-          const on = MX.Tools.current === TL().DecorTool && TL().DecorTool.type === k;
-          grid.append(h('button', { class: 'card' + (on ? ' on' : ''), title: d.desc, onclick: () => { TL().DecorTool.type = k; MX.Tools.set(TL().DecorTool); WM.rebuild('decor'); } },
-            h('img', { src: thumb('d', k), alt: '', width: 72, height: 72 }), h('b', null, d.name), h('small', null, U.fmtMoney(d.cost)), d.safety ? chip('Seguridad', 'good') : null));
-        }
-        body.append(grid, h('p', { class: 'muted small' }, 'Balas de paja, neumáticos y vallas junto a saltos y curvas rápidas mejoran la seguridad del circuito. Árboles, flores y estatuas suben su valoración y gustan al público. Las pancartas lucen los logos de tus patrocinadores.'));
-        void g;
-      }
+      title: 'Decoración y seguridad', icon: 'decor', width: 520,
+      tabs: Cat.decorThemes.map(t => ({ id: t.id, label: t.name, build: (body) => decorTheme(body, t) })), tab: theme || cur || undefined
     });
+  }
+  function decorTheme(body, th) {
+    const g = game(), tool = TL().DecorTool;
+    const placed = {};
+    for (const o of g.world.scenery.values()) if (!g.world.isTree(o)) placed[o.type] = (placed[o.type] || 0) + 1;
+    const keys = Object.keys(Cat.decor).filter(k => (Cat.decor[k].theme || 'basic') === th.id);
+    const grid = h('div', { class: 'card-grid' });
+    const info = h('div', { class: 'card-info' });
+    const showInfo = (k) => {
+      const d = Cat.decor[k];
+      clear(info);
+      info.append(h('b', null, d.name), h('p', null, d.desc),
+        h('div', { class: 'row gap wrap small' }, chip(U.fmtMoney(d.cost), 'neutral'),
+          d.scenery ? chip('Ambiente +' + U.fmt1(d.scenery), 'info') : null, d.safety ? chip('Seguridad', 'good') : null,
+          d.banner ? chip('Patrocinio', 'info') : null, placed[k] ? chip(placed[k] + ' colocados', 'good') : null));
+    };
+    for (const k of keys) {
+      const d = Cat.decor[k];
+      const on = MX.Tools.current === tool && tool.type === k;
+      const card = h('button', { class: 'card' + (on ? ' on' : ''), title: d.desc,
+        onclick: () => {
+          tool.type = k; MX.Tools.set(tool); showInfo(k);
+          for (const c of grid.children) c.classList.remove('on');
+          card.classList.add('on');
+        },
+        onmouseenter: () => showInfo(k) },
+        h('img', { src: thumb('d', k), alt: '', width: 72, height: 72 }), h('b', null, d.name), h('small', null, U.fmtMoney(d.cost)), d.safety ? chip('Seguridad', 'good') : null);
+      grid.append(card);
+    }
+    body.append(h('p', { class: 'muted small theme-desc' }, th.desc), grid, info);
+    showInfo(MX.Tools.current === tool && keys.includes(tool.type) ? tool.type : keys[0]);
+    if (th.id === 'basic') body.append(h('p', { class: 'muted small' }, 'Balas de paja, neumáticos y vallas junto a saltos y curvas rápidas mejoran la seguridad del circuito. Árboles, flores y estatuas suben su valoración y gustan al público. Las pancartas lucen los logos de tus patrocinadores.'));
+    else {
+      let n = 0;
+      for (const k of keys) n += placed[k] || 0;
+      const zones = g.tracks.filter(t => t.stats && t.stats.themes && t.stats.themes.includes(th.id)).map(t => t.name);
+      body.append(h('p', { class: 'muted small' }, 'Coloca ' + C.THEME_ZONE + ' o más piezas de ' + th.name + ' cerca de un circuito y tendrás una zona temática: sube la valoración del circuito y el público que pasea por los caminos de al lado disfruta más. Gíralas con R o con el botón de girar antes de colocarlas.'));
+      if (zones.length) body.append(h('p', { class: 'small theme-zone' }, 'Zona temática en: ' + zones.join(', ')));
+      else if (n) body.append(h('p', { class: 'muted small' }, 'Tienes ' + n + (n === 1 ? ' pieza' : ' piezas') + ' de esta temática en el complejo.'));
+    }
   }
 
   MX.Panels1 = { tracksPanel, terrainPanel, buildPanel, pathsPanel, decorPanel, thumb, suggested, STATE, statRow, lockReason, currentPiece, buildState, pieceName };

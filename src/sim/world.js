@@ -265,14 +265,18 @@
       const i = this.idx(tx, tz);
       if (this.scen[i] >= 0) return null;
       rng = rng || U.rng;
-      const big = type === 'statue' || type === 'arch' || type === 'banner' || type === 'safetyfence' || type === 'tires' || type === 'haybales';
+      /* themed pieces fill their tile and face where the player turned them; the loose
+         ones (plants, animals) shift and turn a little so rows of them look natural */
+      const d = MX.Catalog.decor[type], loose = !!(d && d.loose);
+      const big = !!(d && d.theme) || type === 'statue' || type === 'arch' || type === 'banner' || type === 'safetyfence' || type === 'tires' || type === 'haybales';
       const id = this.nextScenId++;
+      const off = () => loose ? T / 2 + rng.range(-0.45, 0.45) : big ? T / 2 : rng.range(0.9, T - 0.9);
       const o = {
         id, type, tx, tz,
-        ox: big ? T / 2 : rng.range(0.9, T - 0.9),
-        oz: big ? T / 2 : rng.range(0.9, T - 0.9),
-        rot: (opts && opts.rot != null) ? opts.rot : (big ? 0 : rng.range(0, Math.PI * 2)),
-        s: big ? 1 : rng.range(0.8, 1.25),
+        ox: off(),
+        oz: off(),
+        rot: ((opts && opts.rot != null) ? opts.rot : (big ? 0 : rng.range(0, Math.PI * 2))) + (loose ? rng.range(-0.35, 0.35) : 0),
+        s: loose ? rng.range(0.9, 1.1) : big ? 1 : rng.range(0.8, 1.25),
         v: rng.int(0, 3),
         sponsor: (opts && opts.sponsor) || null
       };

@@ -30,6 +30,7 @@
     MAX_CARS: 220,
     TERRAIN_COST: 18,     // € per vertex-metre moved
     TREE_CLEAR_COST: 60,
+    THEME_ZONE: 3,        // pieces of one decoration pack near a track that make a themed zone
     PAINT_COST: 8,
     REFUND_RATE: 0.5,
     LOAN_STEP: 10000,

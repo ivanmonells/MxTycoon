@@ -371,7 +371,9 @@
       ['sign_restaurante', 'RESTAURANTE', '#5d4037', '#ffe0b2'], ['sign_tienda', 'TIENDA OFICIAL', '#151515', '#ff6a13'],
       ['sign_recambios', 'RECAMBIOS', '#c62828', '#ffffff'], ['sign_lavadero', 'LAVADERO', '#0277bd', '#ffffff'],
       ['sign_alquiler', 'ALQUILER', '#2e7d32', '#ffffff'], ['sign_infantil', 'ZONA INFANTIL', '#fdd835', '#e53935'],
-      ['sign_crono', 'CRONO', '#151515', '#ffd22e'], ['sign_sx', 'SUPERCROSS', '#311b92', '#ffffff']
+      ['sign_crono', 'CRONO', '#151515', '#ffd22e'], ['sign_sx', 'SUPERCROSS', '#311b92', '#ffffff'],
+      ['sign_mundial', 'MUNDIAL MX', '#0d47a1', '#ffffff'], ['sign_tiki', 'TIKI BAR', '#5d4037', '#ffe082'],
+      ['sign_peligro', 'PELIGRO', '#151515', '#ff3d00'], ['sign_granja', 'GRANJA', '#b71c1c', '#ffffff']
     ];
     for (const s of signs) region(s[0], 64, 14, signPlate(s[1], s[2], s[3]));
     region('sign_meta', 96, 20, (c, w, h) => {

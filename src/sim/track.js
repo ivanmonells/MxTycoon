@@ -845,8 +845,13 @@
       if (this.length + g.len > this.typeDef.len[1]) return fail('Demasiado largo para ' + this.typeDef.name.toLowerCase() + ': máximo ' + this.typeDef.len[1] + ' m');
       const o = this.origin;
       if (g.x1 === o.x && g.z1 === o.z) {
-        if (g.h1 !== o.h) return fail('Llegas a la salida en otra dirección');
-        if (Math.abs(g.e1 - (this.e0 || 0)) > 0.01) return fail('Llegas a la salida a otra altura: baja al nivel de la parrilla');
+        if (g.h1 !== o.h) return fail('Llegas a la salida en otra dirección: pulsa «Cerrar» y lo uno yo');
+        if (Math.abs(g.e1 - (this.e0 || 0)) > 0.01) {
+          /* same footprint, re-sloped so it arrives level with the start */
+          const fix = Track.fitHeight(p, e.h, e.e, this.e0 || 0, this.typeDef.slopes);
+          if (!fix) return fail('Llegas a la salida a otra altura (' + U.fmt1(g.e1 - (this.e0 || 0)) + ' m): pulsa «Cerrar» y lo ajusto yo');
+          res.fix = fix;
+        }
         res.closes = true;
       }
       const why = this._probeTiles(world, tmp);
@@ -1127,11 +1132,13 @@
     return t;
   };
 
-  /* Shortest chain of pieces from the end of an open piece circuit back to its start
-     pose (weighted A* on lattice poses). Obstacles and the existing track are
-     rasterised to tiles first so each move costs a handful of lookups. */
+  /* Cheapest chain of pieces from the end of an open piece circuit (or from an earlier
+     pose, when the last pieces are being replaced) back into the start pose at the
+     start's height: weighted A* on lattice poses with the elevation in half metres,
+     so drops and climbs are planned together with the turns. Obstacles and the kept
+     part of the track are rasterised to tiles first. */
   const PLAN_MOVES = [
-    { t: 'straight', n: 1 }, { t: 'straight', n: 3 },
+    { t: 'straight', n: 1 }, { t: 'straight', n: 2 }, { t: 'straight', n: 3 },
     { t: 'curve', k: 1, dir: -1 }, { t: 'curve', k: 1, dir: 1 },
     { t: 'curve', k: 2, dir: -1 }, { t: 'curve', k: 2, dir: 1 },
     { t: 'curve', k: 3, dir: -1 }, { t: 'curve', k: 3, dir: 1 }
@@ -1152,24 +1159,32 @@
     }
     return true;
   };
-  Track.planClosure = function (world, tr, w, surf) {
-    const o = tr.origin, e = tr.endPose, S = tr.S;
-    if (!o || !e || !S) return { ok: false, reason: 'Coloca primero la parrilla de salida' };
-    if (!Track.roomBehind(world, o.x, o.z, o.h, w, tr.bit)) return { ok: false, reason: 'No hay sitio detrás de la parrilla para entrar en ella. Libera ese espacio o empieza el circuito más lejos del borde.' };
-    const N = world.N, T = C.TILE;
-    const hw = w * 0.5;
+  /* opts.from: pose {x, z, h, e} to plan from (default: the end of the track);
+     opts.cutS: arc length of the part of the track that stays (default: all of it) */
+  Track.planClosure = function (world, tr, w, surf, opts) {
+    opts = opts || {};
+    const o = tr.origin, e = opts.from || tr.endPose, S = tr.S;
+    if (!o || !e || !S) return { ok: false, fatal: true, reason: 'Coloca primero la parrilla de salida' };
+    if (!Track.roomBehind(world, o.x, o.z, o.h, w, tr.bit)) return { ok: false, fatal: true, reason: 'No hay sitio detrás de la parrilla para entrar en ella. Libera ese espacio o empieza el circuito más lejos del borde.' };
+    const N = world.N, T = C.TILE, hw = w * 0.5, td = tr.typeDef;
+    const cutS = opts.cutS != null ? opts.cutS : tr.length;
+    /* heights in half metres; the plan only moves towards the start's height */
+    const E2 = (v) => Math.round(v * 2);
+    const goalE = E2(tr.e0 || 0), EMAX = ELEV_MAX * 2, fromE = E2(e.e || 0);
+    const down = td.slopes.filter(v => v < 0), up = td.slopes.filter(v => v > 0);
+    const maxDown = down.length ? Math.max(...down.map(v => -GRADE[v + 2])) : 0, maxUp = up.length ? Math.max(...up.map(v => GRADE[v + 2])) : 0;
+    if ((fromE > goalE && !down.length) || (fromE < goalE && !up.length)) return { ok: false, fatal: true, reason: 'Vas a otra altura que la salida y este tipo de circuito no tiene pendientes' };
     /* static obstacles */
     const blocked = new Uint8Array(N * N);
     for (let i = 0; i < N * N; i++) {
       const tx = i % N, tz = (i / N) | 0;
       if (world.owned[i] !== 1 || world.bld[i] >= 0 || world.path[i] || (world.trackOcc[i] & ~tr.bit) || world.isWater(tx, tz)) blocked[i] = 1;
     }
-    /* tiles too close to the existing track (the two joints are left free) */
+    /* tiles too close to the part of the track that stays (the two joints are left free) */
     const near = new Uint8Array(N * N);
-    const L = tr.length;
     for (let j = 0; j < S.n; j += 2) {
       const sj = j * DS;
-      if (sj > L - 14 || sj < 14) continue;
+      if (sj > cutS - 14 || sj < 14) continue;
       const R = (w + S.w[j]) * 0.5 + 0.8;
       const x0 = Math.max(0, Math.floor((S.x[j] - R) / T)), x1 = Math.min(N - 1, Math.floor((S.x[j] + R) / T));
       const z0 = Math.max(0, Math.floor((S.z[j] - R) / T)), z1 = Math.min(N - 1, Math.floor((S.z[j] + R) / T));
@@ -1201,11 +1216,17 @@
       return true;
     };
     const OFF = 4, SZ = N + 1 + 2 * OFF;
-    const key = (x, z, h) => ((z + OFF) * SZ + (x + OFF)) * 8 + h;
+    const pose = (x, z, h) => ((z + OFF) * SZ + (x + OFF)) * 8 + h;
+    const key = (x, z, h, eh) => pose(x, z, h) * (EMAX + 1) + eh;
     const inRange = (x, z) => x >= -OFF + 1 && z >= -OFF + 1 && x < SZ - OFF - 1 && z < SZ - OFF - 1;
-    const goal = key(o.x, o.z, o.h);
-    const hEst = (x, z) => Math.hypot(x - o.x, z - o.z) * LAT * 1.15;
-    const gScore = new Map(), came = new Map();
+    const goal = key(o.x, o.z, o.h, goalE);
+    /* distance left, or the run needed to reach the start's height at the steepest grade */
+    const hEst = (x, z, eh) => {
+      const d = Math.hypot(x - o.x, z - o.z) * LAT * 1.12;
+      if (eh === goalE) return d;
+      return Math.max(d, Math.abs(eh - goalE) * 0.5 / (eh > goalE ? maxDown : maxUp));
+    };
+    const gScore = new Map(), came = new Map(), geo = new Map(), clear = new Map();
     const heap = [];
     const push = (f, item) => {
       heap.push([f, item]);
@@ -1228,51 +1249,83 @@
       }
       return top[1];
     };
-    const k0 = key(e.x, e.z, e.h);
+    const k0 = key(e.x, e.z, e.h, fromE);
     gScore.set(k0, 0);
-    push(hEst(e.x, e.z), { k: k0, x: e.x, z: e.z, h: e.h, g: 0 });
+    push(hEst(e.x, e.z, fromE), { k: k0, x: e.x, z: e.z, h: e.h, e: fromE, g: 0 });
     let found = null, expansions = 0;
-    while (heap.length && expansions < 90000) {
+    while (heap.length && expansions < 160000) {
       const cur = pop();
       if (cur.g > gScore.get(cur.k)) continue;
       if (cur.k === goal && cur.g > 0) { found = cur; break; }
       expansions++;
+      const pk = pose(cur.x, cur.z, cur.h);
+      const slopes = cur.e > goalE ? [0].concat(down) : cur.e < goalE ? [0].concat(up) : [0];
       for (let mi = 0; mi < PLAN_MOVES.length; mi++) {
-        const mv = PLAN_MOVES[mi];
-        const gg = pieceGeom(mv, cur.x, cur.z, cur.h, 0);
+        const mv = PLAN_MOVES[mi], ck = pk * 16 + mi;
+        let gg = geo.get(ck);
+        if (!gg) { gg = pieceGeom(mv, cur.x, cur.z, cur.h, 0); geo.set(ck, gg); }
         if (!inRange(gg.x1, gg.z1)) continue;
-        const nk = key(gg.x1, gg.z1, gg.h1);
-        const cost = cur.g + gg.len + (mv.t === 'curve' ? 1.5 : 0);
-        const old = gScore.get(nk);
-        if (old != null && cost >= old) continue;
-        if (!free(gg)) continue;
-        gScore.set(nk, cost); came.set(nk, [cur.k, mi, cur]);
-        push(cost + hEst(gg.x1, gg.z1), { k: nk, x: gg.x1, z: gg.z1, h: gg.h1, g: cost });
+        let ok = clear.get(ck);
+        if (ok === undefined) { ok = free(gg); clear.set(ck, ok); }
+        if (!ok) continue;
+        for (const sl of slopes) {
+          const ne = cur.e + (sl ? E2(slopeDelta({ t: mv.t, slope: sl }, gg.len)) : 0);
+          if (ne < 0 || ne > EMAX || (cur.e > goalE && ne < goalE) || (cur.e < goalE && ne > goalE)) continue;
+          const nk = key(gg.x1, gg.z1, gg.h1, ne);
+          const cost = cur.g + gg.len + (mv.t === 'curve' ? 1.5 : 0) + Math.abs(sl) * 0.8 + (mv.t === 'straight' && mv.n < 3 ? 0.25 : 0);
+          const old = gScore.get(nk);
+          if (old != null && cost >= old) continue;
+          gScore.set(nk, cost); came.set(nk, [cur.k, mi, sl]);
+          push(cost + hEst(gg.x1, gg.z1, ne), { k: nk, x: gg.x1, z: gg.z1, h: gg.h1, e: ne, g: cost });
+        }
       }
     }
-    if (!found) return { ok: false, reason: 'No encuentro un camino libre hasta la salida. Acércate un poco más o deja más espacio.' };
-    const moves = [];
-    let k = found.k;
-    while (k !== k0) { const c = came.get(k); moves.push(c[1]); k = c[0]; }
-    moves.reverse();
-    const pieces = moves.map(mi => Object.assign({ slope: 0, bank: 0, w, surf }, PLAN_MOVES[mi]));
-    /* drop back to the start height along the way: gentle drops first, then steeper */
-    let left = Math.round(((e.e || 0) - (tr.e0 || 0)) * 2) / 2;
-    if (left > 0) {
-      const lens = [];
-      let x = e.x, z = e.z, h = e.h;
-      for (const p of pieces) { const g = pieceGeom(p, x, z, h, 0); lens.push(g.len); x = g.x1; z = g.z1; h = g.h1; }
-      const drop = (p, sl, len) => -slopeDelta({ t: p.t, slope: sl }, len);
-      pieces.forEach((p, i) => { const d = drop(p, -1, lens[i]); if (left >= d - 1e-6) { p.slope = -1; left -= d; } });
-      const steep = tr.typeDef.slopes.includes(-2);
-      pieces.forEach((p, i) => {
-        if (left <= 1e-6 || p.slope !== -1 || !steep) return;
-        const extra = drop(p, -2, lens[i]) - drop(p, -1, lens[i]);
-        if (left >= extra - 1e-6) { p.slope = -2; left -= extra; }
-      });
-      if (left > 1e-6) return { ok: false, reason: 'La pista va demasiado alta para cerrar desde aquí: baja primero un poco' };
+    if (!found) {
+      const high = Math.abs(fromE - goalE) >= 6;
+      return { ok: false, reason: high ? 'No encuentro un camino libre hasta la salida que dé tiempo a volver a su altura (' + U.fmt1(Math.abs(fromE - goalE) / 2) + ' m). Deja más espacio o baja antes.' : 'No encuentro un camino libre hasta la salida. Deja más espacio entre el final y la parrilla.' };
     }
-    return { ok: true, pieces };
+    const steps = [];
+    let k = found.k;
+    while (k !== k0) { const c = came.get(k); steps.push(c); k = c[0]; }
+    steps.reverse();
+    const pieces = [];
+    for (const [, mi, sl] of steps) {
+      const p = Object.assign({ slope: sl, bank: 0, w, surf }, PLAN_MOVES[mi]);
+      /* level straights in a row become one piece */
+      const prev = pieces[pieces.length - 1];
+      if (p.t === 'straight' && !p.slope && prev && prev.t === 'straight' && !prev.slope && prev.n + p.n <= 6) prev.n += p.n;
+      else pieces.push(p);
+    }
+    return { ok: true, pieces, length: found.g };
+  };
+  /* A piece that lands on the start pose at another height: the same footprint, sloped
+     (or a straight cut into short pieces) so that it arrives level with the start.
+     Returns the pieces to build instead, or null when it cannot be done. */
+  Track.fitHeight = function (p, h, eFrom, eTo, slopes) {
+    const want = Math.round((eTo - eFrom) * 2);
+    if (!want) return [p];
+    if (p.t === 'start' || p.t === 'special') return null;
+    const dir = slopes.filter(v => Math.sign(v) === Math.sign(want)).sort((a, b) => Math.abs(a) - Math.abs(b));
+    if (!dir.length) return null;
+    const len = pieceGeom(Object.assign({}, p, { slope: 0 }), 0, 0, h, 0).len;
+    for (const sl of dir) if (Math.round(slopeDelta({ t: p.t, slope: sl }, len) * 2) === want) return [Object.assign({}, p, { slope: sl })];
+    if (p.t !== 'straight' || (p.n || 1) < 2) return null;
+    /* cut the straight into single units: the sloped ones first, then level ground */
+    const n = p.n || 1, ul = unitLen(h);
+    const step = dir.map(sl => ({ sl, d: Math.round(slopeDelta({ t: 'straight', slope: sl }, ul) * 2) }));
+    let best = null;
+    const tryMix = (i, used, sum, list) => {
+      if (sum === want) { const cost = list.reduce((a, v) => a + Math.abs(v), 0); if (!best || cost < best.cost || (cost === best.cost && list.length < best.list.length)) best = { cost, list: list.slice() }; return; }
+      if (used >= n || i >= step.length || Math.abs(sum) > Math.abs(want)) return;
+      tryMix(i + 1, used, sum, list);
+      list.push(step[i].sl); tryMix(i, used + 1, sum + step[i].d, list); list.pop();
+    };
+    tryMix(0, 0, 0, []);
+    if (!best) return null;
+    const out = best.list.map(sl => Object.assign({}, p, { n: 1, slope: sl }));
+    const rest = n - out.length;
+    if (rest > 0) out.push(Object.assign({}, p, { n: rest, slope: 0 }));
+    return out;
   };
 
   Track.LAND_CLEAN = 4.2;   // m/s of impact velocity normal to the landing surface

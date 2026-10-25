@@ -329,8 +329,22 @@
         this.ptx = this.tx; this.ptz = this.tz;
         setWaypoint(this, c[0], c[1]);
         if (g.world.litter[g.world.idx(this.tx, this.tz)] > 4 && rng.chance(0.15)) this.think(g, 'dirty');
+        if (rng.chance(0.3)) this.lookAround(g, rng);
       }
       this.litter(g, dt, rng);
+    }
+    /* themed decoration beside the path cheers people up; each theme is commented once */
+    lookAround(g, rng) {
+      const w = g.world;
+      for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        const o = w.sceneryAt(this.tx + dx, this.tz + dz), d = o && Cat.decor[o.type];
+        if (!d || !d.theme) continue;
+        this.happy = Math.min(100, this.happy + 0.8);
+        this.fun = Math.min(100, this.fun + 0.5);
+        const seen = this.themes || (this.themes = {});
+        if (!seen[d.theme] && rng.chance(0.5)) { seen[d.theme] = 1; this.think(g, 'theme_' + d.theme); }
+        return;
+      }
     }
     uLeave(g, dt, rng) {
       const f = g.fields.get('exit');

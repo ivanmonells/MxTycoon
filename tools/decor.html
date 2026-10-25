@@ -1,0 +1,53 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script src="../src/core/util.js"></script>
+<script src="../src/data/constants.js"></script>
+<script src="../src/data/catalog.js"></script>
+<script src="../src/sim/world.js"></script>
+<script src="../src/sim/track.js"></script>
+<script src="../src/sim/physics.js"></script>
+<script src="../src/render/glutil.js"></script>
+<script src="../src/render/meshbuilder.js"></script>
+<script src="../src/render/textures.js"></script>
+<script src="../src/render/voxel.js"></script>
+<script src="../src/render/models.js"></script>
+<script src="../src/render/geometry.js"></script>
+<script src="../src/render/shaders.js"></script>
+<script src="../src/render/buildmodels.js"></script>
+<script src="../src/render/decormodels.js"></script>
+<script src="../src/render/renderer.js"></script>
+<script>
+/* decoration sheet: every piece of one themed pack (or all of them) on flat ground.
+   ?theme=madmax|desert|surf|farm|mxgp|festival|all, ?zoom=N, ?yawi=0..3, ?rot=quarter turns */
+window.onerror = (m, s, l, c, e) => { window.__err = (window.__err || '') + m + ' @' + l + '\n'; };
+const w = new MX.World(80); w.generate(5, 'valle'); w.setupOwnership('sandbox');
+for (let i = 0; i < w.heights.length; i++) w.heights[i] = 6;
+w.scenery.clear(); w.scen.fill(-1); w.markTerrainDirty(0,0,79,79);
+const game = { world: w, tracks: [], buildings: new Map(), bldVer: 0, bldDirtyChunks: new Set(), selectedTrack: null,
+  weatherDef: () => MX.Catalog.weather.sunny, cloudCover: () => 0, wetness: () => 0, seasonTint: () => 0, screenTint: () => [1,1,1] };
+MX.Tex.buildMaterials && MX.Tex.buildMaterials();
+const r = new MX.Renderer(document.getElementById('c'));
+const q = new URLSearchParams(location.search);
+r.pixelScale = +(q.get('ps') || 1);
+r.init(); r.resize(innerWidth, innerHeight, 1); r.setGame(game);
+const th = q.get('theme') || 'all', rot = +(q.get('rot') || 0);
+const keys = Object.keys(MX.Catalog.decor).filter(k => th === 'all' ? MX.Catalog.decor[k].theme : MX.Catalog.decor[k].theme === th);
+const cols = th === 'all' ? 6 : 3, gap = +(q.get('gap') || 2);
+const rng = new MX.U.RNG(7);
+let stats = [];
+keys.forEach((k, i) => {
+  const tx = 30 + (i % cols) * gap, tz = 30 + Math.floor(i / cols) * gap;
+  const o = w.addScenery(k, tx, tz, rng, { rot: rot * Math.PI / 2 });
+  const mb = new MX.MeshBuilder(1024);
+  MX.BuildModels.decor(mb, o, 0, 0, 0, game);
+  stats.push(k + ':' + mb.n);
+});
+window.__stats = stats.join(' ');
+const rows = Math.ceil(keys.length / cols);
+const cx = (30 + (cols - 1) * gap / 2 + 0.5) * 4, cz = (30 + (rows - 1) * gap / 2 + 0.5) * 4;
+r.cam.tx = +(q.get('cx') || cx); r.cam.tz = +(q.get('cz') || cz); r.cam.ty = w.heightAt(cx, cz); r.cam.zoom = r.cam.targetZoom = +(q.get('zoom') || 9);
+if (q.get('yawi')) r.cam.yawIndex = +q.get('yawi');
+r.beginInstances();
+r.render(1/60);
+window.__done = true;
+</script></body></html>

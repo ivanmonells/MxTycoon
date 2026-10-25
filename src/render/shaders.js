@@ -73,7 +73,8 @@ void main() {
   else if (vMat > -1.5) base = texture(uAtlas, vUv);
   else base = vec4(1.0);
   if (base.a < 0.5) discard;
-  vec3 c = shade(base.rgb * vCol.rgb, normalize(vN), vWp);
+  /* vertex alpha 2 marks glowing parts (flames, bulbs) that ignore the light */
+  vec3 c = vCol.a > 1.5 ? base.rgb * vCol.rgb : shade(base.rgb * vCol.rgb, normalize(vN), vWp);
   if (uGhost.a > 0.0) {
     if (bayer4(gl_FragCoord.xy) > uGhostDither) discard;
     c = mix(c, uGhost.rgb, uGhost.a);
