@@ -10905,59 +10905,155 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     /* crossings with itself and the other circuits: bridges over, tunnels under */
     const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
     const vg = c ? vergeOf(tr) : null;
-    surface(mb, tr, world, opts, null, xs.length ? crossingMarks(tr, xs) : null, vg);
+    const marks = xs.length ? crossingMarks(tr, xs, world) : null;
+    surface(mb, tr, world, opts, null, marks, vg);
     /* the wide start straight, tucked just under the circuit where the two overlap */
     if (c) { surface(mb, c, world, opts, tr, null, vg); verge(mb, tr, world, vg); }
-    for (const x of xs) if (x.L === tr) tunnel(mb, x, world);
+    if (marks) for (const t of marks.tunnels) tunnel(mb, t);
     if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
   }
+  /* Bridges and tunnels. Walls are solid slabs WALL_T thick with one face per side, each
+     facing its own way: a single face drawn twice with opposite normals fights itself for
+     the depth buffer and comes out in light and dark stripes. */
+  const WALL_T = 0.4, CONCRETE = [0.84, 0.83, 0.8, 1];
+  /* bottom of the deck of crossing c above (x, z), or null when it is not over that point */
+  function deckBottom(c, x, z) {
+    const Up = c.U, h = Up.nearestS(x, z, c.iu * C.TRACK_DS, 40);
+    if (!h) return null;
+    const hw = Up.S.w[h.i] * 0.5;
+    if (Math.abs(h.lane) > hw + WALL_T + 0.3) return null;
+    return Up.S.y[h.i] + Up.bankAt(h.i, U.clamp(h.lane, -hw, hw)) - MX.Track.DECK;
+  }
   /* Samples of tr whose embankment becomes a wall (it is the bridge of a crossing, the
-     walls reaching far enough to keep the slopes off the path below) or is left out (it
-     goes under a bridge). */
-  function crossingMarks(tr, xs) {
-    const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = new Uint8Array(n);
-    const mark = (arr, i0, i1) => { for (let k = i0; k <= i1; k++) { const i = S.closed ? U.mod(k, n) : k; if (i >= 0 && i < n) arr[i] = 1; } };
+     walls reaching far enough to keep the slopes off the path below), and the tunnel
+     walls of the crossings it goes under: columns {x, y top, z, nx, nz outwards, f foot}
+     per side, whose samples lose their slope on that side. */
+  function crossingMarks(tr, xs, world) {
+    const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = { '-1': new Uint8Array(n), '1': new Uint8Array(n) }, tunnels = [];
+    const wrap = (k) => S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
     for (const c of xs) {
       if (c.U === tr) {
         const h = Math.max(0, S.y[c.iu] - S.terr[c.iu]);
         const m = Math.ceil((MX.Track.bankRun(h) / Math.tan(Math.max(c.ang, 0.4)) + 3) / C.TRACK_DS);
-        mark(wall, c.iu + c.u0 - m, c.iu + c.u1 + m);
+        for (let k = c.iu + c.u0 - m; k <= c.iu + c.u1 + m; k++) { const i = S.closed ? U.mod(k, n) : k; if (i >= 0 && i < n) wall[i] = 1; }
       }
-      if (c.L === tr) mark(tun, c.il + c.l0, c.il + c.l1);
-    }
-    return { wall, tun, xs: xs.filter(c => c.U === tr) };
-  }
-  const CONCRETE = [0.84, 0.83, 0.8, 1];
-  /* bottom of a bridge wall at an edge point: the deck where the path below goes through */
-  function wallFoot(marks, world, e) {
-    for (const c of marks.xs) {
-      const h = c.L.nearestS(e[0], e[2], c.il * C.TRACK_DS, 40);
-      if (h && Math.abs(h.lane) < c.L.S.w[h.i] * 0.5 + 0.6) return e[1] - MX.Track.DECK;
-    }
-    return Math.min(e[1], world.heightAt(e[0], e[2])) - 0.25;
-  }
-  function wallQuad(mb, a, b, ya, yb, mat, col) {
-    const a0 = [a[0], ya, a[2]], b0 = [b[0], yb, b[2]];
-    mb.quad4(a0, b0, b, a, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
-    mb.quad4(b0, a0, a, b, [0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3], mat, col);
-  }
-  /* Tunnel walls along the lower path of crossing c, under the deck of the upper one. */
-  function tunnel(mb, c, world) {
-    const Lp = c.L, S = Lp.S, Up = c.U, n = S.n, DS = C.TRACK_DS, conc = L().concrete;
-    for (const side of [-1, 1]) {
-      let prev = null;
-      for (let k = c.il + c.l0 - 8; k <= c.il + c.l1 + 8; k += 2) {
-        const i = S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
-        const hdg = S.hdg[i], off = (S.w[i] * 0.5 + 0.5) * side;
-        const x = S.x[i] - Math.sin(hdg) * off, z = S.z[i] + Math.cos(hdg) * off;
-        const h = Up.nearestS(x, z, c.iu * DS, 40);
-        /* under the deck, and a step past its edge as a portal */
-        if (!h || Math.abs(h.lane) > Up.S.w[h.i] * 0.5 + 1) { prev = null; continue; }
-        const p = { x, z, top: Up.S.y[h.i] - MX.Track.DECK, foot: Math.min(S.y[i], world.heightAt(x, z)) - 0.3 };
-        if (prev) wallQuad(mb, [prev.x, prev.top, prev.z], [x, p.top, z], prev.foot, p.foot, conc, CONCRETE);
-        prev = p;
+      if (c.L !== tr) continue;
+      const walls = {};
+      for (const side of [-1, 1]) {
+        const cols = [];
+        for (let k = c.il + c.l0 - 30; k <= c.il + c.l1 + 30; k++) {
+          const i = wrap(k), hdg = S.hdg[i], lx = -Math.sin(hdg) * side, lz = Math.cos(hdg) * side, off = S.w[i] * 0.5 + 0.5;
+          const x = S.x[i] + lx * off, z = S.z[i] + lz * off, top = deckBottom(c, x, z);
+          if (top == null) { if (cols.length) break; continue; }
+          cols.push({ x, y: top, z, nx: lx, nz: lz, f: Math.min(S.y[i], world.heightAt(x, z)) - 0.3, k });
+          tun[side][i] = 1;
+        }
+        walls[side] = cols;
       }
+      tunnels.push({ c, walls });
+    }
+    return { wall, tun, tunnels, xs: xs.filter(c => c.U === tr) };
+  }
+  /* A wall along columns {x, y top, z, nx, nz, fL, fR, split}: its face towards (nx, nz)
+     stands WALL_T out from the columns, the other on them; normals follow the columns so
+     curved walls shade smoothly. fL / fR: the foot on either side of a column (they differ
+     where the wall is cut back over a tunnel, which gets an end face there). ends: close
+     both ends too (a wall that ends in an embankment leaves them inside it). */
+  function slab(mb, cols, mat, ends) {
+    const T = WALL_T, up = [0, 1, 0], down = [0, -1, 0];
+    let u = 0;
+    for (let k = 0; k + 1 < cols.length; k++) {
+      const A = cols[k], B = cols[k + 1];
+      const len = Math.hypot(B.x - A.x, B.z - A.z);
+      const u0 = u / 16, u1 = (u + len) / 16;
+      u += len;
+      const fa = A.fR, fb = B.fL;
+      const ai = [A.x, A.y, A.z], bi = [B.x, B.y, B.z], ao = [A.x + A.nx * T, A.y, A.z + A.nz * T], bo = [B.x + B.nx * T, B.y, B.z + B.nz * T];
+      const fl = (p, y) => [p[0], y, p[2]];
+      const na = [A.nx, 0, A.nz], nb = [B.nx, 0, B.nz], ma = [-A.nx, 0, -A.nz], mbn = [-B.nx, 0, -B.nz];
+      const v = (y) => -y / 16;
+      mb.quadN(ao, bo, fl(bo, fb), fl(ao, fa), na, nb, nb, na, [u0, v(A.y)], [u1, v(B.y)], [u1, v(fb)], [u0, v(fa)], mat, CONCRETE);
+      mb.quadN(bi, ai, fl(ai, fa), fl(bi, fb), mbn, ma, ma, mbn, [u1, v(B.y)], [u0, v(A.y)], [u0, v(fa)], [u1, v(fb)], mat, CONCRETE);
+      mb.quadN(ai, bi, bo, ao, up, up, up, up, [u0, 0], [u1, 0], [u1, T / 16], [u0, T / 16], mat, CONCRETE);
+      /* the underside where it is cut back over a tunnel (or just above the ground) */
+      mb.quadN(fl(ai, fa), fl(ao, fa), fl(bo, fb), fl(bi, fb), down, down, down, down, [u0, 0], [u0, T / 16], [u1, T / 16], [u1, 0], mat, CONCRETE);
+    }
+    /* end faces where the wall is cut back over a tunnel and at both ends */
+    const end = (k, dir) => {
+      const P = cols[k], Q = cols[U.clamp(k + dir, 0, cols.length - 1)];
+      let tx = Q.x - P.x, tz = Q.z - P.z;
+      const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+      return { P, n: [tx, 0, tz] };
+    };
+    const face = (P, lo, hi, n) => {
+      const a = [P.x, hi, P.z], b = [P.x + P.nx * WALL_T, hi, P.z + P.nz * WALL_T];
+      mb.quadN(a, b, [b[0], lo, b[2]], [a[0], lo, a[2]], n, n, n, n, [0, -hi / 16], [WALL_T / 16, -hi / 16], [WALL_T / 16, -lo / 16], [0, -lo / 16], mat, CONCRETE);
+    };
+    if (ends && cols.length > 1) {
+      const s = end(0, 1), e = end(cols.length - 1, -1);
+      face(s.P, s.P.fR, s.P.y, s.n.map(x => -x));
+      face(e.P, e.P.fL, e.P.y, e.n.map(x => -x));
+    }
+    for (let k = 1; k + 1 < cols.length; k++) {
+      const P = cols[k];
+      if (!P.split) continue;
+      /* faces the opening, which is on the side with the higher foot */
+      const t = end(k, 1);
+      face(P, Math.min(P.fL, P.fR), Math.max(P.fL, P.fR), P.fR > P.fL ? t.n : t.n.map(x => -x));
+    }
+  }
+  /* The walls of a bridge on one side of the upper path (columns along its edge), cut back to
+     the deck where a path below goes through, with the cut placed exactly on that path's
+     tunnel walls. */
+  function bridgeWall(mb, world, run, marks) {
+    const DS = C.TRACK_DS, DECK = MX.Track.DECK;
+    /* < 0 where a path below goes through */
+    const gap = (p) => {
+      let b = Infinity;
+      for (const c of marks.xs) {
+        const h = c.L.nearestS(p.x, p.z, c.il * DS, 40);
+        if (h) b = Math.min(b, Math.abs(h.lane) - (c.L.S.w[h.i] * 0.5 + 0.5));
+      }
+      return b;
+    };
+    const ground = (p) => Math.min(p.y, world.heightAt(p.x, p.z)) - 0.25;
+    const cols = [];
+    let pb = null, pp = null;
+    for (const p of run) {
+      const b = gap(p);
+      if (pp && (pb < 0) !== (b < 0)) {
+        const t = pb / (pb - b), lp = (a, c) => a + (c - a) * t;
+        let nx = lp(pp.nx, p.nx), nz = lp(pp.nz, p.nz);
+        const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
+        const q = { x: lp(pp.x, p.x), y: lp(pp.y, p.y), z: lp(pp.z, p.z), nx, nz, split: true };
+        const fo = q.y - DECK, fc = ground(q);
+        q.fL = pb < 0 ? fo : fc; q.fR = b < 0 ? fo : fc;
+        cols.push(q);
+      }
+      const f = b < 0 ? p.y - DECK : ground(p);
+      cols.push(Object.assign({}, p, { fL: f, fR: f }));
+      pb = b; pp = p;
+    }
+    slab(mb, cols, L().concrete, false);
+  }
+  /* A tunnel under crossing c: walls along both sides of the lower path and the underside of
+     the deck between them. */
+  function tunnel(mb, t) {
+    const conc = L().concrete;
+    for (const side of [-1, 1]) slab(mb, t.walls[side].map(p => Object.assign({}, p, { fL: p.f, fR: p.f })), conc, true);
+    const A = t.walls[-1], B = t.walls[1], down = [0, -1, 0];
+    const byK = new Map(B.map(p => [p.k, p]));
+    let prev = null;
+    for (const a of A) {
+      const b = byK.get(a.k);
+      if (!b) { prev = null; continue; }
+      if (prev) {
+        const [pa, pb] = prev;
+        mb.quadN([pa.x, pa.y, pa.z], [a.x, a.y, a.z], [b.x, b.y, b.z], [pb.x, pb.y, pb.z], down, down, down, down,
+          [pa.x / 16, pa.z / 16], [a.x / 16, a.z / 16], [b.x / 16, b.z / 16], [pb.x / 16, pb.z / 16], conc, [0.62, 0.61, 0.59, 1]);
+      }
+      prev = [a, b];
     }
   }
   /* The ground between a start straight and the circuit running beside it: a grass verge
@@ -11006,9 +11102,15 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       /* where it begins or breaks off, close its end down to the ground */
       if (q && (prev < 0 || !P[prev]) || (!q && prev >= 0 && P[prev] && !vg.skip[k])) {
         const r = q || P[prev], a = r.e, b = r.m;
-        const quad = [a, b, foot(b), foot(a)];
-        mb.quad4(quad[0], quad[1], quad[2], quad[3], [0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], em, ec);
-        mb.quad4(quad[1], quad[0], quad[3], quad[2], [0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], em, ec);
+        /* two faces a few centimetres apart, each facing its own way (one face drawn twice
+           would fight itself for the depth buffer and flicker in stripes) */
+        let nx = -(b[2] - a[2]), nz = b[0] - a[0];
+        const l = Math.hypot(nx, nz) || 1; nx *= 0.02 / l; nz *= 0.02 / l;
+        const off = (p, s) => [p[0] + nx * s, p[1], p[2] + nz * s];
+        const fa = foot(a), fb = foot(b);
+        const n1 = [nx, 0, nz], n2 = [-nx, 0, -nz];
+        mb.quadN(off(b, 1), off(a, 1), off(fa, 1), off(fb, 1), n1, n1, n1, n1, [0.2, 0], [0, 0], [0, 0.1], [0.2, 0.1], em, ec);
+        mb.quadN(off(a, -1), off(b, -1), off(fb, -1), off(fa, -1), n2, n2, n2, n2, [0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], em, ec);
       }
       prev = k;
     }
@@ -11072,16 +11174,28 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         return [x / l, y / l, z / l];
       });
     }
+    /* bridges: runs of wall along each edge, reaching the first cross-section of slope on
+       either side (where the slope's end is closed by a wing wall) */
+    if (marks && marks.xs.length) for (const side of [-1, 1]) {
+      let run = [];
+      for (let j = 0; j < R; j++) {
+        const r = rows[j], on = marks.wall[r.i] || (j > 0 && marks.wall[rows[j - 1].i]) || (j + 1 < R && marks.wall[rows[j + 1].i]);
+        if (on) { const e = side < 0 ? r.pts[0] : r.pts[last]; run.push({ x: e[0], y: e[1], z: e[2], nx: r.nx * side, nz: r.nz * side }); continue; }
+        if (run.length > 1) bridgeWall(mb, world, run, marks);
+        run = [];
+      }
+      if (run.length > 1) bridgeWall(mb, world, run, marks);
+    }
     for (let j = 1; j < R; j++) {
       const prev = rows[j - 1], cur = rows[j], i = cur.i, k = cur.k;
       const mat = L()[TRACK_LAYER[S.surf[i]]];
-      const col = tint(i);
+      const col = tint(i), smooth = [col[0], col[1], col[2], 1.25];
       const v0 = prev.k * C.TRACK_DS / 16, v1 = k * C.TRACK_DS / 16;
       for (let q = 0; q < last; q++) {
         const a = prev.pts[q], b = prev.pts[q + 1], c = cur.pts[q + 1], d = cur.pts[q];
         const u0 = (prev.ls[q] + prev.hw) / 16, u1 = (prev.ls[q + 1] + prev.hw) / 16;
         /* order chosen so the face points up for a track heading +X with left normal +Z */
-        mb.quadN(a, b, c, d, prev.nrm[q], prev.nrm[q + 1], cur.nrm[q + 1], cur.nrm[q], [u0, v0], [u1, v0], [u1, v1], [u0, v1], mat, col);
+        mb.quadN(a, b, c, d, prev.nrm[q], prev.nrm[q + 1], cur.nrm[q + 1], cur.nrm[q], [u0, v0], [u1, v0], [u1, v1], [u0, v1], mat, smooth);
       }
       /* embankments on both sides */
       for (const side of [-1, 1]) {
@@ -11090,21 +11204,23 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (vergeSide(prev.i, side) && vergeSide(cur.i, side)) continue;
         if (marks) {
           const wa = marks.wall[prev.i], wb = marks.wall[cur.i];
-          /* a bridge: concrete walls instead of slopes, open where the path below passes */
+          /* a bridge: walls instead of slopes (see bridgeWall) */
           if (wa || wb) {
-            wallQuad(mb, ea, eb, wallFoot(marks, world, ea), wallFoot(marks, world, eb), L().concrete, CONCRETE);
-            /* where the wall meets the slope, close the end of the slope */
+            /* where the wall meets the slope, a wing wall closes the end of the slope,
+               turned towards the bridge */
             if (wa !== wb) {
-              const e = wa ? eb : ea, cc = wa ? cur : prev, ox = cc.nx * side, oz = cc.nz * side;
+              const e = wa ? eb : ea, w = wa ? ea : eb, cc = wa ? cur : prev, ox = cc.nx * side, oz = cc.nz * side;
               const th = world.heightAt(e[0], e[2]), d = MX.Track.bankRun(Math.max(0, e[1] - th)) + 0.35;
               const o = [e[0] + ox * d, world.heightAt(e[0] + ox * d, e[2] + oz * d) - 0.18, e[2] + oz * d], g = [e[0], Math.min(e[1], th) - 0.25, e[2]];
-              mb.tri(e, o, g, [[0, 0], [0.2, 0], [0, 0.2]], L().embank, col);
-              mb.tri(e, g, o, [[0, 0], [0, 0.2], [0.2, 0]], L().embank, col);
+              const nn = MB.normal(e, o, g), toward = (w[0] - e[0]) * nn[0] + (w[2] - e[2]) * nn[2];
+              const uv = (p) => [((p[0] - e[0]) * ox + (p[2] - e[2]) * oz) / 16, -p[1] / 16];
+              if (toward >= 0) mb.tri(e, o, g, [uv(e), uv(o), uv(g)], L().concrete, CONCRETE);
+              else mb.tri(e, g, o, [uv(e), uv(g), uv(o)], L().concrete, CONCRETE);
             }
             continue;
           }
-          /* under a bridge the tunnel walls take its place */
-          if (marks.tun[prev.i] && marks.tun[cur.i]) continue;
+          /* through a tunnel its walls take the place of the slopes */
+          if (marks.tun[side][prev.i] && marks.tun[side][cur.i]) continue;
         }
         const rim = (e, c) => {
           const ox = c.nx * side, oz = c.nz * side;
@@ -11161,26 +11277,36 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       fn(i, k0, (side) => tr.edgeOpen(i, side));
     }
   }
-  /* a tape (or solid band) between two posts, seen from both sides */
+  /* a tape (or solid band) between two points, seen from both sides: one face for each
+     side, a centimetre apart (one face drawn twice fights itself for the depth buffer) */
   function band(mb, a, b, y0, y1, mat, col) {
     const uv = [0, 0, 0.4, 0.05];
-    mb.quad([a.x, a.y + y0, a.z], [b.x, b.y + y0, b.z], [b.x, b.y + y1, b.z], [a.x, a.y + y1, a.z], uv, mat, col);
-    mb.quad([b.x, b.y + y0, b.z], [a.x, a.y + y0, a.z], [a.x, a.y + y1, a.z], [b.x, b.y + y1, b.z], uv, mat, col);
+    let nx = -(b.z - a.z), nz = b.x - a.x;
+    const l = Math.hypot(nx, nz) || 1; nx *= 0.005 / l; nz *= 0.005 / l;
+    mb.quad([a.x + nx, a.y + y0, a.z + nz], [b.x + nx, b.y + y0, b.z + nz], [b.x + nx, b.y + y1, b.z + nz], [a.x + nx, a.y + y1, a.z + nz], uv, mat, col);
+    mb.quad([b.x - nx, b.y + y0, b.z - nz], [a.x - nx, a.y + y0, a.z - nz], [a.x - nx, a.y + y1, a.z - nz], [b.x - nx, b.y + y1, b.z - nz], uv, mat, col);
   }
+  /* posts every o.every metres, the tape between them following the edge round the curves
+     (straight from post to post it would cut across them, floating over the slopes) */
   function stakes(mb, tr, world, o) {
+    const FINE = 1.5, per = Math.max(1, Math.round(o.every / FINE));
     const last = { '-1': null, '1': null };
-    eachEdge(tr, o.every, (i, k, open) => {
+    const post = (e, n) => mb.box(e.x - o.t, e.y, e.z - o.t, e.x + o.t, e.y + o.h, e.z + o.t, { col: n % 2 ? o.colA : o.colB });
+    eachEdge(tr, FINE, (i, k, open) => {
+      const n = Math.floor(k / per), onPost = k % per === 0;
       for (const side of [-1, 1]) {
-        if (open(side)) { last[side] = null; continue; }
-        const e = edgeAt(tr, world, i, side, o.extra);
-        mb.box(e.x - o.t, e.y, e.z - o.t, e.x + o.t, e.y + o.h, e.z + o.t, { col: k % 2 ? o.colA : o.colB });
         const p = last[side];
-        if (p && U.dist2(p.x, p.z, e.x, e.z) < (o.every * 2.2) ** 2) band(mb, p, e, o.h * 0.78, o.h * 0.88, o.tapeMat, o.tapeCol);
-        if (o.arrows && k % 7 === 3 && Math.abs(tr.S.curv[i]) > 1 / 30 && side === -Math.sign(tr.S.curv[i])) {
+        /* a post where the tape ends at an opening */
+        if (open(side)) { if (p && !p.post) post(p, n); last[side] = null; continue; }
+        const e = edgeAt(tr, world, i, side, o.extra);
+        e.post = onPost || !p;
+        if (e.post) post(e, n);
+        if (p && U.dist2(p.x, p.z, e.x, e.z) < (FINE * 3) ** 2) band(mb, p, e, o.h * 0.78, o.h * 0.88, o.tapeMat, o.tapeCol);
+        if (o.arrows && onPost && n % 7 === 3 && Math.abs(tr.S.curv[i]) > 1 / 30 && side === -Math.sign(tr.S.curv[i])) {
           /* yellow arrow board on the outside of a corner */
-          const ax = -e.nz * 0.35, az = e.nx * 0.35;
-          mb.quad([e.x - ax, e.y + 0.55, e.z - az], [e.x + ax, e.y + 0.55, e.z + az], [e.x + ax, e.y + 0.95, e.z + az], [e.x - ax, e.y + 0.95, e.z - az], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
-          mb.quad([e.x + ax, e.y + 0.55, e.z + az], [e.x - ax, e.y + 0.55, e.z - az], [e.x - ax, e.y + 0.95, e.z - az], [e.x + ax, e.y + 0.95, e.z + az], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
+          const ax = -e.nz * 0.35, az = e.nx * 0.35, fx = e.nx * 0.005, fz = e.nz * 0.005;
+          mb.quad([e.x - ax + fx, e.y + 0.55, e.z - az + fz], [e.x + ax + fx, e.y + 0.55, e.z + az + fz], [e.x + ax + fx, e.y + 0.95, e.z + az + fz], [e.x - ax + fx, e.y + 0.95, e.z - az + fz], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
+          mb.quad([e.x + ax - fx, e.y + 0.55, e.z + az - fz], [e.x - ax - fx, e.y + 0.55, e.z - az - fz], [e.x - ax - fx, e.y + 0.95, e.z - az - fz], [e.x + ax - fx, e.y + 0.95, e.z + az - fz], null, MB.MAT_SOLID, MB.rgba('#fdd835'));
         }
         last[side] = e;
       }
@@ -11623,15 +11749,18 @@ float cloudAt(vec3 wp) {
   float n = texture(uNoise, q).r * 0.65 + texture(uNoise, q * 2.7 + 0.31).r * 0.35;
   return step(uCloudThr, n);
 }
-vec3 shade(vec3 base, vec3 n, vec3 wp) {
+/* bands: sunlight in four steps (the faceted retro look); 0 for smooth curved surfaces,
+   where the steps would draw jagged contour lines */
+vec3 shadeB(vec3 base, vec3 n, vec3 wp, float bands) {
   float nd = max(dot(n, uSunDir), 0.0);
   float sh = shadowAt(wp, n);
   float cl = 1.0 - cloudAt(wp) * uCloud;
   float l = nd * sh * cl;
-  l = floor(l * 4.0 + 0.5) / 4.0;
+  if (bands > 0.5) l = floor(l * 4.0 + 0.5) / 4.0;
   vec3 amb = uAmb * (0.78 + 0.22 * n.y);
   return base * (amb + uSunCol * l);
 }
+vec3 shade(vec3 base, vec3 n, vec3 wp) { return shadeB(base, n, wp, 1.0); }
 `;
   const MESH_VS = HEAD + `
 layout(location=0) in vec3 aPos;
@@ -11659,8 +11788,9 @@ void main() {
   else if (vMat > -1.5) base = texture(uAtlas, vUv);
   else base = vec4(1.0);
   if (base.a < 0.5) discard;
-  /* vertex alpha 2 marks glowing parts (flames, bulbs) that ignore the light */
-  vec3 c = vCol.a > 1.5 ? base.rgb * vCol.rgb : shade(base.rgb * vCol.rgb, normalize(vN), vWp);
+  /* vertex alpha 2 marks glowing parts (flames, bulbs) that ignore the light, 1.25 smooth
+     surfaces lit without steps (track surfaces) */
+  vec3 c = vCol.a > 1.5 ? base.rgb * vCol.rgb : shadeB(base.rgb * vCol.rgb, normalize(vN), vWp, vCol.a > 1.1 ? 0.0 : 1.0);
   if (uGhost.a > 0.0) {
     if (bayer4(gl_FragCoord.xy) > uGhostDither) discard;
     c = mix(c, uGhost.rgb, uGhost.a);

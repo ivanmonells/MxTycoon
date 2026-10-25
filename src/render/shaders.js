@@ -37,15 +37,18 @@ float cloudAt(vec3 wp) {
   float n = texture(uNoise, q).r * 0.65 + texture(uNoise, q * 2.7 + 0.31).r * 0.35;
   return step(uCloudThr, n);
 }
-vec3 shade(vec3 base, vec3 n, vec3 wp) {
+/* bands: sunlight in four steps (the faceted retro look); 0 for smooth curved surfaces,
+   where the steps would draw jagged contour lines */
+vec3 shadeB(vec3 base, vec3 n, vec3 wp, float bands) {
   float nd = max(dot(n, uSunDir), 0.0);
   float sh = shadowAt(wp, n);
   float cl = 1.0 - cloudAt(wp) * uCloud;
   float l = nd * sh * cl;
-  l = floor(l * 4.0 + 0.5) / 4.0;
+  if (bands > 0.5) l = floor(l * 4.0 + 0.5) / 4.0;
   vec3 amb = uAmb * (0.78 + 0.22 * n.y);
   return base * (amb + uSunCol * l);
 }
+vec3 shade(vec3 base, vec3 n, vec3 wp) { return shadeB(base, n, wp, 1.0); }
 `;
   const MESH_VS = HEAD + `
 layout(location=0) in vec3 aPos;
@@ -73,8 +76,9 @@ void main() {
   else if (vMat > -1.5) base = texture(uAtlas, vUv);
   else base = vec4(1.0);
   if (base.a < 0.5) discard;
-  /* vertex alpha 2 marks glowing parts (flames, bulbs) that ignore the light */
-  vec3 c = vCol.a > 1.5 ? base.rgb * vCol.rgb : shade(base.rgb * vCol.rgb, normalize(vN), vWp);
+  /* vertex alpha 2 marks glowing parts (flames, bulbs) that ignore the light, 1.25 smooth
+     surfaces lit without steps (track surfaces) */
+  vec3 c = vCol.a > 1.5 ? base.rgb * vCol.rgb : shadeB(base.rgb * vCol.rgb, normalize(vN), vWp, vCol.a > 1.1 ? 0.0 : 1.0);
   if (uGhost.a > 0.0) {
     if (bayer4(gl_FragCoord.xy) > uGhostDither) discard;
     c = mix(c, uGhost.rgb, uGhost.a);
