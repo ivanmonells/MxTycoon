@@ -17,7 +17,16 @@
       this.root = root;
       try { this.pos = JSON.parse(localStorage.getItem('mxtycoon.winpos') || '{}'); } catch (e) { this.pos = {}; }
       MX.Bus.on('tool', (name) => this.onTool(name));
+      /* a tap that changes the layout under the finger must not click what appears there:
+         the browser sends that tap's click after the sheet has already moved */
+      window.addEventListener('click', (e) => {
+        const g = this._eat;
+        if (!g) return;
+        this._eat = null;
+        if (performance.now() - g.t < 600 && Math.abs(e.clientX - g.x) < 30 && Math.abs(e.clientY - g.y) < 30) { e.preventDefault(); e.stopPropagation(); }
+      }, true);
     },
+    eatClick(x, y) { this._eat = { x, y, t: performance.now() }; },
     topLimit() { const tb = document.getElementById('topbar'); return tb && tb.offsetHeight ? tb.getBoundingClientRect().bottom + 4 : 48; },
     isOpen(id) { return this.wins.has(id); },
     get(id) { return this.wins.get(id); },
@@ -220,6 +229,7 @@
         if (sheetDrag) {
           /* tap folds or unfolds; a swipe up or down steps between min, half and full */
           const dy = (e && e.clientY != null ? e.clientY : sy) - sy;
+          if (e && e.clientX != null) this.eatClick(e.clientX, e.clientY);
           const st = w.el.dataset.sheet || 'half';
           const land = document.documentElement.classList.contains('land');
           if (Math.abs(dy) < 12 || land) this.setSheet(w.id, st === 'min' ? 'half' : 'min');

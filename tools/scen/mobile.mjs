@@ -33,7 +33,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
   logs.push('cam after ' + await ev(() => { const c = MX.App.renderer.cam; return JSON.stringify({ tx: c.tx, tz: c.tz, ty: c.ty, zoom: c.zoom }); }));
   await wait(400);
   const tapAt = async (x, z) => { const p = await ev(([x, z]) => __q.w2s(x, z, 0), [x, z]); logs.push('tap ' + JSON.stringify(p)); await touch('touchStart', [[p.x, p.y]]); await wait(60); await touch('touchEnd', []); await wait(400); return p; };
-  await page.locator('.win .win-x').first().tap(); await wait(300);
+  /* the sheet folds by itself for the start tool; the first tap moves the preview, the second places it */
   logs.push('free at tap point: ' + await ev(() => { const p = __q.w2s(146, 176, 0); return __q.freeAt(p.x, p.y); }));
   await tapAt(146, 176);
   logs.push('after first tap: pieces ' + await ev(() => MX.App.game.selectedTrack.pieces.length) + ' ghost ' + await ev(() => !!MX.App.renderer.ghost));
@@ -41,7 +41,6 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await tapAt(146, 176);
   logs.push('after second tap: pieces ' + await ev(() => MX.App.game.selectedTrack.pieces.length) + ' tool ' + await ev(() => MX.Tools.current.name));
   await shot('m-start-placed');
-  await page.locator('[data-id="tracks"]').tap(); await wait(500);
   for (let k = 0; k < 3; k++) { await page.locator('#bld-build').tap(); await wait(400); }
   await page.locator('.bld-dirs .bld-btn[aria-label="Curva media a la derecha"]').tap(); await wait(300);
   await page.locator('#bld-build').tap(); await wait(400);

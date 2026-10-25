@@ -13,10 +13,13 @@
       this.touches = new Map();
       this.pinch = null;
       this.mouse = { x: 0, y: 0, inside: false };
+      this.lastType = 'mouse';
       this.enabled = true;
       this._bind();
     }
     get app() { return MX.App; }
+    /* the last thing that touched the page was a finger: no hover, previews wait for a confirmation */
+    get touchMode() { return this.lastType === 'touch'; }
     pick(x, y) { return this.app.renderer.pickGround(x, y); }
     _local(e) { const r = this.el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
     _bind() {
@@ -28,6 +31,7 @@
       el.addEventListener('pointercancel', (e) => this.onUp(e, true));
       el.addEventListener('pointerleave', () => { this.mouse.inside = false; });
       el.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+      window.addEventListener('pointerdown', (e) => { this.lastType = e.pointerType || 'mouse'; }, true);
       window.addEventListener('keydown', (e) => this.onKey(e, true));
       window.addEventListener('keyup', (e) => this.onKey(e, false));
       window.addEventListener('blur', () => this.keys.clear());
@@ -41,10 +45,16 @@
         this.touches.set(e.pointerId, p);
         if (this.touches.size === 2) { this._startPinch(); return; }
       }
-      this.down = { x: p.x, y: p.y, sx: p.x, sy: p.y, button: e.button, moved: false, t: performance.now(), pan: false, id: e.pointerId, touch: e.pointerType === 'touch' };
+      this.down = { x: p.x, y: p.y, sx: p.x, sy: p.y, button: e.button, moved: false, t: performance.now(), pan: false, grab: false, id: e.pointerId, touch: e.pointerType === 'touch' };
       const wp = this.pick(p.x, p.y);
       const tool = this.tool();
       this.down.pan = e.button === 1;
+      /* a finger has no hover: on the preview of a placing tool it grabs it, and
+         any other tool first sees the point under the finger */
+      if (this.down.touch && tool && e.button === 0) {
+        if (tool.preview) { if (tool.grab && tool.grab(wp, p)) { this.down.grab = true; this.captureDrag = true; } }
+        else if (tool.hover) { tool.lastP = wp; tool.hover(wp, p); }
+      }
       if (tool && tool.down && (e.button === 0 || e.button === 2)) tool.down(wp, { button: e.button, shift: e.shiftKey }, p);
     }
     onMove(e) {
@@ -59,12 +69,19 @@
         const dx = p.x - d.x, dy = p.y - d.y;
         if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > 6) d.moved = true;
         const tool = this.tool();
+        /* dragging a grabbed preview moves it instead of the camera */
+        if (d.grab) {
+          if (d.moved && tool && tool.dragTo) tool.dragTo(this.pick(p.x, p.y), p);
+          d.x = p.x; d.y = p.y;
+          return;
+        }
         const wantsPan = d.pan || (d.moved && !this.captureDrag && (d.button === 2 || (d.button === 0 && (!tool || tool.name === 'select' || (d.touch && !tool.touchDraw)))));
         if (wantsPan && d.moved) { this.panBy(dx, dy); d.pan = true; }
         d.x = p.x; d.y = p.y;
       }
       const tool = this.tool();
-      if (tool && tool.hover && !(this.down && this.down.pan)) {
+      /* a finger only drives the hover of tools that paint or draw; previews stay put */
+      if (tool && tool.hover && !(this.down && this.down.pan) && !(e.pointerType === 'touch' && tool.preview)) {
         const wp = this.pick(p.x, p.y);
         tool.lastP = wp;
         tool.hover(wp, p);
@@ -77,13 +94,20 @@
       }
       const d = this.down;
       this.down = null;
+      if (d && d.grab) this.captureDrag = false;
+      /* a tap can open or fold a sheet under the finger; its late click must not land there */
+      if (d && d.touch) MX.WM.eatClick(e.clientX, e.clientY);
       if (!d || cancel) return;
       const p = this._local(e);
       const tool = this.tool();
       const wp = this.pick(p.x, p.y);
+      /* a tap on the grabbed preview places it; a drag only moved it */
+      if (d.grab) { if (!d.moved && tool && tool.place) tool.place(); return; }
       if (tool && tool.up) tool.up(wp, { button: d.button }, p);
       if (!d.moved && !d.pan) {
-        if (d.button === 0 && tool && tool.click) tool.click(wp, { button: 0, shift: e.shiftKey, touch: d.touch }, p);
+        /* a tap elsewhere moves the preview there; placing needs a second tap or «Colocar» */
+        if (d.button === 0 && tool && d.touch && tool.preview) { tool.lastP = wp; tool.hover(wp, p); }
+        else if (d.button === 0 && tool && tool.click) tool.click(wp, { button: 0, shift: e.shiftKey, touch: d.touch }, p);
         else if (d.button === 2) {
           if (tool && tool.rightClick) tool.rightClick(wp, p);
           else if (tool && tool.name !== 'select') MX.Tools.select();
@@ -131,6 +155,10 @@
       cam.tx = U.clamp(cam.tx, -20, S + 20); cam.tz = U.clamp(cam.tz, -20, S + 20);
     }
     _startPinch() {
+      /* a second finger turns any drag in progress into a pinch */
+      const tool = this.tool();
+      if (this.down && tool && tool.cancelDrag) tool.cancelDrag();
+      this.captureDrag = false;
       const pts = Array.from(this.touches.values());
       this.pinch = { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), cx: (pts[0].x + pts[1].x) / 2, cy: (pts[0].y + pts[1].y) / 2 };
       this.down = null;

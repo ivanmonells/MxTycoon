@@ -24,7 +24,8 @@ Modos: **Nueva partida** (carrera con objetivos y tutorial interactivo), **Conti
 | Zoom | Rueda, + y − | Pellizcar o botones + y − |
 | Girar la vista | Q y E | Botón de girar |
 | Pausa y velocidad | Espacio, 1 a 4 | Pausa y botón de velocidad (cambia de 1x a 4x) |
-| Girar edificio | R o clic derecho | Botón amarillo de la barra del menú |
+| Colocar edificios, decoración y saltos | Clic en el mapa | Toca el mapa para ver la vista previa, arrástrala con el dedo si quieres moverla y pulsa «Colocar» (o toca la vista previa) |
+| Girar edificio | R o clic derecho | Botón amarillo junto a «Colocar» |
 | Cancelar herramienta | Esc o clic derecho | Cerrar el menú |
 | Guardado rápido | Ctrl+S | Menú |
 
@@ -57,5 +58,6 @@ La simulación avanza a paso fijo (30 Hz) y es independiente del render, lo que 
 - `node tools/piece-test.cjs` prueba el constructor pieza a pieza: piezas, cierre automático, trazado sugerido, guardado y rodaje.
 - `node tools/qa.mjs index.html tools/scen/career.mjs <carpeta>` juega una partida completa con clics reales en Chromium sin interfaz (Playwright) y guarda capturas.
 - `MOBILE=1 node tools/qa.mjs index.html tools/scen/phone.mjs <carpeta> 390 844` repite el recorrido con toques en un móvil simulado (prueba también `844 390` en horizontal).
+- `MOBILE=1 node tools/qa.mjs index.html tools/scen/touchplace.mjs <carpeta> 390 844` coloca edificios, decoración, saltos, caminos y terreno solo con toques y arrastres.
 
 Todos los gráficos, sonidos y logotipos de patrocinadores se generan por código; las marcas y nombres son ficticios.

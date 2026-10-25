@@ -75,8 +75,7 @@
     const tr = g.newTrack();
     if (!tr) { app().hud.toast('Has alcanzado el máximo de circuitos', 'bad'); return; }
     MX.Tools.set(TL().TrackStart);
-    const phone = document.documentElement.classList.contains('phone');
-    app().hud.toast(phone ? 'Toca tu terreno para ver la parrilla y toca encima para colocarla' : 'Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
+    app().hud.toast(app().input.touchMode ? 'Mueve la parrilla con el dedo y pulsa «Colocar»' : 'Haz clic en tu terreno para colocar la parrilla de salida (R para girarla)', 'info');
   }
   function buildTrackDetail(el, tr) {
     if (!tr) return;
@@ -91,7 +90,7 @@
       return b;
     };
     if (tr.pieces && !tr.origin) {
-      el.append(h('div', { class: 'callout' }, icon('info'), h('span', null, 'Haz clic en tu terreno para colocar la parrilla de salida. Pulsa R para girarla. En pantallas táctiles, toca para verla y vuelve a tocar encima para colocarla. Después irás construyendo el circuito pieza a pieza.')),
+      el.append(h('div', { class: 'callout' }, icon('info'), h('span', null, 'Haz clic en tu terreno para colocar la parrilla de salida. Pulsa R para girarla. En pantallas táctiles, arrástrala o toca donde la quieras y pulsa «Colocar». Después irás construyendo el circuito pieza a pieza.')),
         h('div', { class: 'row gap wrap' },
           toolBtn('track', 'Colocar la salida', TL().TrackStart),
           h('button', { class: 'btn', title: 'Girar la parrilla 45 grados (R)', onclick: () => { if (MX.Tools.current !== TL().TrackStart) MX.Tools.set(TL().TrackStart); TL().TrackStart.rotate(); } }, icon('rotate'), 'Girar'),

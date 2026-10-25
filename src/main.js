@@ -127,9 +127,8 @@
         MX.WM.relayout();
       }
     },
-    /* Pan so a world point sits inside the part of the map not covered by panels. */
-    frameWorld(x, y, z, force) {
-      const r = this.renderer, p = r.worldToCss(x, y, z);
+    /* The part of the screen where the map is not covered by bars, sheets or the tutorial. */
+    freeRect() {
       const W = window.innerWidth, H = window.innerHeight;
       const tb = document.getElementById('topbar');
       let top = tb ? tb.getBoundingClientRect().bottom : 44;
@@ -143,10 +142,19 @@
         const b = w.el.getBoundingClientRect();
         if (document.documentElement.classList.contains('land')) left = Math.max(left, b.right); else bottom = Math.min(bottom, b.top);
       }
-      const m = 40;
-      if (!force && p[0] > left + m && p[0] < W - m && p[1] > top + m && p[1] < bottom - m) return;
-      const tx = (left + W) / 2, ty = top + (bottom - top) * 0.45;
+      return { left, top, right: W, bottom };
+    },
+    /* Pan so a world point sits inside the free part of the map. */
+    frameWorld(x, y, z, force) {
+      const p = this.renderer.worldToCss(x, y, z), f = this.freeRect(), m = 40;
+      if (!force && p[0] > f.left + m && p[0] < f.right - m && p[1] > f.top + m && p[1] < f.bottom - m) return;
+      const tx = (f.left + f.right) / 2, ty = f.top + (f.bottom - f.top) * 0.45;
       this.panAnim = { dx: tx - p[0], dy: ty - p[1], t: 0, ax: 0, ay: 0 };
+    },
+    /* ground point in the middle of the free part of the map */
+    freeCenter() {
+      const f = this.freeRect();
+      return this.renderer.pickGround((f.left + f.right) / 2, f.top + (f.bottom - f.top) * 0.5);
     },
     applyGraphics() {
       const s = this.settings, r = this.renderer;

@@ -19,6 +19,28 @@
     return true;
   }
   function tileOf(p) { return { tx: Math.floor(p.x / T), tz: Math.floor(p.z / T) }; }
+  /* does a screen point fall on a world box? (projected corners plus a margin for fingers) */
+  function onScreenBox(css, b, m) {
+    if (!css || !b) return false;
+    let ax = 1e9, ay = 1e9, bx = -1e9, by = -1e9;
+    for (const x of [b.x0, b.x1]) for (const y of [b.y0, b.y1]) for (const z of [b.z0, b.z1]) {
+      const q = R().worldToCss(x, y, z);
+      ax = Math.min(ax, q[0]); bx = Math.max(bx, q[0]); ay = Math.min(ay, q[1]); by = Math.max(by, q[1]);
+    }
+    return css.x >= ax - m && css.x <= bx + m && css.y >= ay - m && css.y <= by + m;
+  }
+  /* Placing tools on touch screens (preview: true): a tap moves the preview, a finger
+     on it drags it, and a tap on it or the «Colocar» button places it. They start with
+     the preview in the middle of the free part of the map. */
+  function previewAtCenter(tool) {
+    if (!app().input || !app().input.touchMode) return;
+    setTimeout(() => {
+      if (Tools.current !== tool) return;
+      const c = app().freeCenter();
+      if (c) { tool.lastP = c; tool.hover(c); }
+    }, 80);
+  }
+  const touchMode = () => !!(app().input && app().input.touchMode);
 
   /* translate a mesh (array copy) by an offset */
   function translated(mesh, dx, dy, dz) {
@@ -35,6 +57,19 @@
     const h = (x, z) => w.vh(x, z) + l;
     const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
     mb.quad4([x0, h(tx, tz), z0], [x0, h(tx, tz + 1), z1], [x1, h(tx + 1, tz + 1), z1], [x1, h(tx + 1, tz), z0], [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, colr);
+  }
+  /* outline of a footprint on the ground; overlays draw on top of everything, so it shows
+     through trees and makes a green preview easy to see on grass */
+  function footprintMesh(tx, tz, w, h, colr) {
+    const mb = new MB(2048), wd = game().world, e = 0.6;
+    const strip = (xa, za, xb, zb) => {
+      const y = (x, z) => wd.heightAt(x, z) + 0.15;
+      mb.quad4([xa, y(xa, za), za], [xa, y(xa, zb), zb], [xb, y(xb, zb), zb], [xb, y(xb, za), za], [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, colr);
+    };
+    const x0 = tx * T, z0 = tz * T, x1 = (tx + w) * T, z1 = (tz + h) * T;
+    for (let i = 0; i < w; i++) { const xa = x0 + i * T; strip(xa, z0, xa + T, z0 + e); strip(xa, z1 - e, xa + T, z1); }
+    for (let j = 0; j < h; j++) { const za = z0 + j * T; strip(x0, za, x0 + e, za + T); strip(x1 - e, za, x1, za + T); }
+    return mb.build();
   }
   function marker(mb, x, y, z, r, hgt, colr) {
     mb.cylinder(x, y, z, r, hgt, 6, MB.MAT_SOLID, colr);
@@ -125,21 +160,23 @@
     return joinMeshes([MX.Geom.track(tmp, w, { ghost: true }), tmp.pieces[0].t === 'start' ? MX.Geom.startGate(tmp, w, false) : null]);
   }
   const GHOST_OK = [0.35, 1, 0.45, 0.42], GHOST_CLOSE = [1, 0.85, 0.2, 0.45], GHOST_BAD = [1, 0.22, 0.15, 0.55], GHOST_DITHER = 0.56;
+  /* buildings and decorations: light enough to stand out on grass */
+  const GHOST_B_OK = [0.7, 1, 0.75, 0.5], GHOST_B_WARN = [1, 0.85, 0.2, 0.45], GHOST_B_BAD = [1, 0.2, 0.15, 0.5], GHOST_B_DITHER = 0.82;
 
   /* Place the start straight: the cursor marks the gate, R turns it in 45 degree steps. */
   const TrackStart = {
-    name: 'trackstart', h: 0,
+    name: 'trackstart', h: 0, preview: true,
     get hint() { return 'Clic: colocar la parrilla de salida · R o clic derecho: girar · Esc: salir'; },
     get tr() { return game().selectedTrack; },
-    enter() { this.lat = null; this.probe = null; },
+    enter() { this.lat = null; this.probe = null; this.center = null; previewAtCenter(this); },
     exit() { R().setGhostMesh(null); this.probe = null; },
     hover(p) {
       if (!p) return;
       this.center = { x: p.x, z: p.z };
-      this.place();
+      this.locate();
     },
     /* the start straight is centred on the cursor */
-    place() {
+    locate() {
       const c = this.center;
       if (!c) return;
       const Tr = MX.Track, n = Tr.pieceUnits({ t: 'start' }, this.h), v = Tr.DIRV[this.h];
@@ -156,13 +193,24 @@
       const m = probeMesh(this.probe.tmp);
       if (m) R().setGhostMesh(m.data, m.count, this.probe.ok ? (this.probe.warn ? GHOST_CLOSE : GHOST_OK) : GHOST_BAD, GHOST_DITHER);
     },
-    click(p, e) {
-      /* touch has no hover: the first tap moves the preview, a tap on it places the gate */
-      if (e && e.touch && p) {
-        const pr = this.probe, S = pr && pr.tmp && pr.tmp.S;
-        const hit = S && pr.tmp.nearestS(p.x, p.z);
-        if (!hit || hit.dist > S.w[hit.i] * 0.5 + 3) { this.hover(p); return; }
-      }
+    /* touch: a finger on the gate drags it */
+    grab(p) {
+      const pr = this.probe, S = pr && pr.tmp && pr.tmp.S;
+      if (!S || !p || !this.center) return false;
+      const hit = pr.tmp.nearestS(p.x, p.z);
+      if (!hit || hit.dist > S.w[hit.i] * 0.5 + 3) return false;
+      this.grabOff = { x: p.x - this.center.x, z: p.z - this.center.z };
+      return true;
+    },
+    dragTo(p) { if (p) this.hover({ x: p.x - this.grabOff.x, z: p.z - this.grabOff.z }); },
+    placement() {
+      const pr = this.probe;
+      if (!pr || !pr.tmp) return null;
+      return { ok: pr.ok, warn: pr.ok && !!pr.warn, text: pr.ok ? U.fmtMoney(pr.cost) : pr.reason };
+    },
+    emptyText: 'Toca tu terreno para ver la parrilla',
+    click() { this.place(); },
+    place() {
       const l = this.lat, tr = this.tr;
       if (!l || !tr) return;
       const ui = app().trackUI;
@@ -174,7 +222,7 @@
         toast('Ahora elige dirección y pendiente y construye pieza a pieza', 'info');
       }
     },
-    rotate() { this.h = (this.h + 1) % 8; this.place(); sfx('click'); },
+    rotate() { this.h = (this.h + 1) % 8; this.locate(); sfx('click'); },
     rightClick() { this.rotate(); },
     key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; },
     labels() {
@@ -325,6 +373,7 @@
     touchDraw: true,
     down(p, e) { if (e.button === 0 && p) { this.dragging = true; this.downAt = p; app().input.captureDrag = true; } },
     up(p, e) { if (e.button === 0) { this.dragging = false; app().input.captureDrag = false; } },
+    cancelDrag() { this.dragging = false; },
     click(p, e) {
       if (!p) return;
       const tr = this.tr;
@@ -470,6 +519,15 @@
       this.refresh();
       void p; void e;
     },
+    cancelDrag() {
+      if (this.drag < 0) return;
+      const tr = this.tr, i = this.drag;
+      this.drag = -1;
+      tr.nodes[i].x = this.snap.x; tr.nodes[i].z = this.snap.z;
+      tr.rebuild(game().world);
+      R().setGhostMesh(null);
+      this.refresh();
+    },
     click(p) {
       const tr = this.tr;
       if (!tr || !p || this.drag >= 0) return;
@@ -513,7 +571,7 @@
 
   /* -------- Track features -------- */
   const TrackFeature = {
-    name: 'trackfeature',
+    name: 'trackfeature', preview: true,
     type: 'tabletop_m',
     get hint() { return 'Clic sobre la pista: colocar ' + Cat.features[this.type].name.toLowerCase() + ' (' + U.fmtMoney(Cat.features[this.type].cost) + ') · Esc: salir'; },
     enter() { this.check = null; this.refresh(); },
@@ -534,13 +592,31 @@
       }
       this.refresh();
     },
-    click() {
+    /* touch: a finger on the highlighted stretch drags it along the track */
+    grab(p) {
+      const tr = this.tr, c = this.check;
+      if (!tr || !tr.S || !p || !c || c.s0 == null) return false;
+      const r = tr.nearestS(p.x, p.z);
+      if (!r || r.dist > tr.S.w[r.i] * 0.5 + 4) return false;
+      const ds = tr.wrapS(r.s - c.s0);
+      return ds <= (c.len || 0) + 6 || ds >= tr.length - 6;
+    },
+    dragTo(p) { if (p) { this.lastP = p; this.hover(p); } },
+    placement() {
+      if (!this.check) return null;
+      return { ok: this.check.ok, text: this.check.ok ? U.fmtMoney(Cat.features[this.type].cost) : this.check.reason };
+    },
+    emptyText: 'Toca el circuito donde lo quieras',
+    click() { this.place(); },
+    place() {
       const tr = this.tr;
       if (!tr || !this.check) return;
       if (tr.state === 'open') { toast('Cierra el circuito para modificarlo', 'info'); return; }
       if (!this.check.ok) { toast(this.check.reason, 'bad'); sfx('error'); return; }
       if (result(game().addFeature(tr, this.type, this.check.s))) { sfx('build'); app().fx.burst(this.cx, this.cy, this.cz, 'dirt'); MX.Bus.emit('track:feature', { type: this.type }); }
-      this.hover(this.lastP);
+      /* on touch screens the preview goes away until the next tap */
+      if (touchMode()) { this.check = null; this.refresh(); }
+      else this.hover(this.lastP);
     },
     refresh() {
       const tr = this.tr;
@@ -591,6 +667,7 @@
     },
     down(p, e) { if (e.button === 0) { this.painting = true; app().input.captureDrag = true; } },
     up() { this.painting = false; app().input.captureDrag = false; },
+    cancelDrag() { this.painting = false; },
     click() { this.apply(); },
     apply() {
       const tr = this.tr, seg = this.seg;
@@ -659,12 +736,13 @@
   /* -------- Buildings -------- */
   const meshCache = {};
   const Build = {
-    name: 'build', type: 'toilets', rot: 0,
+    name: 'build', type: 'toilets', rot: 0, preview: true,
     get hint() { const d = Cat.buildings[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + ' · R o clic derecho: girar · Esc: salir'; },
-    enter() { this.chk = null; this.tile = null; },
-    exit() { R().setGhostMesh(null); },
+    enter() { this.clear(); previewAtCenter(this); },
+    exit() { R().setGhostMesh(null); R().setOverlayMesh(null); },
+    clear() { this.chk = null; this.tile = null; this.pos = null; this.box = null; this.center = null; R().setGhostMesh(null); R().setOverlayMesh(null); },
     hover(p) {
-      if (!p) { this.chk = null; R().setGhostMesh(null); return; }
+      if (!p) { this.clear(); return; }
       const d = Cat.buildings[this.type];
       const r = game().rect(this.type, 0, 0, this.rot);
       const tx = Math.floor(p.x / T - r.w / 2 + 0.5), tz = Math.floor(p.z / T - r.h / 2 + 0.5);
@@ -677,10 +755,27 @@
       const lv = this.chk.level != null ? this.chk.level : game().world.footprintLevel(tx, tz, r.w, r.h).target;
       const g = translated(meshCache[key], (tx + r.w / 2) * T, lv, (tz + r.h / 2) * T);
       const warn = this.chk.ok && this.chk.warn && this.chk.warn.length;
-      R().setGhostMesh(g.data, g.count, this.chk.ok ? (warn ? [1, 0.85, 0.2, 0.3] : [0.3, 1, 0.4, 0.28]) : [1, 0.2, 0.15, 0.45]);
+      R().setGhostMesh(g.data, g.count, this.chk.ok ? (warn ? GHOST_B_WARN : GHOST_B_OK) : GHOST_B_BAD, GHOST_B_DITHER);
+      const fp = footprintMesh(tx, tz, r.w, r.h, MB.rgba(this.chk.ok ? (warn ? '#ffd22e' : '#7dff7a') : '#ff4a3d'));
+      R().setOverlayMesh(fp.data, fp.count);
       this.pos = { x: (tx + r.w / 2) * T, y: lv + d.height + 1.5, z: (tz + r.h / 2) * T };
+      this.center = { x: (tx + r.w / 2) * T, z: (tz + r.h / 2) * T };
+      this.box = { x0: tx * T, x1: (tx + r.w) * T, y0: lv, y1: lv + d.height, z0: tz * T, z1: (tz + r.h) * T };
     },
-    click() {
+    /* touch: a finger on the preview drags it */
+    grab(p, css) {
+      if (!this.tile || !onScreenBox(css, this.box, 18)) return false;
+      this.grabOff = p ? { x: p.x - this.center.x, z: p.z - this.center.z } : { x: 0, z: 0 };
+      return true;
+    },
+    dragTo(p) { if (p) this.hover({ x: p.x - this.grabOff.x, z: p.z - this.grabOff.z }); },
+    placement() {
+      if (!this.chk || !this.tile) return null;
+      return { ok: this.chk.ok, warn: this.chk.ok && !!(this.chk.warn && this.chk.warn.length), text: this.chk.ok ? U.fmtMoney(this.chk.cost) : this.chk.reason };
+    },
+    emptyText: 'Toca el mapa donde lo quieras',
+    click() { this.place(); },
+    place() {
       if (!this.tile) return;
       const r = game().placeBuilding(this.type, this.tile.tx, this.tile.tz, this.rot);
       if (result(r)) {
@@ -688,9 +783,15 @@
         app().fx.burst(r.b.cx, r.b.y, r.b.cz, 'build');
         this.dirty = true;
         MX.Bus.emit('ui:built', r.b);
+        /* on touch screens the preview goes away until the next tap */
+        if (touchMode()) this.clear();
       }
     },
-    rotate() { this.rot = (this.rot + 1) % 4; this.dirty = true; sfx('click'); if (this.lastP) this.hover(this.lastP); },
+    rotate() {
+      this.rot = (this.rot + 1) % 4; this.dirty = true; sfx('click');
+      const c = touchMode() ? this.center : this.lastP;
+      if (c) this.hover(c);
+    },
     rightClick() { this.rotate(); },
     key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; },
     labels() {
@@ -734,6 +835,7 @@
       R().setOverlayMesh(o.data, o.count);
     },
     down(p, e) { if (p && (e.button === 0 || e.button === 2)) { this.start = tileOf(p); this.erase = e.button === 2; app().input.captureDrag = true; this.hover(p); } },
+    cancelDrag() { this.start = null; this.erase = false; this.tiles = []; R().setOverlayMesh(null); },
     up(p, e) {
       if (!this.start) return;
       app().input.captureDrag = false;
@@ -767,29 +869,65 @@
     exit() { R().setOverlayMesh(null); },
     click() { if (this.t && result(game().placeAddon(this.t.tx, this.t.tz, this.kind))) sfx('place'); }
   };
+  /* why a decoration can't go on a tile (the same rules as Game.placeDecor, money aside) */
+  function decorWhy(tx, tz) {
+    const w = game().world;
+    if (!w.inBounds(tx, tz)) return 'Fuera del mapa';
+    const i = w.idx(tx, tz);
+    if (!w.owned[i]) return 'Terreno no comprado';
+    if (w.bld[i] >= 0 || w.path[i] || w.trackOcc[i]) return 'Ocupado';
+    if (w.isWater(tx, tz)) return 'Hay agua';
+    if (w.scen[i] >= 0) return 'Ya hay algo aquí';
+    return null;
+  }
+  const DECOR_H = { tree_pine: 9, tree_oak: 7, tree_poplar: 11, flag: 6, banner: 4 };
   const DecorTool = {
-    name: 'decor', type: 'tree_pine', rot: 0,
+    name: 'decor', type: 'tree_pine', rot: 0, preview: true,
     get hint() { const d = Cat.decor[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + ' · R: girar · Esc: salir'; },
+    enter() { this.clear(); previewAtCenter(this); },
+    clear() { this.t = null; this.box = null; this.why = null; R().setGhostMesh(null); R().setOverlayMesh(null); },
     hover(p) {
       if (!p) return;
       this.t = tileOf(p);
       const w = game().world;
-      const ok = w.inBounds(this.t.tx, this.t.tz) && !w.bld[w.idx(this.t.tx, this.t.tz)] >= 0;
-      void ok;
       const key = 'decor:' + this.type;
       if (!meshCache[key]) meshCache[key] = MX.BuildModels.decorPreview(this.type);
-      const x = (this.t.tx + 0.5) * T, z = (this.t.tz + 0.5) * T;
-      const g = translated(meshCache[key], x, w.heightAt(x, z), z);
-      const i = w.inBounds(this.t.tx, this.t.tz) ? w.idx(this.t.tx, this.t.tz) : -1;
-      const free = i >= 0 && w.owned[i] && w.bld[i] < 0 && !w.path[i] && !w.trackOcc[i] && w.scen[i] < 0 && !w.isWater(this.t.tx, this.t.tz);
-      R().setGhostMesh(g.data, g.count, free ? [0.3, 1, 0.4, 0.25] : [1, 0.2, 0.15, 0.45]);
+      const x = (this.t.tx + 0.5) * T, z = (this.t.tz + 0.5) * T, y = w.heightAt(x, z);
+      const g = translated(meshCache[key], x, y, z);
+      this.why = decorWhy(this.t.tx, this.t.tz);
+      R().setGhostMesh(g.data, g.count, this.why ? GHOST_B_BAD : GHOST_B_OK, GHOST_B_DITHER);
+      const fp = footprintMesh(this.t.tx, this.t.tz, 1, 1, MB.rgba(this.why ? '#ff4a3d' : '#7dff7a'));
+      R().setOverlayMesh(fp.data, fp.count);
+      this.box = { x0: this.t.tx * T, x1: (this.t.tx + 1) * T, y0: y, y1: y + (DECOR_H[this.type] || 2.5), z0: this.t.tz * T, z1: (this.t.tz + 1) * T };
     },
-    exit() { R().setGhostMesh(null); },
-    click() {
+    exit() { R().setGhostMesh(null); R().setOverlayMesh(null); },
+    /* touch: a finger on the preview drags it */
+    grab(p, css) {
+      if (!this.t || !onScreenBox(css, this.box, 18)) return false;
+      this.grabOff = p ? { x: p.x - (this.t.tx + 0.5) * T, z: p.z - (this.t.tz + 0.5) * T } : { x: 0, z: 0 };
+      return true;
+    },
+    dragTo(p) { if (p) this.hover({ x: p.x - this.grabOff.x, z: p.z - this.grabOff.z }); },
+    placement() { return this.t ? { ok: !this.why, text: this.why || U.fmtMoney(Cat.decor[this.type].cost) } : null; },
+    emptyText: 'Toca el mapa donde lo quieras',
+    click() { this.place(); },
+    place() {
       if (!this.t) return;
-      if (result(game().placeDecor(this.type, this.t.tx, this.t.tz, this.rot * Math.PI / 2))) sfx('place');
+      if (result(game().placeDecor(this.type, this.t.tx, this.t.tz, this.rot * Math.PI / 2))) {
+        sfx('place');
+        if (touchMode()) this.clear();
+        else this.hover({ x: (this.t.tx + 0.5) * T, z: (this.t.tz + 0.5) * T });
+      }
     },
-    rotate() { this.rot = (this.rot + 1) % 4; if (this.lastP) this.hover(this.lastP); sfx('click'); },
+    labels() {
+      if (!this.t || !this.box) return [];
+      return [{ x: (this.t.tx + 0.5) * T, y: this.box.y1 + 1.5, z: (this.t.tz + 0.5) * T, text: this.why || U.fmtMoney(Cat.decor[this.type].cost), bad: !!this.why }];
+    },
+    rotate() {
+      this.rot = (this.rot + 1) % 4; sfx('click');
+      const c = touchMode() ? (this.t && { x: (this.t.tx + 0.5) * T, z: (this.t.tz + 0.5) * T }) : this.lastP;
+      if (c) this.hover(c);
+    },
     key(e) { if (e.key === 'r' || e.key === 'R') { this.rotate(); return true; } return false; }
   };
 
@@ -865,6 +1003,7 @@
       this.apply();
     },
     up() { this.holding = false; app().input.captureDrag = false; },
+    cancelDrag() { this.holding = false; },
     tick(dt) {
       if (!this.holding || this.op === 'level') return;
       this.rep += dt;
@@ -897,6 +1036,7 @@
     exit() { R().brush = [0, 0, 0, 0]; },
     down(p, e) { if (e.button === 0) { this.holding = true; app().input.captureDrag = true; this.apply(); } },
     up() { this.holding = false; app().input.captureDrag = false; },
+    cancelDrag() { this.holding = false; },
     apply() { const r = this.r; if (r && game().paintGround(r.tx0, r.tz0, r.tx1, r.tz1, this.ground).ok) sfx('paint'); }
   };
   const Land = {

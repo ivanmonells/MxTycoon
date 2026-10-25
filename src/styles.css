@@ -676,6 +676,23 @@ noscript { position: absolute; inset: 0; display: flex; align-items: center; jus
   #minimap-wrap { display: none; }
   #objtracker { display: none !important; }
 }
+/* ---------- touch screens: confirm bar for placing tools ---------- */
+#placebar { position: absolute; left: 50%; bottom: calc(var(--tbb) + 14px + var(--sab)); z-index: 19; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 24px); transform: translateX(-50%); }
+#placebar[hidden] { display: none; }
+#placebar button { min-height: 46px; border: 2px solid var(--ink); border-radius: 8px; box-shadow: 0 3px 0 rgba(0, 0, 0, .4); }
+.pb-rot { display: flex; flex: none; align-items: center; justify-content: center; width: 46px; padding: 0; background: var(--yellow); }
+.pb-rot[hidden] { display: none; }
+.pb-go {
+  display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 16px;
+  background: linear-gradient(var(--orange-l), var(--orange-d)); color: #fff; font: 700 16px/1.1 var(--f-num); text-shadow: 1px 1px 0 rgba(0, 0, 0, .45);
+}
+.pb-go span:not(.px-icon) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pb-go.warn { background: linear-gradient(#ffb03a, #c77800); }
+.pb-go.bad { background: #7a1f1a; opacity: 1; }
+.pb-go.idle { background: rgba(43, 35, 29, .94); color: var(--text); font-weight: 600; text-shadow: none; }
+.pb-go:disabled { cursor: default; }
+#ui.placing .win-rot { display: none; }
+
 /* ---------- phones: one-row top bar, one sheet at a time, compact constructor ---------- */
 html.phone { --tbh: 44px; --tbb: 66px; }
 .phone #topbar { flex-wrap: nowrap; gap: 4px; height: calc(var(--tbh) + var(--sat)); padding: var(--sat) calc(4px + var(--sar)) 0 calc(4px + var(--sal)); }
@@ -760,6 +777,10 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone.land #camctl { bottom: calc(6px + var(--sab)); flex-direction: row; }
 .phone.land #notes { right: calc(6px + var(--sar)); }
 .phone.land #ui.sheet-open #notes { left: calc(min(380px, 50vw) + 6px); }
+.phone #placebar { bottom: calc(var(--bottom-ui, var(--tbb)) + 10px); max-width: calc(100% - 112px); }
+.phone #ui.placing #notes { bottom: calc(var(--bottom-ui, var(--tbb)) + 66px); }
+.phone.land #placebar { bottom: calc(56px + var(--sab)); max-width: calc(100% - 24px); }
+.phone.land #ui.sheet-open #placebar { left: calc((100% + min(380px, 50vw)) / 2); max-width: calc(100% - min(380px, 50vw) - 24px); }
 .phone.land #tutorial { left: auto; width: min(360px, 46vw); }
 /* compact track constructor */
 .phone .win-body.constructing > .row:first-child, .phone .win-body.constructing > .track-list, .phone .win-body.constructing .name-row { display: none; }

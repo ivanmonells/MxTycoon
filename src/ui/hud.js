@@ -79,6 +79,10 @@
         h('button', { title: 'Girar la vista', 'aria-label': 'Girar la vista', onclick: () => { app.renderer.cam.yawIndex = (app.renderer.cam.yawIndex + 1) % 4; } }, icon('rotate')),
         h('button', { title: 'Acercar', 'aria-label': 'Acercar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 1.35) }, '+'),
         h('button', { title: 'Alejar', 'aria-label': 'Alejar', onclick: () => app.input.zoomAt(innerWidth / 2, innerHeight / 2, 0.74) }, '−'));
+      /* touch screens: what a placing tool would build, with a button to place it */
+      this.placeRot = h('button', { class: 'pb-rot', title: 'Girar', 'aria-label': 'Girar', onclick: () => { const t = MX.Tools.current; if (t && t.rotate) t.rotate(); } }, icon('rotate'));
+      this.placeBtn = h('button', { class: 'pb-go', onclick: () => { const t = MX.Tools.current; if (t && t.place) t.place(); } }, icon('check'), h('span', null, 'Colocar'));
+      this.placeEl = h('div', { id: 'placebar', hidden: true }, this.placeRot, this.placeBtn);
       /* other HUD parts */
       this.objEl = h('div', { id: 'objtracker', onclick: () => app.panels.objectives() });
       this.notesEl = h('div', { id: 'notes', 'aria-live': 'polite' });
@@ -94,7 +98,7 @@
       this.mini.addEventListener('pointerdown', (e) => this.miniClick(e));
       this.mini.addEventListener('pointermove', (e) => { if (e.buttons) this.miniClick(e); });
       this.overlay = h('canvas', { id: 'overlay' });
-      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.camEl, this.bar);
+      this.root.append(this.overlay, this.top, this.objEl, this.raceEl, this.notesEl, this.hintEl, this.toastEl, this.miniWrap, this.camEl, this.placeEl, this.bar);
       this.octx = this.overlay.getContext('2d');
     }
     setVisible(v) { this.root.classList.toggle('hud-hidden', !v); }
@@ -163,10 +167,26 @@
       const tname = MX.Tools.current ? MX.Tools.current.name : '';
       const map = { trackstart: 'tracks', trackbuild: 'tracks', trackdraw: 'tracks', trackedit: 'tracks', trackfeature: 'tracks', tracksurface: 'tracks', trackwidth: 'tracks', trackelev: 'tracks', build: 'build', path: 'paths', addon: 'paths', decor: 'decor', demolish: 'demolish', terrain: 'terrain', paint: 'terrain', land: 'terrain' };
       for (const id in this.toolBtns) this.toolBtns[id].classList.toggle('on', map[tname] === id || MX.WM.isOpen(id));
+      this.updatePlaceBar();
       this.updateObjective();
       this.updateRaceBar();
       this.miniT = (this.miniT || 0) - dt;
       if (this.miniT <= 0) { this.drawMinimap(); this.miniT = 0.5; }
+    }
+    updatePlaceBar() {
+      const t = MX.Tools.current, input = this.app.input;
+      const show = !!(t && t.preview && t.placement && input && input.touchMode);
+      if (this.placeEl.hidden === show) { this.placeEl.hidden = !show; this.root.classList.toggle('placing', show); }
+      if (!show) return;
+      const pl = t.placement();
+      const key = t.name + '|' + (pl ? (pl.ok ? (pl.warn ? 'w' : 'y') : 'n') + pl.text : '-') + '|' + !!t.rotate;
+      if (key === this._plKey) return;
+      this._plKey = key;
+      this.placeRot.hidden = !t.rotate;
+      this.placeBtn.querySelector('span:not(.px-icon)').textContent = !pl ? (t.emptyText || 'Toca el mapa') : pl.ok ? 'Colocar · ' + pl.text : pl.text;
+      this.placeBtn.querySelector('.px-icon').style.display = pl && pl.ok ? '' : 'none';
+      this.placeBtn.disabled = !pl || !pl.ok;
+      this.placeBtn.className = 'pb-go' + (!pl ? ' idle' : !pl.ok ? ' bad' : pl.warn ? ' warn' : '');
     }
     updateObjective() {
       const g = this.game;
