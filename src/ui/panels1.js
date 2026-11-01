@@ -737,26 +737,25 @@
   }
 
   /* ================= Paths ================= */
-  /* Paths go down tile by tile with arrows and «Construir», like the classic construction
-     window (the default on touch screens, where dragging fights the camera), or dragged
-     out in a line (the default with a mouse). */
-  const PATH_DIRS = [[-1, -1, 'Hacia arriba a la izquierda', -90], [1, -1, 'Hacia arriba a la derecha', 0], [-1, 1, 'Hacia abajo a la izquierda', 180], [1, 1, 'Hacia abajo a la derecha', 90]];
+  /* Paths are built piece by piece with the same construction window as the circuits
+     (the default), or dragged out in a line on the ground. */
   function pathsPanel() {
-    const ui = app().pathUI || (app().pathUI = { mode: (app().input && app().input.touchMode) || document.documentElement.classList.contains('phone') ? 'piece' : 'drag' });
+    const ui = app().pathUI || (app().pathUI = { mode: 'piece' });
     WM.open('paths', {
-      title: 'Caminos y carreteras', icon: 'path', width: 360,
+      title: 'Caminos y carreteras', icon: 'path', width: 380,
       build: (body) => {
         const pb = TL().PathBuild, pd = TL().PathTool;
         const tool = () => ui.mode === 'piece' ? pb : pd;
         const active = MX.Tools.current === pb ? pb : MX.Tools.current === pd ? pd : null;
         const pick = (t) => { const tl = tool(); tl.type = t; if (MX.Tools.current !== tl) MX.Tools.set(tl); else if (tl.refresh) tl.refresh(); WM.rebuild('paths'); };
-        const row = h('div', { class: 'row gap wrap' });
+        const phone = document.documentElement.classList.contains('phone');
+        const row = h('div', { class: 'row gap wrap path-types' });
         for (const t of [1, 2, 3]) {
           const d = Cat.paths[t];
-          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
+          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), title: d.name, onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), phone ? ['Grava', 'Adoquinado', 'Carretera'][t - 1] : d.name, h('small', null, U.fmtMoney(d.cost))));
         }
         const mode = h('div', { class: 'row gap wrap path-mode' });
-        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Toca dónde empieza el camino y alárgalo con las flechas y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas']]) {
+        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Como el constructor de circuitos: dirección, pendiente y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas a ras de suelo']]) {
           mode.append(h('button', { class: 'btn small' + (ui.mode === m ? ' on' : ''), title: tip, onclick: () => {
             if (ui.mode === m) return;
             ui.mode = m;
@@ -764,49 +763,114 @@
             WM.rebuild('paths');
           } }, label));
         }
-        body.append(h('h4', null, 'Trazar'), row, mode);
+        /* the constructor right under the kinds of path, the way of building below it */
+        body.append(h('h4', null, 'Trazar'), row);
         let upd = null;
         if (active === pb) upd = pathBuilder(body, pb);
-        else if (!active) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino, toca en el mapa la casilla donde empieza y alárgalo con las flechas y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa.'));
+        body.append(mode);
+        if (active !== pb) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino y toca en el mapa la casilla donde empieza (o el final de un camino para seguirlo). Luego se construye como un circuito: dirección, pendiente y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa. Arrastrando, los caminos van a ras de suelo; para subir o bajar, pieza a pieza.'));
         const add = h('div', { class: 'row gap wrap' });
         for (const k in Cat.addons) {
           const d = Cat.addons[k];
           add.append(h('button', { class: 'btn' + (MX.Tools.current === TL().AddonTool && TL().AddonTool.kind === k ? ' on' : ''), title: d.desc, onclick: () => { TL().AddonTool.kind = k; MX.Tools.set(TL().AddonTool); WM.rebuild('paths'); } }, icon(k === 'bench' ? 'bench' : k === 'bin' ? 'demolish' : 'info'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
-        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Un camino puede subir en rampa, cruzar el lago por una pasarela, pasar por encima de un circuito (' + U.fmt1(MX.World.PATH_OVER) + ' m sobre la pista) o por debajo de uno que vaya alto (' + U.fmt1(MX.World.PATH_UNDER) + ' m sobre el camino). Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+          h('p', { class: 'muted small' }, 'Mientras construyes, «Quitar» te devuelve todo lo que has pagado. Cuando cierras el modo de construcción, quitar un camino solo devuelve la mitad.'),
           h('h4', null, 'Mobiliario'), add);
         return upd;
       }
     });
   }
-  /* the arrows (as seen on screen), «Construir» and «Quitar» of the tile by tile builder */
+  /* top view of a path tile and the way out of it: straight on, or a turn */
+  function pathTurnGlyph(t) {
+    const c = h('canvas', { width: 44, height: 34, class: 'glyph-dir' });
+    const x = c.getContext('2d');
+    x.lineCap = 'butt'; x.lineJoin = 'miter';
+    const path = () => {
+      x.beginPath(); x.moveTo(22, 33);
+      if (!t) { x.lineTo(22, 8); return; }
+      x.lineTo(22, 17); x.lineTo(22 + t * 14, 17);
+    };
+    x.strokeStyle = '#1a1410'; x.lineWidth = 11; path(); x.stroke();
+    x.strokeStyle = '#c9c2b2'; x.lineWidth = 8; path(); x.stroke();
+    const ex = t ? 22 + t * 15 : 22, ey = t ? 17 : 7, ang = t ? (t > 0 ? 0 : Math.PI) : -Math.PI / 2;
+    x.fillStyle = '#ffd22e'; x.strokeStyle = '#1a1410'; x.lineWidth = 1.5;
+    x.beginPath();
+    x.moveTo(ex + Math.cos(ang) * 6, ey + Math.sin(ang) * 6);
+    x.lineTo(ex + Math.cos(ang + 2.4) * 6, ey + Math.sin(ang + 2.4) * 6);
+    x.lineTo(ex + Math.cos(ang - 2.4) * 6, ey + Math.sin(ang - 2.4) * 6);
+    x.closePath(); x.fill(); x.stroke();
+    return c;
+  }
+  /* side view of a path slope, as the circuit one: the ground under it, the path on top */
+  function pathSlopeGlyph(sl) {
+    const c = h('canvas', { width: 44, height: 24, class: 'glyph-slope' });
+    const x = c.getContext('2d');
+    const y0 = 16 + (sl > 0 ? 3 : sl < 0 ? -5 : 0), y1 = y0 - sl * 5.5;
+    x.fillStyle = '#6b4a2b';
+    x.beginPath(); x.moveTo(3, 23); x.lineTo(3, y0); x.lineTo(41, y1); x.lineTo(41, 23); x.closePath(); x.fill();
+    x.strokeStyle = '#1a1410'; x.lineWidth = 5; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    x.strokeStyle = '#c9c2b2'; x.lineWidth = 3; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    return c;
+  }
+  /* the path constructor: as the circuit one, a status line, the turn, the slope, what the
+     next tile will be and «Construir» / «Quitar» */
   function pathBuilder(body, pb) {
     const noFocus = (e) => e.preventDefault();
-    const status = h('div', { class: 'bld-preview path-status' });
-    const pad = h('div', { class: 'path-pad' });
-    const btns = PATH_DIRS.map(([sx, sy, label, rot]) => {
-      const b = h('button', { class: 'bld-btn path-dir', title: label, 'aria-label': label, onmousedown: noFocus, onclick: () => pb.turn(sx, sy) }, icon('arrow'));
-      b.querySelector('.px-icon').style.transform = 'rotate(' + rot + 'deg)';
-      b._d = [sx, sy];
-      pad.append(b);
-      return b;
-    });
-    const acts = h('div', { class: 'row gap bld-actions' },
-      h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
-      h('button', { id: 'path-undo', class: 'btn', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar'));
-    body.append(h('div', { class: 'path-builder' }, pad, h('div', { class: 'path-side' }, status, acts)));
+    const phone = document.documentElement.classList.contains('phone');
+    const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
+    const road = pb.road();
+    const box = h('div', { class: 'builder path-constructor' + (phone ? ' compact' : '') });
+    const status = h('div', { class: 'bld-status' });
+    const preview = h('div', { class: 'bld-preview' });
+    const dirs = h('div', { class: 'bld-dirs path-dirs' });
+    for (const [t, label] of TL().PathBuild.TURNS) dirs.append(opt('bld-btn', pb.turn === t, label, () => { pb.turn = t; pb.changed(); }, pathTurnGlyph(t), phone ? null : h('small', null, t ? label.replace('Girar a la ', 'A la ') : label)));
+    const slopes = h('div', { class: 'bld-slopes path-slopes' });
+    for (const [v, label] of TL().PathBuild.SLOPES) {
+      const lock = road && v !== 0;
+      slopes.append(opt('bld-btn' + (lock ? ' locked' : ''), !lock && pb.slope === v, lock ? 'Las carreteras van siempre a ras de suelo' : label, () => { if (lock) { app().hud.toast('Las carreteras van siempre a ras de suelo', 'info'); return; } pb.slope = v; pb.changed(); }, pathSlopeGlyph(v), phone ? null : h('small', null, label)));
+    }
+    if (phone) box.append(status, h('div', { class: 'path-rows' }, dirs, slopes));
+    else box.append(status, h('h4', null, 'Dirección'), dirs, h('h4', null, 'Pendiente'), slopes);
+    box.append(preview,
+      h('div', { class: 'row gap bld-actions' },
+        h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
+        h('button', { id: 'path-undo', class: 'btn', title: 'Quitar la última casilla', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar')));
+    if (!phone) box.append(h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'));
+    body.append(box);
+    const turnName = { '-1': 'girando a la izquierda', 0: 'recto', 1: 'girando a la derecha' };
+    const slopeName = { '-1': ' en bajada', 0: '', 1: ' en subida' };
     return () => {
-      const f = pb.cur ? pb.facing() : null;
-      const key = (pb.ver || 0) + ':' + (f ? f.join(',') : '-') + ':' + app().renderer.cam.yawIndex + ':' + Math.floor(game().econ.money / 500);
+      const g = game(), w = g.world, c = pb.cur;
+      let spent = 0;
+      for (const v of g.pathSession.values()) spent += v;
+      const key = (pb.ver || 0) + ':' + spent + ':' + Math.floor(g.econ.money / 500) + ':' + pb.turn + pb.slope;
       if (status._k === key) return;
       status._k = key;
-      for (const b of btns) b.classList.toggle('on', !!f && b._d[0] === f[0] && b._d[1] === f[1]);
       clear(status);
-      const n = pb.next(), why = pb.why(), cost = pb.cost();
-      status.className = 'bld-preview path-status' + (n ? (why ? ' bad' : ' ok') : '');
-      status.append(icon(!n ? 'info' : why ? 'cross' : 'check'),
-        h('span', null, !n ? 'Toca en el mapa la casilla donde empieza el camino' : why ? h('em', null, why) : h('b', null, cost ? 'Siguiente casilla · ' + U.fmtMoney(cost) : 'Sigue por el camino que ya hay'),
-          pb.laid.length ? h('small', null, ' · ' + pb.laid.length + (pb.laid.length === 1 ? ' casilla puesta' : ' casillas puestas')) : null));
+      if (c) {
+        const i = w.idx(c.tx, c.tz), up = w.path[i] ? pb.topAt(c.tx, c.tz) - MX.World.PATH_LIFT - w.heightAt((c.tx + 0.5) * T, (c.tz + 0.5) * T) : 0;
+        status.append(h('span', null, h('b', null, g.pathSession.size), g.pathSession.size === 1 ? ' casilla nueva' : ' casillas nuevas'),
+          h('span', null, 'Altura ', h('b', null, (up > 0.05 ? '+' : '') + U.fmt1(Math.max(0, up)) + ' m')),
+          h('span', null, 'Invertido ', h('b', null, U.fmtMoney(spent))));
+        if (w.path[i]) {
+          const fresh = g.pathSession.get(i);
+          status.append(h('span', null, 'Quitar: ', h('b', null, '+' + U.fmtMoney(fresh != null ? fresh : Math.round(g.pathValue(c.tx, c.tz, w.path[i], w.pathY[i], w.pathS[i]) * C.REFUND_RATE))), fresh != null ? ' (todo)' : ' (la mitad)'));
+        }
+      }
+      const n = pb.plan();
+      clear(preview);
+      preview.className = 'bld-preview' + (n ? (n.reason ? ' bad' : ' ok') : '');
+      if (!n) { preview.append(icon('info'), h('span', null, 'Toca en el mapa la casilla donde empieza el camino, o el final de uno para seguirlo')); return; }
+      const name = Cat.paths[pb.type].name + (n.first ? ' · primera casilla' : ' ' + turnName[pb.turn] + slopeName[road ? 0 : pb.slope]);
+      const cx = (n.tx + 0.5) * T, cz = (n.tz + 0.5) * T;
+      const up = n.y === n.y && w.inBounds(n.tx, n.tz) ? w.rampY(n.tx, n.tz, n.y, n.s, cx, cz) - w.heightAt(cx, cz) : 0;
+      const over = !n.reason && !n.walk && w.inBounds(n.tx, n.tz) && w.trackOcc[w.idx(n.tx, n.tz)] && up > 1 ? 'Pasa por encima del circuito' : !n.reason && !n.walk && w.inBounds(n.tx, n.tz) && w.trackOcc[w.idx(n.tx, n.tz)] ? 'Pasa por debajo del circuito' : null;
+      preview.append(icon(n.reason ? 'cross' : 'check'),
+        h('span', null, h('b', null, name),
+          n.walk ? ' · sigue por el camino que ya hay' : !n.reason ? ' · ' + U.fmtMoney(n.cost) + (up > 0.6 ? ' · a ' + U.fmt1(up) + ' m del suelo' : '') : '',
+          over ? h('em', { class: 'fix' }, over) : null,
+          n.reason ? h('em', null, n.reason) : null));
     };
   }
 

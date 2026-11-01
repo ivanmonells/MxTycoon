@@ -69,11 +69,14 @@
     /* crossings with itself and the other circuits: bridges over, tunnels under */
     const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
     const vg = c ? vergeOf(tr) : null;
-    const marks = xs.length ? crossingMarks(tr, xs, world) : null;
+    /* footpaths that go under it (or run beside it, lower down): walls instead of slopes */
+    const low = opts.ghost ? null : lowPaths(tr, world);
+    const marks = xs.length || low ? crossingMarks(tr, xs, world, low) : null;
     surface(mb, tr, world, opts, null, marks, vg);
     /* the wide start straight, tucked just under the circuit where the two overlap */
     if (c) { surface(mb, c, world, opts, tr, null, vg); verge(mb, tr, world, vg); }
     if (marks) for (const t of marks.tunnels) tunnel(mb, t);
+    if (marks && marks.pathWalls) for (const cols of marks.pathWalls) slab(mb, cols, L().concrete, true);
     if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
   }
@@ -93,9 +96,77 @@
      walls reaching far enough to keep the slopes off the path below), and the tunnel
      walls of the crossings it goes under: columns {x, y top, z, nx, nz outwards, f foot}
      per side, whose samples lose their slope on that side. */
-  function crossingMarks(tr, xs, world) {
+  function crossingMarks(tr, xs, world, low) {
     const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = { '-1': new Uint8Array(n), '1': new Uint8Array(n) }, tunnels = [];
     const wrap = (k) => S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
+    let pathWalls = null, sdLow = null;
+    if (low) {
+      const N = world.N;
+      /* samples whose slope would bury a path: walls there, and a little either side so the
+         slopes end in a wing wall clear of it */
+      for (let i = 0; i < n; i++) {
+        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), hw = S.w[i] * 0.5;
+        let hit = false;
+        for (const side of [-1, 1]) {
+          const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
+          const eh = S.y[i] + tr.bankAt(i, hw * side) - world.heightAt(ex, ez);
+          const reach = hw + 0.65 + MX.Track.bankRun(Math.max(0, eh));
+          for (let o = 0; o <= reach && !hit; o += 0.7) {
+            const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
+            if (low.has(Math.floor(x / T) + Math.floor(z / T) * N)) hit = true;
+          }
+          if (hit) break;
+        }
+        if (hit) for (let k = -5; k <= 5; k++) { const j = S.closed ? U.mod(i + k, n) : i + k; if (j >= 0 && j < n) wall[j] = 1; }
+      }
+      /* the bridge walls open where a path goes through: signed distance to the paths
+         (negative inside), the open sides of a tile being those with no path beyond */
+      sdLow = (x, z) => {
+        const tx = Math.floor(x / T), tz = Math.floor(z / T), i = tx + tz * N;
+        if (low.has(i)) {
+          const fx = x - tx * T, fz = z - tz * T;
+          let d = T;
+          if (!low.has(i - N)) d = Math.min(d, fz);
+          if (!low.has(i + 1)) d = Math.min(d, T - fx);
+          if (!low.has(i + N)) d = Math.min(d, T - fz);
+          if (!low.has(i - 1)) d = Math.min(d, fx);
+          return -Math.max(0.01, d);
+        }
+        let d = Infinity;
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          if (!low.has(i + dx + dz * N)) continue;
+          const x0 = (tx + dx) * T, z0 = (tz + dz) * T;
+          d = Math.min(d, Math.hypot(Math.max(x0 - x, 0, x - x0 - T), Math.max(z0 - z, 0, z - z0 - T)));
+        }
+        return d;
+      };
+      /* tunnel walls along the open sides of the paths under the deck */
+      pathWalls = [];
+      const PD = MX.World.PDIR;
+      for (const t of low) {
+        const tx = t % N, tz = (t / N) | 0;
+        const h0 = tr.nearestS((tx + 0.5) * T, (tz + 0.5) * T);
+        if (!h0) continue;
+        for (let k = 0; k < 4; k++) {
+          if (world.pathLink(tx, tz, k)) continue;
+          const d = PD[k], ox = d[0], oz = d[1];
+          /* the side's two corners, from one end to the other */
+          const cx = (tx + 0.5 + ox * 0.5) * T, cz = (tz + 0.5 + oz * 0.5) * T;
+          const ax = cx - oz * T * 0.5, az = cz + ox * T * 0.5, bx = cx + oz * T * 0.5, bz = cz - ox * T * 0.5;
+          let cols = [];
+          const flush = () => { if (cols.length > 1) pathWalls.push(cols.map(p => Object.assign(p, { fL: p.f, fR: p.f }))); cols = []; };
+          for (let q = 0; q <= 8; q++) {
+            const x = ax + (bx - ax) * q / 8, z = az + (bz - az) * q / 8;
+            const h = tr.nearestS(x, z, h0.s, 14);
+            const hw = h ? S.w[h.i] * 0.5 : 0;
+            if (!h || Math.abs(h.lane) > hw + WALL_T + 0.3) { flush(); continue; }
+            const top = S.y[h.i] + tr.bankAt(h.i, U.clamp(h.lane, -hw, hw)) - MX.Track.DECK;
+            cols.push({ x, y: top, z, nx: ox, nz: oz, f: Math.min(world.heightAt(x, z), world.pathSurfAt(tx, tz, x, z)) - 0.3 });
+          }
+          flush();
+        }
+      }
+    }
     for (const c of xs) {
       if (c.U === tr) {
         const h = Math.max(0, S.y[c.iu] - S.terr[c.iu]);
@@ -117,7 +188,23 @@
       }
       tunnels.push({ c, walls });
     }
-    return { wall, tun, tunnels, xs: xs.filter(c => c.U === tr) };
+    return { wall, tun, tunnels, xs: xs.filter(c => c.U === tr), sdLow, pathWalls };
+  }
+  /* footpath tiles on a circuit's ground that run lower than it: under its deck, or beside
+     it where its slope would bury them */
+  function lowPaths(tr, world) {
+    if (!tr.tiles || !tr.tiles.length || !tr.S) return null;
+    const N = world.N, ROAD = MX.World.P.ROAD;
+    let set = null;
+    for (const t of tr.tiles) {
+      const p = world.path[t];
+      if (!p || p === ROAD) continue;
+      const tx = t % N, tz = (t / N) | 0, cx = (tx + 0.5) * T, cz = (tz + 0.5) * T;
+      let ty = -Infinity;
+      for (const c of tr.chute && tr.chute.S ? [tr, tr.chute] : [tr]) { const h = c.nearestS(cx, cz); if (h) ty = Math.max(ty, c.S.y[h.i]); }
+      if (world.pathSurfAt(tx, tz, cx, cz) + 0.3 < ty) (set || (set = new Set())).add(t);
+    }
+    return set;
   }
   /* A wall along columns {x, y top, z, nx, nz, fL, fR, split}: its face towards (nx, nz)
      stands WALL_T out from the columns, the other on them; normals follow the columns so
@@ -179,6 +266,7 @@
         const h = c.L.nearestS(p.x, p.z, c.il * DS, 40);
         if (h) b = Math.min(b, Math.abs(h.lane) - (c.L.S.w[h.i] * 0.5 + 0.5));
       }
+      if (marks.sdLow) b = Math.min(b, marks.sdLow(p.x, p.z));
       return b;
     };
     const ground = (p) => Math.min(p.y, world.heightAt(p.x, p.z)) - 0.25;
@@ -340,7 +428,7 @@
     }
     /* bridges: runs of wall along each edge, reaching the first cross-section of slope on
        either side (where the slope's end is closed by a wing wall) */
-    if (marks && marks.xs.length) for (const side of [-1, 1]) {
+    if (marks && (marks.xs.length || marks.sdLow)) for (const side of [-1, 1]) {
       let run = [];
       for (let j = 0; j < R; j++) {
         const r = rows[j], on = marks.wall[r.i] || (j > 0 && marks.wall[rows[j - 1].i]) || (j + 1 < R && marks.wall[rows[j + 1].i]);
@@ -783,6 +871,7 @@
       const p = world.path[tx + tz * N];
       if (!p) continue;
       const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+      if (p !== P.ROAD && world.isRaisedPath(tx, tz)) { raisedPath(mb, world, tx, tz, matFor[p], curbCol[p]); pathExtras(mb, world, tx, tz); continue; }
       const lift = p === P.ROAD ? 0.05 : 0.07;
       const h = (vx, vz) => world.vh(vx, vz) + lift;
       const A = [x0, h(tx, tz), z0], B = [x1, h(tx + 1, tz), z0], Cc = [x1, h(tx + 1, tz + 1), z1], D = [x0, h(tx, tz + 1), z1];
@@ -827,19 +916,71 @@
           mb.quad4(a, d, c, b, [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, MB.rgba('#f2d64b'));
         }
       }
-      /* addons */
-      const ad = world.addon[tx + tz * N];
-      if (ad) addonMesh(mb, world, tx, tz, ad, mask);
-      /* litter */
-      const lit = world.litter[tx + tz * N];
-      for (let k = 0; k < Math.min(lit, 12); k++) {
-        const lx = x0 + 0.5 + U.hash2(tx * 13 + k, tz, 5) * (T - 1), lz = z0 + 0.5 + U.hash2(tx, tz * 7 + k, 9) * (T - 1);
-        const ly = world.heightAt(lx, lz) + lift + 0.02;
-        const lc = MB.rgba(['#e53935', '#fdd835', '#ffffff', '#1e88e5'][k % 4]);
-        mb.quad([lx - 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz - 0.08], [lx - 0.12, ly, lz - 0.08], null, MB.MAT_SOLID, lc);
-      }
+      pathExtras(mb, world, tx, tz);
     }
     return mb.build();
+  }
+  /* benches, bins and lamps, and litter, on a path tile (on the ground or raised) */
+  function pathExtras(mb, world, tx, tz) {
+    const N = world.N, x0 = tx * T, z0 = tz * T;
+    const ad = world.addon[tx + tz * N];
+    if (ad) addonMesh(mb, world, tx, tz, ad, world.pathMask(tx, tz, false));
+    const lit = world.litter[tx + tz * N];
+    for (let k = 0; k < Math.min(lit, 12); k++) {
+      const lx = x0 + 0.5 + U.hash2(tx * 13 + k, tz, 5) * (T - 1), lz = z0 + 0.5 + U.hash2(tx, tz * 7 + k, 9) * (T - 1);
+      const ly = world.walkHeight(lx, lz) + 0.02;
+      const lc = MB.rgba(['#e53935', '#fdd835', '#ffffff', '#1e88e5'][k % 4]);
+      mb.quad([lx - 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz - 0.08], [lx - 0.12, ly, lz - 0.08], null, MB.MAT_SOLID, lc);
+    }
+  }
+  /* A raised path tile: a deck (flat, or a ramp) with railings on the sides that don't join
+     another path, and a pillar down to the ground unless a circuit runs underneath. */
+  const DECK_T = 0.4, RAIL = MB.rgba('#e9e6de'), RAIL_POST = MB.rgba('#5d6266'), DECK_SIDE = [0.8, 0.79, 0.76, 1];
+  function raisedPath(mb, world, tx, tz, mat, curb) {
+    const i = world.idx(tx, tz), y = world.pathY[i], s = world.pathS[i], lift = MX.World.PATH_LIFT;
+    const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+    const sf = (x, z) => world.rampY(tx, tz, y, s, x, z) + lift;
+    const A = [x0, sf(x0, z0), z0], B = [x1, sf(x1, z0), z0], Cc = [x1, sf(x1, z1), z1], D = [x0, sf(x0, z1), z1];
+    const uv = (x, z) => [x / 16, z / 16];
+    mb.tri(A, D, Cc, [uv(x0, z0), uv(x0, z1), uv(x1, z1)], mat, [1, 1, 1, 1]);
+    mb.tri(A, Cc, B, [uv(x0, z0), uv(x1, z1), uv(x1, z0)], mat, [1, 1, 1, 1]);
+    const conc = L().concrete, PD = MX.World.PDIR;
+    /* sides in PDIR order: their corners and outward normal */
+    const sides = [[A, B], [B, Cc], [Cc, D], [D, A]];
+    for (let k = 0; k < 4; k++) {
+      const linked = world.pathLink(tx, tz, k), d = PD[k];
+      const nraised = linked && world.isRaisedPath(tx + d[0], tz + d[1]);
+      const [a, b] = sides[k], n = [d[0], 0, d[1]];
+      /* the edge of the deck (none where it carries straight on into another deck) */
+      if (!nraised) mb.quadN(a, b, [b[0], b[1] - DECK_T, b[2]], [a[0], a[1] - DECK_T, a[2]], n, n, n, n, [0, 0], [0.25, 0], [0.25, 0.03], [0, 0.03], conc, DECK_SIDE);
+      if (linked) continue;
+      /* a railing: posts at the ends and in the middle, two rails between them */
+      const ins = 0.14, p = (q) => ({ x: q[0] - d[0] * ins, y: q[1], z: q[2] - d[1] * ins });
+      const pa = p(a), pb = p(b), pm = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2, z: (pa.z + pb.z) / 2 };
+      for (const q of [pa, pm, pb]) mb.box(q.x - 0.06, q.y - 0.02, q.z - 0.06, q.x + 0.06, q.y + 1.05, q.z + 0.06, { col: RAIL_POST });
+      band(mb, pa, pb, 0.94, 1.04, MB.MAT_SOLID, RAIL);
+      band(mb, pa, pb, 0.5, 0.56, MB.MAT_SOLID, RAIL);
+    }
+    void curb;
+    /* the pillar, under the middle of the deck */
+    const cx = x0 + T / 2, cz = z0 + T / 2, top = sf(cx, cz) - lift - DECK_T, g = world.heightAt(cx, cz);
+    if (top - g < 0.35 || overTrack(world, i, cx, cz)) return;
+    const r = 0.28, bot = Math.min(g, C.WATER_LEVEL) - 0.4;
+    mb.box(cx - r, bot, cz - r, cx + r, top + 0.02, cz + r, { mat: conc, col: DECK_SIDE });
+    /* a cap under the deck so it reads as resting on the pillar */
+    mb.box(cx - 0.75, top - 0.22, cz - 0.75, cx + 0.75, top + 0.02, cz + 0.75, { mat: conc, col: DECK_SIDE });
+  }
+  /* is (x, z) on the surface (or the wall) of a circuit on tile i? */
+  function overTrack(world, i, x, z) {
+    if (!world.trackOcc[i]) return false;
+    for (const tr of world.trackList || []) {
+      if (!(world.trackOcc[i] & tr.bit) || !tr.S) continue;
+      for (const c of tr.chute && tr.chute.S ? [tr, tr.chute] : [tr]) {
+        const h = c.nearestS(x, z);
+        if (h && Math.abs(h.lane) < c.S.w[h.i] * 0.5 + 1.2) return true;
+      }
+    }
+    return false;
   }
   function addonMesh(mb, world, tx, tz, ad, mask) {
     const A = MX.World.ADDON;
@@ -850,7 +991,7 @@
     const off = T / 2 - 0.5;
     const dir = [[0, -1], [1, 0], [0, 1], [-1, 0]][side];
     const x = cx + dir[0] * off, z = cz + dir[1] * off;
-    const y = world.heightAt(x, z) + 0.07;
+    const y = world.walkHeight(x, z);
     const yaw = Math.atan2(dir[1], dir[0]) + Math.PI;
     mb.push(); mb.translate(x, y, z); mb.rotateY(yaw);
     if (ad === A.BENCH) {

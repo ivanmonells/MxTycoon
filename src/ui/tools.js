@@ -114,6 +114,9 @@
         r.landEdge = tool && tool.name !== 'select' ? 1 : 0.4;
       }
       if (tool && tool.enter) tool.enter();
+      /* leaving the path tools: from now on taking a path up gives back half of it */
+      const g = MX.App && MX.App.game;
+      if (g && g.endPathSession && !(tool && (tool.name === 'pathbuild' || tool.name === 'path' || tool.name === 'addon'))) g.endPathSession();
       MX.Bus.emit('tool', tool ? tool.name : null);
       app().hud && app().hud.setHint(tool && tool.hint ? tool.hint : '');
     },
@@ -362,8 +365,8 @@
     canNode(p) {
       const t = tileOf(p), w = game().world;
       if (!w.inBounds(t.tx, t.tz)) return 'Fuera del mapa';
+      if (w.isWater(t.tx, t.tz)) return MX.World.WATER_MSG;
       if (!w.owned[w.idx(t.tx, t.tz)]) return 'Terreno no comprado';
-      if (w.isWater(t.tx, t.tz)) return 'Hay agua';
       if (w.bld[w.idx(t.tx, t.tz)] >= 0) return 'Hay un edificio';
       return null;
     },
@@ -864,90 +867,166 @@
       return [{ x: (t.tx + 0.5) * T, y: game().world.tileCenterH(t.tx, t.tz) + 2, z: (t.tz + 0.5) * T, text: this.erase ? 'Quitar' : this.tiles.length + ' · ' + U.fmtMoney(this.cost) }];
     }
   };
-  /* Paths tile by tile, like the classic footpath construction window: a tap picks the
-     tile to start from, the arrows pick which way to go as seen on screen, «Construir»
-     lays the next tile and «Quitar» takes the current one back. Nothing to drag, so it
-     suits a finger better than PathTool. */
-  const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  /* Paths piece by piece with the same construction window as the circuits: a tap picks
+     the tile to start from (or the end of a path to carry on from); then turn left, carry
+     straight on or turn right, go up, stay level or go down, and «Construir» lays the next
+     tile while «Quitar» takes the last one back. Raised paths cross the lake on footbridges
+     and go over circuits, and circuits go over them. */
+  const PATH_TURNS = [[-1, 'Girar a la izquierda'], [0, 'Recto'], [1, 'Girar a la derecha']];
+  const PATH_SLOPES = [[-1, 'Bajada'], [0, 'Llano'], [1, 'Subida']];
+  const PDIR = () => MX.World.PDIR;
+  /* overlay quad on a path tile's surface: the ground, or a deck at y (ramp s) */
+  function pathQuad(mb, tx, tz, y, s, colr, lift) {
+    const w = game().world, l = lift || 0.12;
+    const raised = y === y && y != null;
+    const hy = (x, z, vx, vz) => (raised ? w.rampY(tx, tz, y, s, x, z) + MX.World.PATH_LIFT : w.vh(vx, vz)) + l;
+    const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+    mb.quad4([x0, hy(x0, z0, tx, tz), z0], [x0, hy(x0, z1, tx, tz + 1), z1], [x1, hy(x1, z1, tx + 1, tz + 1), z1], [x1, hy(x1, z0, tx + 1, tz), z0], [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, colr);
+  }
+  /* ghost of a raised tile: its deck and its pillar */
+  function deckGhost(n) {
+    const w = game().world, mb = new MB(256), lift = MX.World.PATH_LIFT, th = 0.4;
+    const x0 = n.tx * T, z0 = n.tz * T, x1 = x0 + T, z1 = z0 + T;
+    const y = (x, z) => w.rampY(n.tx, n.tz, n.y, n.s, x, z) + lift;
+    const A = [x0, y(x0, z0), z0], B = [x1, y(x1, z0), z0], Cc = [x1, y(x1, z1), z1], D = [x0, y(x0, z1), z1];
+    const dn = (p) => [p[0], p[1] - th, p[2]];
+    mb.quad4(A, D, Cc, B, [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, [1, 1, 1, 1]);
+    for (const [a, b] of [[A, B], [B, Cc], [Cc, D], [D, A]]) mb.quad4(a, b, dn(b), dn(a), [0, 0], [1, 0], [1, 1], [0, 1], MB.MAT_SOLID, [1, 1, 1, 1]);
+    const cx = x0 + T / 2, cz = z0 + T / 2, top = y(cx, cz) - lift - th, g = w.heightAt(cx, cz);
+    if (top - g > 0.35) mb.box(cx - 0.28, Math.min(g, C.WATER_LEVEL) - 0.2, cz - 0.28, cx + 0.28, top, cz + 0.28, { col: [1, 1, 1, 1] });
+    return mb.build();
+  }
   const PathBuild = {
-    name: 'pathbuild', type: 1,
-    get hint() { const d = Cat.paths[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas: dirección · Intro: construir · Retroceso: quitar · Esc: salir'; },
-    enter() { this.cur = null; this.dir = 0; this.laid = []; this.hoverT = null; this.refresh(); },
-    exit() { R().setOverlayMesh(null); },
-    /* the tile «Construir» lays next: the start itself until it has a path, then the next one along */
-    next() {
-      const c = this.cur;
+    name: 'pathbuild', type: 1, turn: 0, slope: 0,
+    get hint() { const d = Cat.paths[this.type]; return d.name + ' · desde ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente · Intro: construir · Retroceso: quitar · Esc: salir'; },
+    enter() { this.cur = null; this.dir = 0; this.trail = []; this.hoverT = null; this.turn = 0; this.refresh(); },
+    exit() { R().setOverlayMesh(null); R().setGhostMesh(null); },
+    road() { return this.type === MX.World.P.ROAD; },
+    /* The next tile «Construir» lays: the start itself until it has a path, then the one the
+       chosen turn leads to, at the height the chosen slope gives (see World.PDIR):
+       {tx, tz, dir, y, s, cost, reason, walk: an existing path to carry on along, first} */
+    plan() {
+      const c = this.cur, w = game().world, g = game();
       if (!c) return null;
-      const w = game().world;
-      if (!w.path[w.idx(c.tx, c.tz)]) return { tx: c.tx, tz: c.tz };
-      const d = DIR4[this.dir];
-      return { tx: c.tx + d[0], tz: c.tz + d[1] };
+      const i = w.idx(c.tx, c.tz), LT = MX.World.LINK_TOL, RISE = MX.World.RISE;
+      if (!w.path[i]) {
+        const why = w.canPlacePath(c.tx, c.tz, this.type);
+        return { tx: c.tx, tz: c.tz, dir: this.dir, y: NaN, s: 0, first: true, reason: why, cost: why ? 0 : g.pathCost(c.tx, c.tz, this.type) };
+      }
+      const nd = (this.dir + this.turn + 4) % 4, d = PDIR()[nd];
+      const n = { tx: c.tx + d[0], tz: c.tz + d[1], dir: nd, y: NaN, s: 0, cost: 0, reason: null };
+      const fail = (r) => Object.assign(n, { reason: r });
+      if (!w.inBounds(n.tx, n.tz)) return fail('Fuera del mapa');
+      const cs = w.pathS[i];
+      if (cs && ((cs - 1) & 1) !== (nd & 1)) return fail('En una rampa no se puede girar: sigue recto y gira después');
+      const j = w.idx(n.tx, n.tz);
+      /* along a path that is already there: just carry on */
+      if (w.path[j] && w.pathLink(c.tx, c.tz, nd)) return Object.assign(n, { walk: true, y: w.pathY[j], s: w.pathS[j] });
+      const h = w.pathEdgeH(c.tx, c.tz, nd), slope = this.road() ? 0 : this.slope;
+      const cand = [];
+      if (slope === 0) {
+        /* level: on the ground where it meets it, else a level deck (over a dip or the lake) */
+        if (Math.abs(h - w.groundEdgeH(n.tx, n.tz, (nd + 2) % 4)) <= LT) cand.push([NaN, 0]);
+        if (!this.road()) cand.push([h, 0]);
+      } else if (slope > 0) cand.push([h, nd + 1]);
+      else {
+        /* the ramp would end under the ground: it is already down (or the ground rises) */
+        if (w.groundEdgeH(n.tx, n.tz, nd) > h - RISE + 0.3) return fail(w.isRaisedPath(c.tx, c.tz) ? 'No se puede bajar más: ahí el camino ya llega al suelo, sigue en «Llano»' : 'No se puede bajar más: el camino ya va a ras de suelo');
+        cand.push([h - RISE, (nd + 2) % 4 + 1]);
+      }
+      let why = null;
+      for (const [y, s] of cand) {
+        const r = w.canPlacePath(n.tx, n.tz, this.type, y, s);
+        if (!r) return Object.assign(n, { y, s, cost: g.pathCost(n.tx, n.tz, this.type, y, s) });
+        /* by the lake, what the footbridge needs says more than "it is water" */
+        if (!why || /súbelo con/.test(why)) why = r;
+        Object.assign(n, { y, s });
+      }
+      return fail(why);
     },
-    /* why the next tile can't be laid, or null (along an equal path there is nothing to pay) */
-    why() {
-      const n = this.next();
-      if (!n) return 'Toca el mapa donde empieza el camino';
-      const w = game().world;
-      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type) return null;
-      return w.canPlacePath(n.tx, n.tz, this.type);
-    },
-    cost() {
-      const n = this.next(), w = game().world;
-      if (!n || !w.inBounds(n.tx, n.tz) || w.path[w.idx(n.tx, n.tz)] === this.type) return 0;
-      return Cat.paths[this.type].cost + (w.scen[w.idx(n.tx, n.tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
-    },
+    /* surface height of a tile's path at its middle (or of the ground) */
+    topAt(tx, tz) { const w = game().world; return w.walkHeight((tx + 0.5) * T, (tz + 0.5) * T); },
     refresh() {
       const r = R();
       if (!r) return;
-      const mb = new MB(512), c = this.cur, n = this.next();
-      if (!c && this.hoverT) tileQuad(mb, this.hoverT.tx, this.hoverT.tz, MB.rgba('#fff6d8'), 0.14);
-      if (c) tileQuad(mb, c.tx, c.tz, MB.rgba('#ffd22e'), 0.14);
-      if (n) tileQuad(mb, n.tx, n.tz, MB.rgba(this.why() ? '#ff3b30' : '#5cff6a'), 0.17);
+      const w = game().world, mb = new MB(1024), c = this.cur, n = this.plan();
+      const ht = this.hoverT;
+      if (!c && ht && w.inBounds(ht.tx, ht.tz)) { const i = w.idx(ht.tx, ht.tz); pathQuad(mb, ht.tx, ht.tz, w.path[i] ? w.pathY[i] : NaN, w.pathS[i], MB.rgba('#fff6d8'), 0.14); }
+      if (c) {
+        const i = w.idx(c.tx, c.tz);
+        pathQuad(mb, c.tx, c.tz, w.path[i] ? w.pathY[i] : NaN, w.pathS[i], MB.rgba('#ffd22e'), 0.14);
+        marker(mb, (c.tx + 0.5) * T, this.topAt(c.tx, c.tz) + 0.2, (c.tz + 0.5) * T, 0.22, 1.5, n && n.reason ? MB.rgba('#ff6b5b') : MB.rgba('#ffffff'));
+      }
+      if (n && w.inBounds(n.tx, n.tz)) pathQuad(mb, n.tx, n.tz, n.y, n.s, MB.rgba(n.reason ? '#ff3b30' : n.walk ? '#fff2c4' : '#5cff6a'), 0.17);
       const o = mb.build();
       r.setOverlayMesh(o.data, o.count);
+      /* a raised tile: its deck as a ghost, so the height reads */
+      if (n && !n.walk && n.y === n.y && w.inBounds(n.tx, n.tz)) { const gm = deckGhost(n); r.setGhostMesh(gm.data, gm.count, n.reason ? GHOST_BAD : GHOST_OK, GHOST_DITHER); }
+      else r.setGhostMesh(null);
       this.ver = (this.ver || 0) + 1;
       MX.WM.poke('paths');
     },
-    hover(p) { if (!p || this.cur) return; this.hoverT = tileOf(p); this.refresh(); },
-    click(p) { if (p) this.start(tileOf(p)); },
-    start(t) {
-      if (!game().world.inBounds(t.tx, t.tz)) return;
-      this.cur = t; this.laid = []; this.hoverT = null;
-      /* starting at the end of a path: carry on the way it goes */
+    changed() { sfx('click'); this.refresh(); MX.WM.rebuild('paths'); },
+    /* the tile under a screen point: raised paths stand above the ground the cursor hits */
+    pickTile(p, css) {
       const w = game().world;
-      if (w.path[w.idx(t.tx, t.tz)]) {
-        const open = DIR4.map((d, k) => k).filter(k => { const tx = t.tx + DIR4[k][0], tz = t.tz + DIR4[k][1]; return w.inBounds(tx, tz) && !w.path[w.idx(tx, tz)]; });
-        const back = DIR4.findIndex(d => { const tx = t.tx + d[0], tz = t.tz + d[1]; return w.inBounds(tx, tz) && w.path[w.idx(tx, tz)]; });
-        if (back >= 0 && open.includes((back + 2) % 4)) this.dir = (back + 2) % 4;
-        else if (open.length) this.dir = open[0];
+      let best = p ? tileOf(p) : null, bestY = -Infinity;
+      if (!css) return best;
+      const N = w.N, lift = MX.World.PATH_LIFT;
+      for (let i = 0; i < N * N; i++) {
+        if (!w.path[i] || w.pathY[i] !== w.pathY[i]) continue;
+        const tx = i % N, tz = (i / N) | 0, y = w.pathY[i], s = w.pathS[i];
+        const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([a, b]) => { const x = (tx + a) * T, z = (tz + b) * T; return R().worldToCss(x, w.rampY(tx, tz, y, s, x, z) + lift, z); });
+        let sign = 0, inside = true;
+        for (let k = 0; k < 4; k++) {
+          const A = q[k], B = q[(k + 1) % 4], cr = (B[0] - A[0]) * (css.y - A[1]) - (B[1] - A[1]) * (css.x - A[0]);
+          if (Math.abs(cr) < 1e-6) continue;
+          if (!sign) sign = Math.sign(cr); else if (Math.sign(cr) !== sign) { inside = false; break; }
+        }
+        if (inside && y > bestY) { bestY = y; best = { tx, tz }; }
       }
+      return best;
+    },
+    hover(p, css) { if (!p || this.cur) return; this.hoverT = this.pickTile(p, css); this.refresh(); },
+    click(p, e, css) { const t = p ? this.pickTile(p, css) : null; if (t) this.start(t); },
+    /* the way that points most up the screen */
+    upDir() { let best = 0, bv = Infinity; for (let k = 0; k < 4; k++) { const v = this.screenDir(k); if (v[1] < bv) { bv = v[1]; best = k; } } return best; },
+    start(t) {
+      const w = game().world;
+      if (!w.inBounds(t.tx, t.tz)) return;
+      this.cur = { tx: t.tx, tz: t.tz }; this.trail = []; this.hoverT = null; this.turn = 0;
+      const i = w.idx(t.tx, t.tz), up = this.upDir();
+      if (w.path[i]) {
+        /* at the end of a path: carry on the way it goes */
+        const linked = [0, 1, 2, 3].filter(k => w.pathLink(t.tx, t.tz, k)), s = w.pathS[i];
+        let open = [0, 1, 2, 3].filter(k => !linked.includes(k));
+        if (s) open = open.filter(k => (k & 1) === ((s - 1) & 1));
+        if (linked.length === 1 && open.includes((linked[0] + 2) % 4)) this.dir = (linked[0] + 2) % 4;
+        else if (open.length) this.dir = open.includes(up) ? up : open[0];
+        else this.dir = up;
+      } else this.dir = up;
       this.refresh(); sfx('click');
+      MX.WM.rebuild('paths');
     },
     /* screen direction of each way along the ground (CSS pixels, y down) */
     screenDir(k) {
-      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world;
+      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world, d = PDIR()[k];
       const x = (c.tx + 0.5) * T, z = (c.tz + 0.5) * T, y = w.inBounds(c.tx, c.tz) ? w.tileCenterH(c.tx, c.tz) : 0;
-      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + DIR4[k][0] * T, y, z + DIR4[k][1] * T);
+      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + d[0] * T, y, z + d[1] * T);
       const vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1;
       return [vx / l, vy / l];
     },
-    /* the way that looks most like screen direction (sx, sy) */
-    turn(sx, sy) {
-      let best = 0, bd = -Infinity;
-      for (let k = 0; k < 4; k++) { const v = this.screenDir(k), d = v[0] * sx + v[1] * sy; if (d > bd) { bd = d; best = k; } }
-      this.dir = best; this.refresh(); sfx('click');
-    },
-    /* which of the four screen diagonals (sx, sy) the current way points to */
-    facing() { const v = this.screenDir(this.dir); return [v[0] >= 0 ? 1 : -1, v[1] >= 0 ? 1 : -1]; },
     build() {
-      const n = this.next();
+      const n = this.plan();
       if (!n) { toast('Toca el mapa donde empieza el camino', 'info'); return false; }
-      const w = game().world;
-      /* along a path of the same kind: just walk on */
-      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type && (n.tx !== this.cur.tx || n.tz !== this.cur.tz)) { this.cur = n; this.refresh(); this.keepInView(); return true; }
-      if (!result(game().placePath(n.tx, n.tz, this.type))) return false;
-      this.laid.push(n); this.cur = n;
-      sfx('place'); this.refresh(); this.keepInView();
+      if (n.reason) { toast(n.reason, 'bad'); sfx('error'); return false; }
+      if (!n.walk && !result(game().placePath(n.tx, n.tz, this.type, n.y, n.s))) return false;
+      if (!n.first) { this.trail.push({ tx: this.cur.tx, tz: this.cur.tz, dir: this.dir }); this.cur = { tx: n.tx, tz: n.tz }; this.dir = n.dir; }
+      /* a turn is one tile: straight on again after it */
+      const turned = !!this.turn;
+      this.turn = 0;
+      sfx(n.walk ? 'click' : 'place'); this.refresh(); this.keepInView();
+      if (turned) MX.WM.rebuild('paths');
       return true;
     },
     undo() {
@@ -956,13 +1035,12 @@
       if (!w.path[w.idx(c.tx, c.tz)]) { toast('Aquí no hay camino que quitar', 'info'); return false; }
       if (!result(game().removePath(c.tx, c.tz))) return false;
       sfx('demolish');
-      const k = this.laid.findIndex(t => t.tx === c.tx && t.tz === c.tz);
-      if (k >= 0) this.laid.splice(k, 1);
-      /* back to the tile laid before it, or one step back the way we came */
-      const prev = this.laid.length ? this.laid[this.laid.length - 1] : { tx: c.tx - DIR4[this.dir][0], tz: c.tz - DIR4[this.dir][1] };
-      if (w.inBounds(prev.tx, prev.tz) && w.path[w.idx(prev.tx, prev.tz)]) {
-        this.cur = prev;
-        if (prev.tx !== c.tx - DIR4[this.dir][0] || prev.tz !== c.tz - DIR4[this.dir][1]) { const d = DIR4.findIndex(v => prev.tx + v[0] === c.tx && prev.tz + v[1] === c.tz); if (d >= 0) this.dir = d; }
+      /* back to the tile it came from */
+      const prev = this.trail.pop();
+      if (prev && w.path[w.idx(prev.tx, prev.tz)]) { this.cur = { tx: prev.tx, tz: prev.tz }; this.dir = prev.dir; }
+      else {
+        const d = PDIR()[this.dir], bx = c.tx - d[0], bz = c.tz - d[1];
+        if (w.inBounds(bx, bz) && w.path[w.idx(bx, bz)]) this.cur = { tx: bx, tz: bz };
       }
       this.refresh();
       return true;
@@ -970,9 +1048,9 @@
     /* the camera follows the end of the path when it nears the edge of the part of the
        map that panels leave visible, bringing it back to the middle of that part */
     keepInView() {
-      const c = this.cur, w = game().world;
+      const c = this.cur;
       if (!c || !app().input) return;
-      const p = R().worldToCss((c.tx + 0.5) * T, w.tileCenterH(c.tx, c.tz), (c.tz + 0.5) * T);
+      const p = R().worldToCss((c.tx + 0.5) * T, this.topAt(c.tx, c.tz), (c.tz + 0.5) * T);
       const root = getComputedStyle(document.documentElement);
       const top = parseFloat(root.getPropertyValue('--top-ui')) || 60, bottom = innerHeight - (parseFloat(root.getPropertyValue('--bottom-ui')) || 80);
       let left = 0;
@@ -982,21 +1060,28 @@
       R().cam.follow = null;
       app().input.panBy((left + innerWidth) / 2 - p[0], (top + bottom) / 2 - p[1]);
     },
-    /* arrows pick the way as on the panel: up ↖, right ↗, down ↘, left ↙ */
+    /* as on the circuit constructor: left and right pick the turn, up and down the slope */
     key(e) {
       if (e.key === 'Enter') { this.build(); return true; }
-      if (e.key === 'Backspace') { this.undo(); return true; }
-      const a = { ArrowUp: [-1, -1], ArrowRight: [1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1] }[e.key];
-      if (a && this.cur) { this.turn(a[0], a[1]); return true; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { this.undo(); return true; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { this.turn = U.clamp(this.turn + (e.key === 'ArrowLeft' ? -1 : 1), -1, 1); this.changed(); return true; }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (this.road()) { toast('Las carreteras van siempre a ras de suelo', 'info'); return true; }
+        this.slope = U.clamp(this.slope + (e.key === 'ArrowUp' ? 1 : -1), -1, 1); this.changed(); return true;
+      }
       return false;
     },
     labels() {
-      const n = this.next();
-      if (!n) return this.hoverT ? [{ x: (this.hoverT.tx + 0.5) * T, y: game().world.tileCenterH(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: 'Empezar aquí' }] : [];
-      const why = this.why();
-      return [{ x: (n.tx + 0.5) * T, y: game().world.tileCenterH(n.tx, n.tz) + 2, z: (n.tz + 0.5) * T, text: why || (this.cost() ? U.fmtMoney(this.cost()) : 'Seguir'), bad: !!why }];
+      const n = this.plan(), w = game().world;
+      if (!n) return this.hoverT && w.inBounds(this.hoverT.tx, this.hoverT.tz) ? [{ x: (this.hoverT.tx + 0.5) * T, y: this.topAt(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: w.path[w.idx(this.hoverT.tx, this.hoverT.tz)] ? 'Seguir este camino' : 'Empezar aquí' }] : [];
+      if (!w.inBounds(n.tx, n.tz)) return [];
+      const cx = (n.tx + 0.5) * T, cz = (n.tz + 0.5) * T;
+      const top = n.y === n.y ? w.rampY(n.tx, n.tz, n.y, n.s, cx, cz) : w.heightAt(cx, cz);
+      const up = top - w.heightAt(cx, cz);
+      return [{ x: cx, y: top + 2.2, z: cz, text: n.reason || (n.walk ? 'Seguir' : U.fmtMoney(n.cost) + (up > 0.6 ? ' · ' + U.fmt1(up) + ' m de altura' : '')), bad: !!n.reason }];
     }
   };
+  PathBuild.TURNS = PATH_TURNS; PathBuild.SLOPES = PATH_SLOPES;
   const AddonTool = {
     name: 'addon', kind: 'bench',
     get hint() { return Cat.addons[this.kind].name + ' · ' + U.fmtMoney(Cat.addons[this.kind].cost) + ' · Clic sobre un camino · Esc: salir'; },
@@ -1015,9 +1100,9 @@
     const w = game().world;
     if (!w.inBounds(tx, tz)) return 'Fuera del mapa';
     const i = w.idx(tx, tz);
+    if (w.isWater(tx, tz)) return MX.World.WATER_MSG;
     if (!w.owned[i]) return 'Terreno no comprado';
     if (w.bld[i] >= 0 || w.path[i] || w.trackOcc[i]) return 'Ocupado';
-    if (w.isWater(tx, tz)) return 'Hay agua';
     if (w.scen[i] >= 0) return 'Ya hay algo aquí';
     return null;
   }

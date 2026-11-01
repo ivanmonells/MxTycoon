@@ -240,9 +240,11 @@ out vec3 vWp;
 void main() { vWp = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`;
   const WATER_FS = HEAD + LIGHT + `
 uniform sampler2D uHeights;
+uniform sampler2D uOwn;
 uniform float uMapSize;
 uniform float uVerts;
 uniform float uWater;
+uniform float uLandEdge;
 in vec3 vWp;
 out vec4 o;
 void main() {
@@ -259,6 +261,29 @@ void main() {
   c += rip * 0.09;
   float foam = step(depth, 0.22 + 0.08 * sin(uTime * 2.0 + vWp.x * 0.5));
   c = mix(c, vec3(0.9, 0.95, 0.95), foam * 0.75);
+  /* whose lake: greyed outside your land like the ground, and the red and white tape of
+     the edge of your land carries on across the water */
+  float own = texture(uOwn, vWp.xz / uMapSize).r;
+  if (own < 0.75) { float g = dot(c, vec3(0.33)); c = mix(c, vec3(g), own < 0.25 ? 0.3 : 0.18) * (own < 0.25 ? 0.86 : 0.93); }
+  else if (own > 0.95 && uLandEdge > 0.0) {
+    vec2 tq = vWp.xz / 4.0, cell = floor(tq), f = tq - cell;
+    float tilesN = uMapSize / 4.0;
+    vec2 px = fwidth(tq);
+    vec2 wl = max(vec2(0.05 + 0.07 * uLandEdge), px * (1.2 + 1.3 * uLandEdge));
+    float hit = 0.0, dash = 0.0;
+    vec2 ds[4] = vec2[4](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
+    float dist[4] = float[4](f.x, 1.0 - f.x, f.y, 1.0 - f.y);
+    float wide[4] = float[4](wl.x, wl.x, wl.y, wl.y);
+    float along[4] = float[4](tq.y, tq.y, tq.x, tq.x);
+    for (int k = 0; k < 4; k++) {
+      if (dist[k] > wide[k]) continue;
+      float o2 = texture(uOwn, (cell + ds[k] + 0.5) / tilesN).r;
+      if (o2 > 0.85) continue;
+      hit = 1.0;
+      dash = step(0.5, fract(along[k] * 1.5));
+    }
+    if (hit > 0.0) { c = mix(c, mix(vec3(0.97, 0.96, 0.92), vec3(0.86, 0.16, 0.1), dash), 0.6 + 0.35 * uLandEdge); foam = 1.0; }
+  }
   vec3 lit = shade(c, vec3(0.0, 1.0, 0.0), vWp);
   if (bayer4(gl_FragCoord.xy) > 0.82 && foam < 0.5) discard;
   o = vec4(lit, 1.0);

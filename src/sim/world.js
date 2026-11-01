@@ -12,7 +12,19 @@
   /* path types */
   const P = { NONE: 0, GRAVEL: 1, PAVED: 2, ROAD: 3 };
   const ADDON = { NONE: 0, BENCH: 1, BIN: 2, LAMP: 3 };
+  /* Footpaths can leave the ground: a tile is on the ground (pathY NaN, it follows the
+     terrain) or raised, a flat deck at pathY or a ramp (pathS k + 1) climbing RISE metres
+     from pathY at its low edge towards PDIR[k]. Sides in PDIR order (north, east, south,
+     west) match the bits of pathMask. Two tiles join where their edges meet at the same
+     height; a ramp only joins at its two ends. */
+  const PDIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  const RISE = 1.0, PATH_ELEV_MAX = 12, LINK_TOL = 0.35, PATH_LIFT = 0.07;
+  /* headroom: a circuit passes over a path this much higher (surface to surface), and a
+     footbridge passes over a circuit this much higher */
+  const PATH_UNDER = 3.2, PATH_OVER = 4.5;
 
+  const WATER_MSG = 'No se puede construir sobre el agua (es el lago)';
+  const WATER_PATH_MSG = 'No se puede hacer un camino por el agua: súbelo con «Subida» y crúzalo por una pasarela';
   let WORLD_UID = 0;
   class World {
     constructor(size) {
@@ -23,6 +35,8 @@
       this.ground = new Uint8Array(N * N);
       this.owned = new Uint8Array(N * N);
       this.path = new Uint8Array(N * N);
+      this.pathY = new Float32Array(N * N).fill(NaN);
+      this.pathS = new Int8Array(N * N);
       this.addon = new Uint8Array(N * N);
       this.litter = new Uint8Array(N * N);
       this.bld = new Int32Array(N * N).fill(-1);
@@ -38,6 +52,7 @@
       this.roadRow = N - 1;
       this.terrainVer = 1; this.pathVer = 1; this.sceneryVer = 1; this.ownerVer = 1; this.groundVer = 1;
       this.litterVer = 1; this.addonVer = 1;
+      this.crossVer = 1; // paths that share ground with a circuit (its bridges and tunnels)
       this.dirtyTerrain = null; // {x0,z0,x1,z1} tile bounds
       this._hRange = null;
     }
@@ -311,11 +326,12 @@
     canBuildOn(tx, tz, opts) {
       if (!this.inBounds(tx, tz)) return 'Fuera del mapa';
       const i = this.idx(tx, tz);
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      if (this.isWater(tx, tz)) return WATER_MSG;
       if (this.owned[i] !== 1) return 'Terreno no comprado';
       if (this.bld[i] >= 0) return 'Ya hay un edificio';
       if (this.path[i] && !(opts && opts.allowPath)) return 'Hay un camino';
       if (this.trackOcc[i]) return 'Ocupado por un circuito';
-      if (this.isWater(tx, tz)) return 'Hay agua';
       const sc = this.scen[i];
       if (sc >= 0 && !(opts && opts.clearScenery)) {
         const o = this.scenery.get(sc);
@@ -334,6 +350,8 @@
         if (this.owned[i] !== 1) return false;
         if (this.bld[i] >= 0) return false;
         if (this.path[i] === P.ROAD && tz === this.roadRow) return false;
+        /* raised paths stand on posts and ramps start on the ground: keep it under them */
+        if (this.path[i] && this.pathY[i] === this.pathY[i]) return false;
         if (blockTrack && (this.trackOcc[i] & blockTrack)) return false;
       }
       return true;
@@ -457,35 +475,133 @@
     /* ---------- paths ---------- */
     pathMask(tx, tz, roadsOnly) {
       let m = 0;
-      const test = (x, z) => {
-        if (!this.inBounds(x, z)) return false;
-        const p = this.path[this.idx(x, z)];
-        return roadsOnly ? p === P.ROAD : (p === P.GRAVEL || p === P.PAVED);
-      };
-      if (test(tx, tz - 1)) m |= 1;      // north (-z)
-      if (test(tx + 1, tz)) m |= 2;      // east (+x)
-      if (test(tx, tz + 1)) m |= 4;      // south (+z)
-      if (test(tx - 1, tz)) m |= 8;      // west (-x)
+      if (roadsOnly) {
+        const test = (x, z) => this.inBounds(x, z) && this.path[this.idx(x, z)] === P.ROAD;
+        if (test(tx, tz - 1)) m |= 1;      // north (-z)
+        if (test(tx + 1, tz)) m |= 2;      // east (+x)
+        if (test(tx, tz + 1)) m |= 4;      // south (+z)
+        if (test(tx - 1, tz)) m |= 8;      // west (-x)
+        return m;
+      }
+      for (let k = 0; k < 4; k++) if (this.pathLink(tx, tz, k)) m |= 1 << k;
       return m;
     }
-    canPlacePath(tx, tz, type) {
+    isRaisedPath(tx, tz) { const i = this.idx(tx, tz); return !!this.path[i] && this.pathY[i] === this.pathY[i]; }
+    /* the ground under the middle of edge k of a tile */
+    groundEdgeH(tx, tz, k) {
+      const a = k === 1 ? tx + 1 : tx, b = k === 2 ? tz + 1 : tz;
+      return k & 1 ? (this.vh(a, tz) + this.vh(a, tz + 1)) * 0.5 : (this.vh(tx, b) + this.vh(tx + 1, b)) * 0.5;
+    }
+    /* height of the surface of the path on tile (tx, tz) in the middle of its edge k
+       (without the few centimetres it stands on the ground) */
+    pathEdgeH(tx, tz, k) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      if (y !== y) return this.groundEdgeH(tx, tz, k);
+      const s = this.pathS[i];
+      if (!s) return y;
+      const up = s - 1;
+      return k === up ? y + RISE : k === (up + 2) % 4 ? y : y + RISE * 0.5;
+    }
+    /* surface of a raised tile at world point (x, z) (y, s: its height and slope) */
+    rampY(tx, tz, y, s, x, z) {
+      if (!s) return y;
+      const d = PDIR[s - 1];
+      const fx = x / T - tx, fz = z / T - tz;
+      const u = d[0] > 0 ? fx : d[0] < 0 ? 1 - fx : d[1] > 0 ? fz : 1 - fz;
+      return y + RISE * (u < 0 ? 0 : u > 1 ? 1 : u);
+    }
+    /* surface height of the path on a tile at (x, z), or of the ground with no path */
+    pathSurfAt(tx, tz, x, z) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      return y === y && this.path[i] ? this.rampY(tx, tz, y, this.pathS[i], x, z) : this.heightAt(x, z);
+    }
+    /* do the paths on (tx, tz) and its neighbour across edge k join? */
+    pathLink(tx, tz, k) {
+      const d = PDIR[k], nx = tx + d[0], nz = tz + d[1];
+      if (!this.isWalkable(tx, tz) || !this.isWalkable(nx, nz)) return false;
+      const i = this.idx(tx, tz), j = this.idx(nx, nz);
+      const ya = this.pathY[i], yb = this.pathY[j];
+      if (ya !== ya && yb !== yb) return true;
+      const sa = this.pathS[i], sb = this.pathS[j];
+      if ((sa && ((sa - 1) & 1) !== (k & 1)) || (sb && ((sb - 1) & 1) !== (k & 1))) return false;
+      return Math.abs(this.pathEdgeH(tx, tz, k) - this.pathEdgeH(nx, nz, (k + 2) % 4)) <= LINK_TOL;
+    }
+    /* can someone on (tx, tz) step across its side k onto a path? Along paths, where they
+       join; from anywhere else (a doorway, the grass), onto a path at ground level there */
+    pathStep(tx, tz, k) {
+      if (this.isWalkable(tx, tz)) return this.pathLink(tx, tz, k);
+      const d = PDIR[k], nx = tx + d[0], nz = tz + d[1];
+      return this.isWalkable(nx, nz) && this.pathAtGround(nx, nz, (k + 2) % 4);
+    }
+    /* is edge k of a path tile at ground level (a building or the road can be reached there)? */
+    pathAtGround(tx, tz, k) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      if (y !== y) return true;
+      if (this.pathS[i] && ((this.pathS[i] - 1) & 1) !== (k & 1)) return false;
+      return Math.abs(this.pathEdgeH(tx, tz, k) - this.groundEdgeH(tx, tz, k)) <= LINK_TOL;
+    }
+    /* where people stand at (x, z): on the path of that tile, else on the ground */
+    walkHeight(x, z) {
+      const tx = Math.floor(x / T), tz = Math.floor(z / T);
+      if (!this.inBounds(tx, tz) || !this.path[this.idx(tx, tz)]) return this.heightAt(x, z);
+      return this.pathSurfAt(tx, tz, x, z) + PATH_LIFT;
+    }
+    /* points of a tile to test a path against the ground, water and circuits */
+    static pathProbePts(tx, tz) {
+      const out = [];
+      for (const a of [0.08, 0.5, 0.92]) for (const b of [0.08, 0.5, 0.92]) out.push([(tx + a) * T, (tz + b) * T]);
+      return out;
+    }
+    /* why a path of a type can't go on a tile, or null. y, s: a raised tile (see PDIR);
+       y undefined or NaN: on the ground */
+    canPlacePath(tx, tz, type, y, s) {
       if (!this.inBounds(tx, tz)) return 'Fuera del mapa';
-      const i = this.idx(tx, tz);
+      const i = this.idx(tx, tz), raised = y != null && y === y;
       if (tz === this.roadRow) return 'Carretera pública';
-      if (this.owned[i] !== 1) return 'Terreno no comprado';
+      const water = this.isWater(tx, tz);
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      if (water && this.owned[i] !== 1) return 'Esa parte del lago está fuera de tu terreno (la línea roja y blanca)';
+      if (water && !raised) return type === P.ROAD ? WATER_MSG : WATER_PATH_MSG;
+      if (this.owned[i] !== 1) return 'Fuera de tu terreno (la línea roja y blanca)';
+      if (raised && type === P.ROAD) return 'Las carreteras van siempre a ras de suelo';
       if (this.bld[i] >= 0) return 'Hay un edificio';
-      if (this.trackOcc[i]) return 'No se puede cruzar el circuito';
-      if (this.isWater(tx, tz)) return 'Hay agua';
-      if (this.tileSlope(tx, tz) > 2.6) return 'Demasiado inclinado';
-      if (this.path[i] === type) return 'Ya hay uno igual';
+      if (this.path[i]) {
+        const same = raised ? this.pathY[i] === this.pathY[i] && Math.abs(this.pathY[i] - y) < 0.01 && this.pathS[i] === (s || 0) : this.pathY[i] !== this.pathY[i];
+        if (!same) return 'Ya hay un camino a otra altura';
+        if (this.path[i] === type) return 'Ya hay uno igual';
+      }
       const sc = this.scen[i];
       if (sc >= 0 && !this.isTree(this.scenery.get(sc))) return 'Hay una decoración';
+      const pts = World.pathProbePts(tx, tz);
+      if (raised) {
+        let lowWater = Infinity;
+        for (const [x, z] of pts) {
+          const py = this.rampY(tx, tz, y, s, x, z), g = this.heightAt(x, z);
+          if (g > py + 0.3) return 'Se mete bajo tierra: sube el camino o allana el terreno';
+          if (py - g > PATH_ELEV_MAX + 0.01) return 'Demasiado alto: máximo ' + PATH_ELEV_MAX + ' m sobre el terreno';
+          if (g < C.WATER_LEVEL) lowWater = Math.min(lowWater, py);
+        }
+        if (lowWater < C.WATER_LEVEL + 0.3) return 'Demasiado cerca del agua: súbelo un poco para cruzar el lago';
+      } else if (this.tileSlope(tx, tz) > 2.6) return type === P.ROAD ? 'Demasiado inclinado' : 'Demasiado inclinado: sube o baja con la pendiente';
+      if (this.trackOcc[i]) {
+        if (type === P.ROAD) return 'Las carreteras no pueden cruzar un circuito';
+        const surf = raised ? (x, z) => this.rampY(tx, tz, y, s, x, z) : (x, z) => this.heightAt(x, z);
+        for (const o of this.trackList || []) {
+          if (!(this.trackOcc[i] & o.bit) || !o.pathClash) continue;
+          const c = o.pathClash(this, i, surf);
+          if (c && c.reason) return c.reason;
+        }
+      }
       return null;
     }
-    setPath(tx, tz, type) {
+    setPath(tx, tz, type, y, s) {
       const i = this.idx(tx, tz);
       this.path[i] = type;
+      const raised = type && type !== P.ROAD && y != null && y === y;
+      this.pathY[i] = raised ? y : NaN;
+      this.pathS[i] = raised ? (s || 0) : 0;
       if (type !== P.GRAVEL && type !== P.PAVED) { this.addon[i] = 0; this.litter[i] = 0; }
+      if (this.trackOcc[i]) this.crossVer++;
       this.pathVer++;
     }
     isWalkable(tx, tz) {
@@ -531,12 +647,18 @@
       for (let i = 0; i < h16.length; i++) h16[i] = Math.round(this.heights[i] * 100);
       const scen = [];
       for (const o of this.scenery.values()) scen.push([o.type, o.tx, o.tz, +o.ox.toFixed(2), +o.oz.toFixed(2), +o.rot.toFixed(2), +o.s.toFixed(2), o.v, o.sponsor || 0]);
-      return {
+      const out = {
         N: this.N, seed: this.seed, preset: this.preset, exp: this.expansionLevel,
         h: U.typedToB64(h16), g: U.typedToB64(this.ground), o: U.typedToB64(this.owned),
         p: U.typedToB64(this.path), a: U.typedToB64(this.addon), l: U.typedToB64(this.litter),
         pc: U.typedToB64(this.parcels), scen
       };
+      /* raised paths (centimetres, -32768 on the ground) and their slopes */
+      let raised = false;
+      const py = new Int16Array(this.pathY.length);
+      for (let i = 0; i < py.length; i++) { const y = this.pathY[i]; if (y === y) { py[i] = Math.round(y * 100); raised = true; } else py[i] = -32768; }
+      if (raised) { out.py = U.typedToB64(py); out.ps = U.typedToB64(new Uint8Array(this.pathS.buffer.slice(0))); }
+      return out;
     }
     static deserialize(d) {
       const w = new World(d.N);
@@ -549,6 +671,10 @@
       w.addon.set(U.b64ToTyped(d.a, Uint8Array));
       w.litter.set(U.b64ToTyped(d.l, Uint8Array));
       w.parcels.set(U.b64ToTyped(d.pc, Uint8Array));
+      if (d.py) {
+        const py = U.b64ToTyped(d.py, Int16Array), ps = U.b64ToTyped(d.ps, Uint8Array);
+        for (let i = 0; i < py.length; i++) if (py[i] !== -32768 && w.path[i]) { w.pathY[i] = py[i] / 100; w.pathS[i] = ps[i]; }
+      }
       for (const s of d.scen) {
         const id = w.nextScenId++;
         const o = { id, type: s[0], tx: s[1], tz: s[2], ox: s[3], oz: s[4], rot: s[5], s: s[6], v: s[7], sponsor: s[8] || null };
@@ -563,6 +689,14 @@
   MX.World = World;
   MX.World.G = G;
   MX.World.P = P;
+  MX.World.PDIR = PDIR;
+  MX.World.RISE = RISE;
+  MX.World.PATH_ELEV_MAX = PATH_ELEV_MAX;
+  MX.World.LINK_TOL = LINK_TOL;
+  MX.World.PATH_LIFT = PATH_LIFT;
+  MX.World.PATH_UNDER = PATH_UNDER;
+  MX.World.PATH_OVER = PATH_OVER;
+  MX.World.WATER_MSG = WATER_MSG;
   MX.World.ADDON = ADDON;
   MX.World.GROUND_NAMES = GROUND_NAMES;
 })(window.MX);

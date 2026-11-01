@@ -111,7 +111,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
   const t5 = await scr((pt.tx + 0.5) * 4, (pt.tz + 0.5) * 4);
   await tapXY(t5.x, t5.y);
   await tap('#path-build'); await tap('#path-build');
-  logs.push('path at the tapped tile ' + await ev(([tx, tz]) => MX.App.game.world.path[MX.App.game.world.idx(tx, tz)], [pt.tx, pt.tz]) + ', tiles laid ' + await ev(() => MX.Tools.list.PathBuild.laid.length));
+  logs.push('path at the tapped tile ' + await ev(([tx, tz]) => MX.App.game.world.path[MX.App.game.world.idx(tx, tz)], [pt.tx, pt.tz]) + ', tiles laid ' + await ev(() => MX.App.game.pathSession.size));
   /* the drag mode is one tap away: a tap there lays one tile where the finger is */
   await tap('.win .btn.small:has-text("Arrastrando")');
   const pt2 = { tx: spot.tx + 8, tz: spot.tz + 5 };

@@ -475,7 +475,7 @@
         if (!m) continue;
         let x = v.x, z = v.z, y, yaw = v.yaw;
         if (v.seat) { y = v.seat.y; yaw = v.seat.yaw - Math.PI / 2 + Math.PI / 2; x = v.seat.x; z = v.seat.z; }
-        else y = w.heightAt(x, z) + (w.isWalkable(v.tx, v.tz) ? 0.07 : 0);
+        else y = w.walkHeight(x, z);
         if (!r.inView(x, y, z, 30)) continue;
         if (v.state === 'watch' && v.cheer) y += Math.abs(Math.sin(g.time * 7 + v.id)) * 0.25;
         r.pushInst(m, x, y, z, yaw, 0, 0, v.kid ? 0.72 : 1, v.cols[0], v.cols[1], v.cols[2], v.cols[3]);
@@ -515,7 +515,8 @@
       }
       for (const s of g.staff) {
         const m = s.model();
-        const y = s.state === 'groom' ? s.y : w.heightAt(s.x, s.z) + 0.05;
+        /* cleaners walk the paths (raised ones too); the rest go about on the ground */
+        const y = s.state === 'groom' ? s.y : s.role === 'cleaner' ? w.walkHeight(s.x, s.z) : w.heightAt(s.x, s.z) + 0.05;
         if (!r.inView(s.x, y, s.z, 30)) continue;
         if (s.vehicle) {
           const col = s.vehicle === 'quad' ? null : s.vehicle === 'tractor' ? [46, 125, 50] : [240, 240, 240];

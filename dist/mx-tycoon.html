@@ -302,15 +302,18 @@ p { margin: 6px 0; }
 .bld-btn small { font-size: 10.5px; color: var(--muted); line-height: 1.05; text-align: center; }
 .bld-btn.on small { color: var(--yellow); }
 .glyph-dir { width: 44px; max-width: 100%; height: 34px; }
-/* tile by tile path builder: the four ways as seen on screen, then build and remove */
+/* path constructor: the circuit one with three turns and three slopes */
 .path-mode { margin-top: 6px; }
-.path-builder { display: flex; align-items: stretch; gap: 10px; margin-top: 8px; }
-.path-pad { display: grid; grid-template-columns: repeat(2, 52px); grid-auto-rows: 50px; gap: 4px; flex: none; }
-.path-dir .px-icon { width: 30px; height: 30px; }
-.path-side { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; flex: 1; min-width: 0; }
-.path-side .bld-preview { margin-top: 0; }
-.path-side .bld-actions { margin-top: 0; flex-wrap: nowrap; }
-.path-side .bld-actions .btn { flex: 1; justify-content: center; }
+.path-constructor { margin-top: 8px; }
+.bld-dirs.path-dirs, .bld-slopes.path-slopes { grid-template-columns: repeat(3, 1fr); }
+.path-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bld-btn.locked { opacity: .45; }
+.path-constructor .bld-actions { flex-wrap: nowrap; }
+.path-constructor .bld-actions .btn { flex: 1; justify-content: center; }
+.phone .path-types { flex-wrap: nowrap; }
+.phone .path-types .btn { flex: 1 1 0; min-width: 0; padding: 4px 6px; justify-content: center; font-size: 14px; }
+.phone .path-types .btn small { display: none; }
+.phone .path-constructor { margin-top: 6px; }
 .glyph-slope { width: 44px; max-width: 100%; height: 24px; }
 .builder > .row { margin-top: 6px; }
 .bld-specials { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
@@ -1837,7 +1840,19 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   /* path types */
   const P = { NONE: 0, GRAVEL: 1, PAVED: 2, ROAD: 3 };
   const ADDON = { NONE: 0, BENCH: 1, BIN: 2, LAMP: 3 };
+  /* Footpaths can leave the ground: a tile is on the ground (pathY NaN, it follows the
+     terrain) or raised, a flat deck at pathY or a ramp (pathS k + 1) climbing RISE metres
+     from pathY at its low edge towards PDIR[k]. Sides in PDIR order (north, east, south,
+     west) match the bits of pathMask. Two tiles join where their edges meet at the same
+     height; a ramp only joins at its two ends. */
+  const PDIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  const RISE = 1.0, PATH_ELEV_MAX = 12, LINK_TOL = 0.35, PATH_LIFT = 0.07;
+  /* headroom: a circuit passes over a path this much higher (surface to surface), and a
+     footbridge passes over a circuit this much higher */
+  const PATH_UNDER = 3.2, PATH_OVER = 4.5;
 
+  const WATER_MSG = 'No se puede construir sobre el agua (es el lago)';
+  const WATER_PATH_MSG = 'No se puede hacer un camino por el agua: súbelo con «Subida» y crúzalo por una pasarela';
   let WORLD_UID = 0;
   class World {
     constructor(size) {
@@ -1848,6 +1863,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.ground = new Uint8Array(N * N);
       this.owned = new Uint8Array(N * N);
       this.path = new Uint8Array(N * N);
+      this.pathY = new Float32Array(N * N).fill(NaN);
+      this.pathS = new Int8Array(N * N);
       this.addon = new Uint8Array(N * N);
       this.litter = new Uint8Array(N * N);
       this.bld = new Int32Array(N * N).fill(-1);
@@ -1863,6 +1880,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.roadRow = N - 1;
       this.terrainVer = 1; this.pathVer = 1; this.sceneryVer = 1; this.ownerVer = 1; this.groundVer = 1;
       this.litterVer = 1; this.addonVer = 1;
+      this.crossVer = 1; // paths that share ground with a circuit (its bridges and tunnels)
       this.dirtyTerrain = null; // {x0,z0,x1,z1} tile bounds
       this._hRange = null;
     }
@@ -2136,11 +2154,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     canBuildOn(tx, tz, opts) {
       if (!this.inBounds(tx, tz)) return 'Fuera del mapa';
       const i = this.idx(tx, tz);
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      if (this.isWater(tx, tz)) return WATER_MSG;
       if (this.owned[i] !== 1) return 'Terreno no comprado';
       if (this.bld[i] >= 0) return 'Ya hay un edificio';
       if (this.path[i] && !(opts && opts.allowPath)) return 'Hay un camino';
       if (this.trackOcc[i]) return 'Ocupado por un circuito';
-      if (this.isWater(tx, tz)) return 'Hay agua';
       const sc = this.scen[i];
       if (sc >= 0 && !(opts && opts.clearScenery)) {
         const o = this.scenery.get(sc);
@@ -2159,6 +2178,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (this.owned[i] !== 1) return false;
         if (this.bld[i] >= 0) return false;
         if (this.path[i] === P.ROAD && tz === this.roadRow) return false;
+        /* raised paths stand on posts and ramps start on the ground: keep it under them */
+        if (this.path[i] && this.pathY[i] === this.pathY[i]) return false;
         if (blockTrack && (this.trackOcc[i] & blockTrack)) return false;
       }
       return true;
@@ -2282,35 +2303,133 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     /* ---------- paths ---------- */
     pathMask(tx, tz, roadsOnly) {
       let m = 0;
-      const test = (x, z) => {
-        if (!this.inBounds(x, z)) return false;
-        const p = this.path[this.idx(x, z)];
-        return roadsOnly ? p === P.ROAD : (p === P.GRAVEL || p === P.PAVED);
-      };
-      if (test(tx, tz - 1)) m |= 1;      // north (-z)
-      if (test(tx + 1, tz)) m |= 2;      // east (+x)
-      if (test(tx, tz + 1)) m |= 4;      // south (+z)
-      if (test(tx - 1, tz)) m |= 8;      // west (-x)
+      if (roadsOnly) {
+        const test = (x, z) => this.inBounds(x, z) && this.path[this.idx(x, z)] === P.ROAD;
+        if (test(tx, tz - 1)) m |= 1;      // north (-z)
+        if (test(tx + 1, tz)) m |= 2;      // east (+x)
+        if (test(tx, tz + 1)) m |= 4;      // south (+z)
+        if (test(tx - 1, tz)) m |= 8;      // west (-x)
+        return m;
+      }
+      for (let k = 0; k < 4; k++) if (this.pathLink(tx, tz, k)) m |= 1 << k;
       return m;
     }
-    canPlacePath(tx, tz, type) {
+    isRaisedPath(tx, tz) { const i = this.idx(tx, tz); return !!this.path[i] && this.pathY[i] === this.pathY[i]; }
+    /* the ground under the middle of edge k of a tile */
+    groundEdgeH(tx, tz, k) {
+      const a = k === 1 ? tx + 1 : tx, b = k === 2 ? tz + 1 : tz;
+      return k & 1 ? (this.vh(a, tz) + this.vh(a, tz + 1)) * 0.5 : (this.vh(tx, b) + this.vh(tx + 1, b)) * 0.5;
+    }
+    /* height of the surface of the path on tile (tx, tz) in the middle of its edge k
+       (without the few centimetres it stands on the ground) */
+    pathEdgeH(tx, tz, k) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      if (y !== y) return this.groundEdgeH(tx, tz, k);
+      const s = this.pathS[i];
+      if (!s) return y;
+      const up = s - 1;
+      return k === up ? y + RISE : k === (up + 2) % 4 ? y : y + RISE * 0.5;
+    }
+    /* surface of a raised tile at world point (x, z) (y, s: its height and slope) */
+    rampY(tx, tz, y, s, x, z) {
+      if (!s) return y;
+      const d = PDIR[s - 1];
+      const fx = x / T - tx, fz = z / T - tz;
+      const u = d[0] > 0 ? fx : d[0] < 0 ? 1 - fx : d[1] > 0 ? fz : 1 - fz;
+      return y + RISE * (u < 0 ? 0 : u > 1 ? 1 : u);
+    }
+    /* surface height of the path on a tile at (x, z), or of the ground with no path */
+    pathSurfAt(tx, tz, x, z) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      return y === y && this.path[i] ? this.rampY(tx, tz, y, this.pathS[i], x, z) : this.heightAt(x, z);
+    }
+    /* do the paths on (tx, tz) and its neighbour across edge k join? */
+    pathLink(tx, tz, k) {
+      const d = PDIR[k], nx = tx + d[0], nz = tz + d[1];
+      if (!this.isWalkable(tx, tz) || !this.isWalkable(nx, nz)) return false;
+      const i = this.idx(tx, tz), j = this.idx(nx, nz);
+      const ya = this.pathY[i], yb = this.pathY[j];
+      if (ya !== ya && yb !== yb) return true;
+      const sa = this.pathS[i], sb = this.pathS[j];
+      if ((sa && ((sa - 1) & 1) !== (k & 1)) || (sb && ((sb - 1) & 1) !== (k & 1))) return false;
+      return Math.abs(this.pathEdgeH(tx, tz, k) - this.pathEdgeH(nx, nz, (k + 2) % 4)) <= LINK_TOL;
+    }
+    /* can someone on (tx, tz) step across its side k onto a path? Along paths, where they
+       join; from anywhere else (a doorway, the grass), onto a path at ground level there */
+    pathStep(tx, tz, k) {
+      if (this.isWalkable(tx, tz)) return this.pathLink(tx, tz, k);
+      const d = PDIR[k], nx = tx + d[0], nz = tz + d[1];
+      return this.isWalkable(nx, nz) && this.pathAtGround(nx, nz, (k + 2) % 4);
+    }
+    /* is edge k of a path tile at ground level (a building or the road can be reached there)? */
+    pathAtGround(tx, tz, k) {
+      const i = this.idx(tx, tz), y = this.pathY[i];
+      if (y !== y) return true;
+      if (this.pathS[i] && ((this.pathS[i] - 1) & 1) !== (k & 1)) return false;
+      return Math.abs(this.pathEdgeH(tx, tz, k) - this.groundEdgeH(tx, tz, k)) <= LINK_TOL;
+    }
+    /* where people stand at (x, z): on the path of that tile, else on the ground */
+    walkHeight(x, z) {
+      const tx = Math.floor(x / T), tz = Math.floor(z / T);
+      if (!this.inBounds(tx, tz) || !this.path[this.idx(tx, tz)]) return this.heightAt(x, z);
+      return this.pathSurfAt(tx, tz, x, z) + PATH_LIFT;
+    }
+    /* points of a tile to test a path against the ground, water and circuits */
+    static pathProbePts(tx, tz) {
+      const out = [];
+      for (const a of [0.08, 0.5, 0.92]) for (const b of [0.08, 0.5, 0.92]) out.push([(tx + a) * T, (tz + b) * T]);
+      return out;
+    }
+    /* why a path of a type can't go on a tile, or null. y, s: a raised tile (see PDIR);
+       y undefined or NaN: on the ground */
+    canPlacePath(tx, tz, type, y, s) {
       if (!this.inBounds(tx, tz)) return 'Fuera del mapa';
-      const i = this.idx(tx, tz);
+      const i = this.idx(tx, tz), raised = y != null && y === y;
       if (tz === this.roadRow) return 'Carretera pública';
-      if (this.owned[i] !== 1) return 'Terreno no comprado';
+      const water = this.isWater(tx, tz);
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      if (water && this.owned[i] !== 1) return 'Esa parte del lago está fuera de tu terreno (la línea roja y blanca)';
+      if (water && !raised) return type === P.ROAD ? WATER_MSG : WATER_PATH_MSG;
+      if (this.owned[i] !== 1) return 'Fuera de tu terreno (la línea roja y blanca)';
+      if (raised && type === P.ROAD) return 'Las carreteras van siempre a ras de suelo';
       if (this.bld[i] >= 0) return 'Hay un edificio';
-      if (this.trackOcc[i]) return 'No se puede cruzar el circuito';
-      if (this.isWater(tx, tz)) return 'Hay agua';
-      if (this.tileSlope(tx, tz) > 2.6) return 'Demasiado inclinado';
-      if (this.path[i] === type) return 'Ya hay uno igual';
+      if (this.path[i]) {
+        const same = raised ? this.pathY[i] === this.pathY[i] && Math.abs(this.pathY[i] - y) < 0.01 && this.pathS[i] === (s || 0) : this.pathY[i] !== this.pathY[i];
+        if (!same) return 'Ya hay un camino a otra altura';
+        if (this.path[i] === type) return 'Ya hay uno igual';
+      }
       const sc = this.scen[i];
       if (sc >= 0 && !this.isTree(this.scenery.get(sc))) return 'Hay una decoración';
+      const pts = World.pathProbePts(tx, tz);
+      if (raised) {
+        let lowWater = Infinity;
+        for (const [x, z] of pts) {
+          const py = this.rampY(tx, tz, y, s, x, z), g = this.heightAt(x, z);
+          if (g > py + 0.3) return 'Se mete bajo tierra: sube el camino o allana el terreno';
+          if (py - g > PATH_ELEV_MAX + 0.01) return 'Demasiado alto: máximo ' + PATH_ELEV_MAX + ' m sobre el terreno';
+          if (g < C.WATER_LEVEL) lowWater = Math.min(lowWater, py);
+        }
+        if (lowWater < C.WATER_LEVEL + 0.3) return 'Demasiado cerca del agua: súbelo un poco para cruzar el lago';
+      } else if (this.tileSlope(tx, tz) > 2.6) return type === P.ROAD ? 'Demasiado inclinado' : 'Demasiado inclinado: sube o baja con la pendiente';
+      if (this.trackOcc[i]) {
+        if (type === P.ROAD) return 'Las carreteras no pueden cruzar un circuito';
+        const surf = raised ? (x, z) => this.rampY(tx, tz, y, s, x, z) : (x, z) => this.heightAt(x, z);
+        for (const o of this.trackList || []) {
+          if (!(this.trackOcc[i] & o.bit) || !o.pathClash) continue;
+          const c = o.pathClash(this, i, surf);
+          if (c && c.reason) return c.reason;
+        }
+      }
       return null;
     }
-    setPath(tx, tz, type) {
+    setPath(tx, tz, type, y, s) {
       const i = this.idx(tx, tz);
       this.path[i] = type;
+      const raised = type && type !== P.ROAD && y != null && y === y;
+      this.pathY[i] = raised ? y : NaN;
+      this.pathS[i] = raised ? (s || 0) : 0;
       if (type !== P.GRAVEL && type !== P.PAVED) { this.addon[i] = 0; this.litter[i] = 0; }
+      if (this.trackOcc[i]) this.crossVer++;
       this.pathVer++;
     }
     isWalkable(tx, tz) {
@@ -2356,12 +2475,18 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       for (let i = 0; i < h16.length; i++) h16[i] = Math.round(this.heights[i] * 100);
       const scen = [];
       for (const o of this.scenery.values()) scen.push([o.type, o.tx, o.tz, +o.ox.toFixed(2), +o.oz.toFixed(2), +o.rot.toFixed(2), +o.s.toFixed(2), o.v, o.sponsor || 0]);
-      return {
+      const out = {
         N: this.N, seed: this.seed, preset: this.preset, exp: this.expansionLevel,
         h: U.typedToB64(h16), g: U.typedToB64(this.ground), o: U.typedToB64(this.owned),
         p: U.typedToB64(this.path), a: U.typedToB64(this.addon), l: U.typedToB64(this.litter),
         pc: U.typedToB64(this.parcels), scen
       };
+      /* raised paths (centimetres, -32768 on the ground) and their slopes */
+      let raised = false;
+      const py = new Int16Array(this.pathY.length);
+      for (let i = 0; i < py.length; i++) { const y = this.pathY[i]; if (y === y) { py[i] = Math.round(y * 100); raised = true; } else py[i] = -32768; }
+      if (raised) { out.py = U.typedToB64(py); out.ps = U.typedToB64(new Uint8Array(this.pathS.buffer.slice(0))); }
+      return out;
     }
     static deserialize(d) {
       const w = new World(d.N);
@@ -2374,6 +2499,10 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       w.addon.set(U.b64ToTyped(d.a, Uint8Array));
       w.litter.set(U.b64ToTyped(d.l, Uint8Array));
       w.parcels.set(U.b64ToTyped(d.pc, Uint8Array));
+      if (d.py) {
+        const py = U.b64ToTyped(d.py, Int16Array), ps = U.b64ToTyped(d.ps, Uint8Array);
+        for (let i = 0; i < py.length; i++) if (py[i] !== -32768 && w.path[i]) { w.pathY[i] = py[i] / 100; w.pathS[i] = ps[i]; }
+      }
       for (const s of d.scen) {
         const id = w.nextScenId++;
         const o = { id, type: s[0], tx: s[1], tz: s[2], ox: s[3], oz: s[4], rot: s[5], s: s[6], v: s[7], sponsor: s[8] || null };
@@ -2388,6 +2517,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   MX.World = World;
   MX.World.G = G;
   MX.World.P = P;
+  MX.World.PDIR = PDIR;
+  MX.World.RISE = RISE;
+  MX.World.PATH_ELEV_MAX = PATH_ELEV_MAX;
+  MX.World.LINK_TOL = LINK_TOL;
+  MX.World.PATH_LIFT = PATH_LIFT;
+  MX.World.PATH_UNDER = PATH_UNDER;
+  MX.World.PATH_OVER = PATH_OVER;
+  MX.World.WATER_MSG = WATER_MSG;
   MX.World.ADDON = ADDON;
   MX.World.GROUND_NAMES = GROUND_NAMES;
 })(window.MX);
@@ -3152,6 +3289,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.nextFeatUid = 1;
       this.state = 'building';
       this.paid = 0;
+      this.opened = false;    // ever opened to the public: from then on edits refund half
       this.featPaid = 0;
       this.S = null;
       this.length = 0;
@@ -3928,18 +4066,63 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       tmp.computeFootprint(world);
       let r = null;
       const shared = [];
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      for (const t of tmp.tiles) if (world.isWater(t % world.N, (t / world.N) | 0)) return 'No se puede construir sobre el agua (es el lago)';
       for (const t of tmp.tiles) {
-        const tx = t % world.N, tz = (t / world.N) | 0;
         if (world.owned[t] !== 1) return 'Se sale de tu terreno (la línea roja y blanca)';
         if (r) continue;
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
-        else if (world.path[t]) r = 'Hay un camino o una carretera en medio';
-        else if (world.isWater(tx, tz)) r = 'No se puede construir sobre el agua';
-        else if (world.trackOcc[t] & ~this.bit) shared.push(t);
+        else if (world.path[t] === MX.World.P.ROAD) r = 'Hay una carretera en medio';
+        else if (world.path[t]) { const c = tmp.pathClash(world, t, (x, z) => world.pathSurfAt(t % world.N, (t / world.N) | 0, x, z)); if (c && c.reason) r = c.reason; }
+        if (!r && (world.trackOcc[t] & ~this.bit)) shared.push(t);
       }
       if (r || !shared.length) return r;
       const x = this._crossOthers(world, tmp, shared, CLEAR);
       return x ? x.reason : null;
+    }
+    /* A footpath on tile t (its surface at surf(x, z)) against this circuit: under the
+       deck with headroom, over it on a footbridge high enough with no jump under it, or
+       beside it, where the embankment becomes a wall. {reason} | {over, s0, s1} | {under}
+       | null when it only lies beside it. */
+    pathClash(world, t, surf) {
+      if (!this.S) return null;
+      const N = world.N, tx = t % N, tz = (t / N) | 0, UNDER = MX.World.PATH_UNDER, OVER = MX.World.PATH_OVER;
+      let under = false, over = false;
+      const ss = [];
+      for (const tr of this.chute && this.chute.S ? [this, this.chute] : [this]) {
+        const TS = tr.S;
+        for (const [x, z] of MX.World.pathProbePts(tx, tz)) {
+          const h = tr.nearestS(x, z);
+          if (!h) continue;
+          const hw = TS.w[h.i] * 0.5;
+          if (Math.abs(h.lane) > hw + 0.6) continue;
+          const ty = TS.y[h.i] + tr.bankAt(h.i, U.clamp(h.lane, -hw, hw)), py = surf(x, z);
+          if (ty - py >= UNDER) { under = true; continue; }
+          if (py - ty >= OVER) {
+            over = true;
+            if (tr === this) { ss.push(h.s); if (this.airNear(h.s)) return { reason: 'Debajo de la pasarela no caben saltos ni secciones rítmicas: los pilotos chocarían con ella' }; }
+            continue;
+          }
+          return { reason: py > ty ? 'Pasa demasiado bajo sobre el circuito: una pasarela tiene que ir ' + U.fmt1(OVER) + ' m por encima de la pista' : 'El circuito pasa demasiado bajo: para cruzarlo por debajo tiene que ir ' + U.fmt1(UNDER) + ' m por encima del camino' };
+        }
+      }
+      if (under && over) return { reason: 'Cruza el circuito a dos alturas a la vez' };
+      if (!over) return under ? { under: true } : null;
+      /* where it spans the loop's join, count on from the end of the loop */
+      const L = this.S.L;
+      if (this.S.closed && ss.length && Math.max(...ss) - Math.min(...ss) > L / 2) for (let k = 0; k < ss.length; k++) if (ss[k] < L / 2) ss[k] += L;
+      return { over: true, s0: ss.length ? Math.min(...ss) : 0, s1: ss.length ? Math.max(...ss) : 0 };
+    }
+    /* a jump or rhythm section takes riders into the air at s (or they fly into s)? */
+    airNear(s) {
+      const L = this.S ? this.S.L : this.length;
+      for (const f of this.features) {
+        const d = Cat.features[f.type];
+        if (!d || !AIR_KINDS.has(d.kind)) continue;
+        const fs = f.s, fe = f.s + (f.len || 0);
+        for (const k of this.S && this.S.closed ? [-L, 0, L] : [0]) if (s - 16 < fe + k && fs + k < s + 3) return true;
+      }
+      return false;
     }
     /* Ground shared with other circuits (tiles) is fine only around a crossing over or
        under them; path is this circuit or a piece of it. The first problem {reason, t}. */
@@ -4090,24 +4273,31 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (chuteHit >= 0) { S.bad[chuteHit] = 1; issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por la recta de salida: cambia la salida de lado o aleja el trazado de ella.' }, at(chuteHit))); }
       /* footprint conflicts */
       this.computeFootprint(world);
-      let notOwned = null, blocked = null, water = null, otherTrack = null;
-      const shared = [];
+      let notOwned = null, blocked = null, water = null, otherTrack = null, pathLow = null;
+      const shared = [], bridges = [];
       for (const t of this.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         const c = { x: (tx + 0.5) * C.TILE, z: (tz + 0.5) * C.TILE };
-        if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
-        if (world.bld[t] >= 0 || world.path[t]) blocked = blocked || c;
         if (world.isWater(tx, tz)) water = water || c;
+        if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
+        if (world.bld[t] >= 0 || world.path[t] === MX.World.P.ROAD) blocked = blocked || c;
+        else if (world.path[t]) {
+          /* footpaths go under the circuit with headroom or over it on a footbridge */
+          const pc = this.pathClash(world, t, (x, z) => world.pathSurfAt(tx, tz, x, z));
+          if (pc && pc.reason) pathLow = pathLow || Object.assign({ msg: pc.reason }, c);
+          else if (pc && pc.over) bridges.push([pc.s0 - 16, pc.s1 + 3]);
+        }
         if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
       const xo = shared.length ? this._crossOthers(world, this, shared, CLEAR - 0.25) : null;
       if (xo) otherTrack = { x: (xo.t % world.N + 0.5) * C.TILE, z: (((xo.t / world.N) | 0) + 0.5) * C.TILE, msg: xo.reason + '.' };
       for (const o of world.trackList || []) if (o !== this && o.bit !== this.bit && o.S && !o.isChute) for (const c of crossingsOf(this, o, null, CLEAR - 0.25)) if (c.ok) crossings.push(c);
       /* stretches under a bridge (and the run-up into it): no jumps there (see checkFeature) */
-      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]);
+      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]).concat(bridges);
       this.crossings = crossings.length;
       if (notOwned) issues.push(Object.assign({ level: 'error', msg: 'Parte del circuito está fuera de tu terreno.' }, notOwned));
-      if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o caminos.' }, blocked));
+      if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o carreteras.' }, blocked));
+      if (pathLow) issues.push({ level: 'error', msg: 'Un camino cruza el circuito: ' + pathLow.msg.charAt(0).toLowerCase() + pathLow.msg.slice(1) + '.', x: pathLow.x, z: pathLow.z });
       if (water) issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por el agua.' }, water));
       if (otherTrack) issues.push({ level: 'error', msg: otherTrack.msg.replace(/^Choca con otro circuito/, 'Se solapa con otro circuito'), x: otherTrack.x, z: otherTrack.z });
       /* features */
@@ -4178,7 +4368,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         pieces: this.pieces ? this.pieces.map(p => [p.t, p.t === 'curve' ? p.k : p.t === 'start' ? (p.sl || 0) : (p.n || 0), p.dir || 0, p.slope || 0, p.bank || 0, p.f || '', p.w, p.surf]) : null,
         origin: this.origin ? [this.origin.x, this.origin.z, this.origin.h] : null,
         features: this.features.map(f => [f.type, +f.s.toFixed(2), +(f.len || 0).toFixed(2), +f.ax.toFixed(2), +f.az.toFixed(2), f.side || 0, f.pin != null ? f.pin : -1, f.off || 0, f.auto || '']),
-        paid: this.paid, featPaid: this.featPaid, records: this.records, totals: this.totals,
+        paid: this.paid, featPaid: this.featPaid, op: this.opened ? 1 : 0, records: this.records, totals: this.totals,
         moisture: this.moisture, statsTested: this.statsTested, cs: this.chuteSide || 0, cf: this.chuteSet ? 1 : 0,
         wear: Array.from(this.wear, v => Math.round(v * 1000) / 1000)
       };
@@ -4204,6 +4394,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         return f;
       });
       t.paid = d.paid || 0; t.featPaid = d.featPaid || 0;
+      /* older saves: a circuit that is or was open (closed again) counts as opened */
+      t.opened = d.op != null ? !!d.op : d.state === 'open' || d.state === 'closed';
       t.records = d.records || t.records; t.totals = d.totals || t.totals;
       t.moisture = d.moisture || 0; t.statsTested = !!d.statsTested;
       t.chuteSide = d.cs || 0; t.chuteSet = !!d.cf;
@@ -5142,9 +5334,13 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     get(tx, tz) { return (tx < 0 || tz < 0 || tx >= this.N || tz >= this.N) ? -1 : this.d[tx + tz * this.N]; }
   }
 
-  /* Multi-source BFS. passable(tx,tz,i) decides traversal; sources are tile indices. */
-  function bfs(N, sources, passable, maxDist) {
+  /* Multi-source BFS. passable(tx,tz,i) decides traversal; sources are tile indices.
+     link(tx, tz, k), if given, says whether a step from a tile across its side k (PDIR
+     order: north, east, south, west, as DIRS) is allowed: raised paths only join where
+     they meet at the same height. */
+  function bfs(N, sources, passable, maxDist, link) {
     const f = new FlowField(N);
+    f.link = link || null;
     const q = new Int32Array(N * N);
     let h = 0, t = 0;
     for (const s of sources) { if (f.d[s] === -1) { f.d[s] = 0; q[t++] = s; } }
@@ -5159,6 +5355,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         const j = nx + nz * N;
         if (f.d[j] !== -1) continue;
         if (!passable(nx, nz, j)) continue;
+        if (link && !link(tx, tz, k)) continue;
         f.d[j] = d + 1;
         q[t++] = j;
       }
@@ -5179,6 +5376,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (d < 0 || d >= cur) continue;
       const j = nx + nz * N;
       if (j === avoid) continue;
+      if (field.link && !field.link(tx, tz, k)) continue;
       if (d < bestD) { bestD = d; best = j; ties = 1; }
       else if (d === bestD) { ties++; if (rng.next() < 1 / ties) best = j; }
     }
@@ -5651,12 +5849,15 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         this.tx = this.ntx; this.tz = this.ntz;
         if (this.timer <= 0) { this.decide(g, rng); return; }
         const opts = [];
-        for (const [dx, dz] of PF.DIRS) {
-          const nx = this.tx + dx, nz = this.tz + dz;
-          if (g.world.isWalkable(nx, nz) && !(nx === this.ptx && nz === this.ptz)) opts.push([nx, nz]);
+        let back = false;
+        for (let k = 0; k < 4; k++) {
+          const nx = this.tx + PF.DIRS[k][0], nz = this.tz + PF.DIRS[k][1];
+          /* raised paths only join where they meet at the same height */
+          if (!g.world.pathStep(this.tx, this.tz, k)) continue;
+          if (nx === this.ptx && nz === this.ptz) back = true; else opts.push([nx, nz]);
         }
         if (!opts.length) {
-          if (g.world.isWalkable(this.ptx, this.ptz)) opts.push([this.ptx, this.ptz]);
+          if (back) opts.push([this.ptx, this.ptz]);
           else { this.stuckT += 1; if (this.stuckT > 8) this.goLeave(g); return; }
         }
         const c = rng.pick(opts);
@@ -6115,7 +6316,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (moveToward(this, 1.8, dt)) {
         this.tx = this.ntx; this.tz = this.ntz;
         const opts = [];
-        for (const [dx, dz] of PF.DIRS) if (g.world.isWalkable(this.tx + dx, this.tz + dz)) opts.push([this.tx + dx, this.tz + dz]);
+        for (let k = 0; k < 4; k++) if (g.world.pathStep(this.tx, this.tz, k)) opts.push([this.tx + PF.DIRS[k][0], this.tz + PF.DIRS[k][1]]);
         if (opts.length) { const c = rng.pick(opts); setWaypoint(this, c[0], c[1]); }
       }
     }
@@ -7151,6 +7352,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.medicJobs = [];
       this.passHolders = [];
       this.selectedTrack = null;
+      this.pathSession = new Map(); // path tiles laid with the path tools still in hand: tile -> paid
       this.race = null;
       this.paused = false;
       this.gameOver = null;
@@ -7289,12 +7491,13 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const fr = FRONT[rot || 0];
       void fr;
       const tiles = [];
-      for (let x = r.tx; x < r.tx + r.w; x++) { tiles.push([x, r.tz - 1]); tiles.push([x, r.tz + r.h]); }
-      for (let z = r.tz; z < r.tz + r.h; z++) { tiles.push([r.tx - 1, z]); tiles.push([r.tx + r.w, z]); }
-      for (const [x, z] of tiles) {
+      /* each tile beside the footprint with the side of it that faces the building */
+      for (let x = r.tx; x < r.tx + r.w; x++) { tiles.push([x, r.tz - 1, 2]); tiles.push([x, r.tz + r.h, 0]); }
+      for (let z = r.tz; z < r.tz + r.h; z++) { tiles.push([r.tx - 1, z, 1]); tiles.push([r.tx + r.w, z, 3]); }
+      for (const [x, z, k] of tiles) {
         if (!w.inBounds(x, z)) continue;
         const p = w.path[w.idx(x, z)];
-        if (p === P.GRAVEL || p === P.PAVED) path = true;
+        if ((p === P.GRAVEL || p === P.PAVED) && w.pathAtGround(x, z, k)) path = true;
         if (p === P.ROAD) road = true;
       }
       return { path, road };
@@ -7398,22 +7601,23 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     count(type) { let n = 0; for (const b of this.buildings.values()) if (b.type === type) n++; return n; }
     buildingsOf(type) { const out = []; for (const b of this.buildings.values()) if (b.type === type) out.push(b); return out; }
     doorTiles(b, kind) {
-      /* kind 'path' -> adjacent path tiles; 'road' -> adjacent road tiles; 'open' -> adjacent rider-walkable tiles */
+      /* kind 'path' -> adjacent path tiles (at ground level on the side facing it); 'road'
+         -> adjacent road tiles; 'open' -> adjacent rider-walkable tiles */
       const w = this.world;
       const out = [];
       const fr = FRONT[b.rot];
-      const add = (x, z, front) => {
+      const add = (x, z, front, k) => {
         if (!w.inBounds(x, z)) return;
         const i = w.idx(x, z);
         const p = w.path[i];
         let ok;
-        if (kind === 'path') ok = p === P.GRAVEL || p === P.PAVED;
+        if (kind === 'path') ok = (p === P.GRAVEL || p === P.PAVED) && w.pathAtGround(x, z, k);
         else if (kind === 'road') ok = p === P.ROAD;
         else ok = this.riderPassable(x, z, i);
         if (ok) out.push({ tx: x, tz: z, i, front });
       };
-      for (let x = b.tx; x < b.tx + b.w; x++) { add(x, b.tz - 1, fr[1] === -1); add(x, b.tz + b.h, fr[1] === 1); }
-      for (let z = b.tz; z < b.tz + b.h; z++) { add(b.tx - 1, z, fr[0] === -1); add(b.tx + b.w, z, fr[0] === 1); }
+      for (let x = b.tx; x < b.tx + b.w; x++) { add(x, b.tz - 1, fr[1] === -1, 2); add(x, b.tz + b.h, fr[1] === 1, 0); }
+      for (let z = b.tz; z < b.tz + b.h; z++) { add(b.tx - 1, z, fr[0] === -1, 1); add(b.tx + b.w, z, fr[0] === 1, 3); }
       out.sort((a, c) => (c.front ? 1 : 0) - (a.front ? 1 : 0));
       return out;
     }
@@ -7467,17 +7671,44 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     seatsCovered() { let n = 0; for (const b of this.buildings.values()) if (b.type === 'grandstand_cov') n += b.seats.length; return n; }
 
     /* ---------------- paths, decor, addons, terrain, land ---------------- */
-    placePath(tx, tz, type) {
+    /* What a path tile costs: the paving, plus a deck on posts when it is raised (dearer
+       the higher it stands) and clearing a tree in the way. y, s: see World.PDIR. */
+    pathValue(tx, tz, type, y, s) {
+      const w = this.world, base = Cat.paths[type].cost;
+      if (y == null || y !== y) return base;
+      let rise = 0;
+      for (const [x, z] of MX.World.pathProbePts(tx, tz)) rise += Math.max(0, w.rampY(tx, tz, y, s, x, z) - w.heightAt(x, z));
+      return Math.round(base + 45 + rise / 9 * 14);
+    }
+    pathCost(tx, tz, type, y, s) {
       const w = this.world;
-      const why = w.canPlacePath(tx, tz, type);
+      return this.pathValue(tx, tz, type, y, s) + (w.inBounds(tx, tz) && w.scen[w.idx(tx, tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+    }
+    placePath(tx, tz, type, y, s) {
+      const w = this.world;
+      const why = w.canPlacePath(tx, tz, type, y, s);
       if (why) return { ok: false, reason: why };
-      const cost = Cat.paths[type].cost + (w.scen[w.idx(tx, tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+      const cost = this.pathCost(tx, tz, type, y, s);
       if (!this.canAfford(cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
+      const i = w.idx(tx, tz);
+      /* replacing one kind of path with another: the old one is taken up as on removal */
+      const had = w.path[i];
+      if (had && had !== type) this.refundPath(tx, tz, had);
       w.removeSceneryAt(tx, tz);
-      w.setPath(tx, tz, type);
+      w.setPath(tx, tz, type, y, s);
       this.spend('construccion', cost, (tx + 0.5) * T, (tz + 0.5) * T);
+      /* laid while the path tools are in hand: taking it back returns everything paid */
+      this.pathSession.set(i, cost);
       this.fieldsDirty = true;
       return { ok: true, cost };
+    }
+    refundPath(tx, tz, p) {
+      const w = this.world, i = w.idx(tx, tz);
+      const fresh = this.pathSession.get(i);
+      const back = fresh != null ? fresh : Math.round(this.pathValue(tx, tz, p, w.pathY[i], w.pathS[i]) * C.REFUND_RATE);
+      this.pathSession.delete(i);
+      if (back) this.econ.refund('construccion', back);
+      return back;
     }
     removePath(tx, tz) {
       const w = this.world;
@@ -7485,11 +7716,13 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const i = w.idx(tx, tz);
       const p = w.path[i];
       if (!p) return { ok: false, reason: 'No hay camino' };
+      const back = this.refundPath(tx, tz, p);
       w.setPath(tx, tz, 0);
-      this.econ.refund('construccion', Math.round(Cat.paths[p].cost * 0.3));
       this.fieldsDirty = true;
-      return { ok: true };
+      return { ok: true, refund: back };
     }
+    /* leaving the path tools: what was laid stays, and from now on comes back at half */
+    endPathSession() { this.pathSession.clear(); }
     placeAddon(tx, tz, kind) {
       const w = this.world;
       if (!w.isWalkable(tx, tz)) return { ok: false, reason: 'Va sobre un camino peatonal' };
@@ -7509,9 +7742,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (!d) return { ok: false, reason: 'Desconocido' };
       if (!w.inBounds(tx, tz)) return { ok: false, reason: 'Fuera del mapa' };
       const i = w.idx(tx, tz);
+      if (w.isWater(tx, tz)) return { ok: false, reason: MX.World.WATER_MSG };
       if (!w.owned[i]) return { ok: false, reason: 'Terreno no comprado' };
       if (w.bld[i] >= 0 || w.path[i] || w.trackOcc[i]) return { ok: false, reason: 'Ocupado' };
-      if (w.isWater(tx, tz)) return { ok: false, reason: 'Hay agua' };
       if (w.scen[i] >= 0) return { ok: false, reason: 'Ya hay algo aquí' };
       if (!this.canAfford(d.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
       const sp = d.banner && this.sponsors.length ? this.sponsors[this.rng.int(0, this.sponsors.length - 1)].id : null;
@@ -7626,7 +7859,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       this.trackGeometryChanged(tr, true);
       if (delta > 0) this.spend('construccion', delta);
       /* undoing work on a circuit that never opened gives the money back in full */
-      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * (tr.state === 'building' ? 1 : C.REFUND_RATE)));
+      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * (tr.opened ? C.REFUND_RATE : 1)));
       tr.paid = Math.max(0, tr.paid + delta);
       return { ok: true, cost: delta };
     }
@@ -7853,6 +8086,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (!tr.stats) MX.TrackAnalyzer.analyze(tr, this.world, this);
       this.endTest(tr);
       tr.state = 'open';
+      tr.opened = true;
       this._openCache = null;
       this.fieldsDirty = true;
       this.notify('¡' + tr.name + ' abre al público! Dificultad ' + U.fmt1(tr.stats.diff) + ', valoración ' + U.fmt1(tr.stats.rating) + '.', 'success');
@@ -7902,9 +8136,10 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       if (this.race && this.race.trackId === tr.id) return { ok: false, reason: 'Hay una carrera en curso' };
       this.closeTrack(tr);
       tr.clearOccupancy(this.world);
-      /* a circuit that never opened is simply dismantled: everything paid comes back */
+      /* a circuit that never opened is simply dismantled: everything paid comes back;
+         once it has opened, half of what it is worth */
       const worth = tr.geometryCost() + tr.featureCost();
-      const back = Math.round(tr.state === 'building' ? Math.min(tr.paid, worth) : worth * 0.35);
+      const back = Math.round(!tr.opened ? Math.min(tr.paid, worth) : worth * C.REFUND_RATE);
       this.econ.refund('construccion', back);
       this.tracks = this.tracks.filter(t => t !== tr);
       this.world.trackList = this.tracks;
@@ -7979,6 +8214,8 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const w = this.world, N = w.N;
       this.fieldVer = (this.fieldVer || 0) + 1;
       const walk = (x, z, i) => { const p = w.path[i]; return p === P.GRAVEL || p === P.PAVED; };
+      /* raised paths only join where they meet at the same height */
+      const link = (x, z, k) => w.pathLink(x, z, k);
       const rpass = (x, z, i) => this.riderPassable(x, z, i);
       const F = new Map();
       const srcPath = (types, filter) => {
@@ -7994,15 +8231,15 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         }
         return out;
       };
-      F.set('entrance', PF.bfs(N, srcPath(['entrance']), walk));
-      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant', 'restaurant_big']), walk));
-      F.set('toilet', PF.bfs(N, srcPath(['toilets']), walk));
-      F.set('shop', PF.bfs(N, srcPath(['shop', 'megastore']), walk));
-      F.set('camping', PF.bfs(N, srcPath(['camping']), walk));
-      F.set('play', PF.bfs(N, srcPath(['playground']), walk));
+      F.set('entrance', PF.bfs(N, srcPath(['entrance']), walk, 0, link));
+      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant', 'restaurant_big']), walk, 0, link));
+      F.set('toilet', PF.bfs(N, srcPath(['toilets']), walk, 0, link));
+      F.set('shop', PF.bfs(N, srcPath(['shop', 'megastore']), walk, 0, link));
+      F.set('camping', PF.bfs(N, srcPath(['camping']), walk, 0, link));
+      F.set('play', PF.bfs(N, srcPath(['playground']), walk, 0, link));
       const seatSrc = srcPath(['grandstand', 'grandstand_cov', 'restaurant', 'restaurant_big']);
       for (let i = 0; i < N * N; i++) if (w.addon[i] === MX.World.ADDON.BENCH && w.isWalkable(i % N, (i / N) | 0)) seatSrc.push(i);
-      F.set('seat', PF.bfs(N, seatSrc, walk));
+      F.set('seat', PF.bfs(N, seatSrc, walk, 0, link));
       /* viewing spots: path tiles close to open tracks */
       const view = new Set();
       for (const tr of this.tracks) {
@@ -8019,11 +8256,11 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         }
       }
       this.viewTiles = view;
-      F.set('view', PF.bfs(N, Array.from(view), walk));
+      F.set('view', PF.bfs(N, Array.from(view), walk, 0, link));
       /* exits: path tiles next to parkings, or next to the public road */
       const exits = srcPath(['parking']);
-      for (let x = 0; x < N; x++) { const z = w.roadRow - 1; const i = w.idx(x, z); if (walk(x, z, i)) exits.push(i); }
-      F.set('exit', PF.bfs(N, exits, walk));
+      for (let x = 0; x < N; x++) { const z = w.roadRow - 1; const i = w.idx(x, z); if (walk(x, z, i) && w.pathAtGround(x, z, 2)) exits.push(i); }
+      F.set('exit', PF.bfs(N, exits, walk, 0, link));
       /* riders and service vehicles (off-road) */
       F.set('r_paddock', PF.bfs(N, srcOpen(['paddock']), rpass));
       F.set('r_shower', PF.bfs(N, srcOpen(['showers']), rpass));
@@ -8159,16 +8396,16 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         if (w.litter[i] > 0) { found = i; break; }
         if (seen[i] > 30) continue;
         const x = i % N, z = (i / N) | 0;
-        for (const [dx, dz] of PF.DIRS) {
-          const nx = x + dx, nz = z + dz;
-          if (!w.isWalkable(nx, nz)) continue;
+        for (let k = 0; k < 4; k++) {
+          const nx = x + PF.DIRS[k][0], nz = z + PF.DIRS[k][1];
+          if (!w.pathLink(x, z, k)) continue;
           const j = w.idx(nx, nz);
           if (seen[j] >= 0) continue;
           seen[j] = seen[i] + 1; q.push(j);
         }
       }
       if (found < 0) return null;
-      const field = PF.bfs(N, [found], (x, z, i) => w.isWalkable(x, z), 40);
+      const field = PF.bfs(N, [found], (x, z, i) => w.isWalkable(x, z), 40, (x, z, k) => w.pathLink(x, z, k));
       return { kind: 'litter', field };
     }
     requestMedic(rider, tr) {
@@ -10938,11 +11175,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     /* crossings with itself and the other circuits: bridges over, tunnels under */
     const xs = opts.tracks && !opts.ghost ? MX.Track.crossingsFor(tr, opts.tracks) : [];
     const vg = c ? vergeOf(tr) : null;
-    const marks = xs.length ? crossingMarks(tr, xs, world) : null;
+    /* footpaths that go under it (or run beside it, lower down): walls instead of slopes */
+    const low = opts.ghost ? null : lowPaths(tr, world);
+    const marks = xs.length || low ? crossingMarks(tr, xs, world, low) : null;
     surface(mb, tr, world, opts, null, marks, vg);
     /* the wide start straight, tucked just under the circuit where the two overlap */
     if (c) { surface(mb, c, world, opts, tr, null, vg); verge(mb, tr, world, vg); }
     if (marks) for (const t of marks.tunnels) tunnel(mb, t);
+    if (marks && marks.pathWalls) for (const cols of marks.pathWalls) slab(mb, cols, L().concrete, true);
     if (!opts.ghost && opts.decor !== false) trackDecor(tr, world, mb);
     return mb.build();
   }
@@ -10962,9 +11202,77 @@ html.phone { --tbh: 44px; --tbb: 66px; }
      walls reaching far enough to keep the slopes off the path below), and the tunnel
      walls of the crossings it goes under: columns {x, y top, z, nx, nz outwards, f foot}
      per side, whose samples lose their slope on that side. */
-  function crossingMarks(tr, xs, world) {
+  function crossingMarks(tr, xs, world, low) {
     const S = tr.S, n = S.n, wall = new Uint8Array(n), tun = { '-1': new Uint8Array(n), '1': new Uint8Array(n) }, tunnels = [];
     const wrap = (k) => S.closed ? U.mod(k, n) : U.clamp(k, 0, n - 1);
+    let pathWalls = null, sdLow = null;
+    if (low) {
+      const N = world.N;
+      /* samples whose slope would bury a path: walls there, and a little either side so the
+         slopes end in a wing wall clear of it */
+      for (let i = 0; i < n; i++) {
+        const hdg = S.hdg[i], nx = -Math.sin(hdg), nz = Math.cos(hdg), hw = S.w[i] * 0.5;
+        let hit = false;
+        for (const side of [-1, 1]) {
+          const ex = S.x[i] + nx * hw * side, ez = S.z[i] + nz * hw * side;
+          const eh = S.y[i] + tr.bankAt(i, hw * side) - world.heightAt(ex, ez);
+          const reach = hw + 0.65 + MX.Track.bankRun(Math.max(0, eh));
+          for (let o = 0; o <= reach && !hit; o += 0.7) {
+            const x = S.x[i] + nx * o * side, z = S.z[i] + nz * o * side;
+            if (low.has(Math.floor(x / T) + Math.floor(z / T) * N)) hit = true;
+          }
+          if (hit) break;
+        }
+        if (hit) for (let k = -5; k <= 5; k++) { const j = S.closed ? U.mod(i + k, n) : i + k; if (j >= 0 && j < n) wall[j] = 1; }
+      }
+      /* the bridge walls open where a path goes through: signed distance to the paths
+         (negative inside), the open sides of a tile being those with no path beyond */
+      sdLow = (x, z) => {
+        const tx = Math.floor(x / T), tz = Math.floor(z / T), i = tx + tz * N;
+        if (low.has(i)) {
+          const fx = x - tx * T, fz = z - tz * T;
+          let d = T;
+          if (!low.has(i - N)) d = Math.min(d, fz);
+          if (!low.has(i + 1)) d = Math.min(d, T - fx);
+          if (!low.has(i + N)) d = Math.min(d, T - fz);
+          if (!low.has(i - 1)) d = Math.min(d, fx);
+          return -Math.max(0.01, d);
+        }
+        let d = Infinity;
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          if (!low.has(i + dx + dz * N)) continue;
+          const x0 = (tx + dx) * T, z0 = (tz + dz) * T;
+          d = Math.min(d, Math.hypot(Math.max(x0 - x, 0, x - x0 - T), Math.max(z0 - z, 0, z - z0 - T)));
+        }
+        return d;
+      };
+      /* tunnel walls along the open sides of the paths under the deck */
+      pathWalls = [];
+      const PD = MX.World.PDIR;
+      for (const t of low) {
+        const tx = t % N, tz = (t / N) | 0;
+        const h0 = tr.nearestS((tx + 0.5) * T, (tz + 0.5) * T);
+        if (!h0) continue;
+        for (let k = 0; k < 4; k++) {
+          if (world.pathLink(tx, tz, k)) continue;
+          const d = PD[k], ox = d[0], oz = d[1];
+          /* the side's two corners, from one end to the other */
+          const cx = (tx + 0.5 + ox * 0.5) * T, cz = (tz + 0.5 + oz * 0.5) * T;
+          const ax = cx - oz * T * 0.5, az = cz + ox * T * 0.5, bx = cx + oz * T * 0.5, bz = cz - ox * T * 0.5;
+          let cols = [];
+          const flush = () => { if (cols.length > 1) pathWalls.push(cols.map(p => Object.assign(p, { fL: p.f, fR: p.f }))); cols = []; };
+          for (let q = 0; q <= 8; q++) {
+            const x = ax + (bx - ax) * q / 8, z = az + (bz - az) * q / 8;
+            const h = tr.nearestS(x, z, h0.s, 14);
+            const hw = h ? S.w[h.i] * 0.5 : 0;
+            if (!h || Math.abs(h.lane) > hw + WALL_T + 0.3) { flush(); continue; }
+            const top = S.y[h.i] + tr.bankAt(h.i, U.clamp(h.lane, -hw, hw)) - MX.Track.DECK;
+            cols.push({ x, y: top, z, nx: ox, nz: oz, f: Math.min(world.heightAt(x, z), world.pathSurfAt(tx, tz, x, z)) - 0.3 });
+          }
+          flush();
+        }
+      }
+    }
     for (const c of xs) {
       if (c.U === tr) {
         const h = Math.max(0, S.y[c.iu] - S.terr[c.iu]);
@@ -10986,7 +11294,23 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       }
       tunnels.push({ c, walls });
     }
-    return { wall, tun, tunnels, xs: xs.filter(c => c.U === tr) };
+    return { wall, tun, tunnels, xs: xs.filter(c => c.U === tr), sdLow, pathWalls };
+  }
+  /* footpath tiles on a circuit's ground that run lower than it: under its deck, or beside
+     it where its slope would bury them */
+  function lowPaths(tr, world) {
+    if (!tr.tiles || !tr.tiles.length || !tr.S) return null;
+    const N = world.N, ROAD = MX.World.P.ROAD;
+    let set = null;
+    for (const t of tr.tiles) {
+      const p = world.path[t];
+      if (!p || p === ROAD) continue;
+      const tx = t % N, tz = (t / N) | 0, cx = (tx + 0.5) * T, cz = (tz + 0.5) * T;
+      let ty = -Infinity;
+      for (const c of tr.chute && tr.chute.S ? [tr, tr.chute] : [tr]) { const h = c.nearestS(cx, cz); if (h) ty = Math.max(ty, c.S.y[h.i]); }
+      if (world.pathSurfAt(tx, tz, cx, cz) + 0.3 < ty) (set || (set = new Set())).add(t);
+    }
+    return set;
   }
   /* A wall along columns {x, y top, z, nx, nz, fL, fR, split}: its face towards (nx, nz)
      stands WALL_T out from the columns, the other on them; normals follow the columns so
@@ -11048,6 +11372,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
         const h = c.L.nearestS(p.x, p.z, c.il * DS, 40);
         if (h) b = Math.min(b, Math.abs(h.lane) - (c.L.S.w[h.i] * 0.5 + 0.5));
       }
+      if (marks.sdLow) b = Math.min(b, marks.sdLow(p.x, p.z));
       return b;
     };
     const ground = (p) => Math.min(p.y, world.heightAt(p.x, p.z)) - 0.25;
@@ -11209,7 +11534,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     }
     /* bridges: runs of wall along each edge, reaching the first cross-section of slope on
        either side (where the slope's end is closed by a wing wall) */
-    if (marks && marks.xs.length) for (const side of [-1, 1]) {
+    if (marks && (marks.xs.length || marks.sdLow)) for (const side of [-1, 1]) {
       let run = [];
       for (let j = 0; j < R; j++) {
         const r = rows[j], on = marks.wall[r.i] || (j > 0 && marks.wall[rows[j - 1].i]) || (j + 1 < R && marks.wall[rows[j + 1].i]);
@@ -11652,6 +11977,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const p = world.path[tx + tz * N];
       if (!p) continue;
       const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+      if (p !== P.ROAD && world.isRaisedPath(tx, tz)) { raisedPath(mb, world, tx, tz, matFor[p], curbCol[p]); pathExtras(mb, world, tx, tz); continue; }
       const lift = p === P.ROAD ? 0.05 : 0.07;
       const h = (vx, vz) => world.vh(vx, vz) + lift;
       const A = [x0, h(tx, tz), z0], B = [x1, h(tx + 1, tz), z0], Cc = [x1, h(tx + 1, tz + 1), z1], D = [x0, h(tx, tz + 1), z1];
@@ -11696,19 +12022,71 @@ html.phone { --tbh: 44px; --tbb: 66px; }
           mb.quad4(a, d, c, b, [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, MB.rgba('#f2d64b'));
         }
       }
-      /* addons */
-      const ad = world.addon[tx + tz * N];
-      if (ad) addonMesh(mb, world, tx, tz, ad, mask);
-      /* litter */
-      const lit = world.litter[tx + tz * N];
-      for (let k = 0; k < Math.min(lit, 12); k++) {
-        const lx = x0 + 0.5 + U.hash2(tx * 13 + k, tz, 5) * (T - 1), lz = z0 + 0.5 + U.hash2(tx, tz * 7 + k, 9) * (T - 1);
-        const ly = world.heightAt(lx, lz) + lift + 0.02;
-        const lc = MB.rgba(['#e53935', '#fdd835', '#ffffff', '#1e88e5'][k % 4]);
-        mb.quad([lx - 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz - 0.08], [lx - 0.12, ly, lz - 0.08], null, MB.MAT_SOLID, lc);
-      }
+      pathExtras(mb, world, tx, tz);
     }
     return mb.build();
+  }
+  /* benches, bins and lamps, and litter, on a path tile (on the ground or raised) */
+  function pathExtras(mb, world, tx, tz) {
+    const N = world.N, x0 = tx * T, z0 = tz * T;
+    const ad = world.addon[tx + tz * N];
+    if (ad) addonMesh(mb, world, tx, tz, ad, world.pathMask(tx, tz, false));
+    const lit = world.litter[tx + tz * N];
+    for (let k = 0; k < Math.min(lit, 12); k++) {
+      const lx = x0 + 0.5 + U.hash2(tx * 13 + k, tz, 5) * (T - 1), lz = z0 + 0.5 + U.hash2(tx, tz * 7 + k, 9) * (T - 1);
+      const ly = world.walkHeight(lx, lz) + 0.02;
+      const lc = MB.rgba(['#e53935', '#fdd835', '#ffffff', '#1e88e5'][k % 4]);
+      mb.quad([lx - 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz + 0.08], [lx + 0.12, ly, lz - 0.08], [lx - 0.12, ly, lz - 0.08], null, MB.MAT_SOLID, lc);
+    }
+  }
+  /* A raised path tile: a deck (flat, or a ramp) with railings on the sides that don't join
+     another path, and a pillar down to the ground unless a circuit runs underneath. */
+  const DECK_T = 0.4, RAIL = MB.rgba('#e9e6de'), RAIL_POST = MB.rgba('#5d6266'), DECK_SIDE = [0.8, 0.79, 0.76, 1];
+  function raisedPath(mb, world, tx, tz, mat, curb) {
+    const i = world.idx(tx, tz), y = world.pathY[i], s = world.pathS[i], lift = MX.World.PATH_LIFT;
+    const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+    const sf = (x, z) => world.rampY(tx, tz, y, s, x, z) + lift;
+    const A = [x0, sf(x0, z0), z0], B = [x1, sf(x1, z0), z0], Cc = [x1, sf(x1, z1), z1], D = [x0, sf(x0, z1), z1];
+    const uv = (x, z) => [x / 16, z / 16];
+    mb.tri(A, D, Cc, [uv(x0, z0), uv(x0, z1), uv(x1, z1)], mat, [1, 1, 1, 1]);
+    mb.tri(A, Cc, B, [uv(x0, z0), uv(x1, z1), uv(x1, z0)], mat, [1, 1, 1, 1]);
+    const conc = L().concrete, PD = MX.World.PDIR;
+    /* sides in PDIR order: their corners and outward normal */
+    const sides = [[A, B], [B, Cc], [Cc, D], [D, A]];
+    for (let k = 0; k < 4; k++) {
+      const linked = world.pathLink(tx, tz, k), d = PD[k];
+      const nraised = linked && world.isRaisedPath(tx + d[0], tz + d[1]);
+      const [a, b] = sides[k], n = [d[0], 0, d[1]];
+      /* the edge of the deck (none where it carries straight on into another deck) */
+      if (!nraised) mb.quadN(a, b, [b[0], b[1] - DECK_T, b[2]], [a[0], a[1] - DECK_T, a[2]], n, n, n, n, [0, 0], [0.25, 0], [0.25, 0.03], [0, 0.03], conc, DECK_SIDE);
+      if (linked) continue;
+      /* a railing: posts at the ends and in the middle, two rails between them */
+      const ins = 0.14, p = (q) => ({ x: q[0] - d[0] * ins, y: q[1], z: q[2] - d[1] * ins });
+      const pa = p(a), pb = p(b), pm = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2, z: (pa.z + pb.z) / 2 };
+      for (const q of [pa, pm, pb]) mb.box(q.x - 0.06, q.y - 0.02, q.z - 0.06, q.x + 0.06, q.y + 1.05, q.z + 0.06, { col: RAIL_POST });
+      band(mb, pa, pb, 0.94, 1.04, MB.MAT_SOLID, RAIL);
+      band(mb, pa, pb, 0.5, 0.56, MB.MAT_SOLID, RAIL);
+    }
+    void curb;
+    /* the pillar, under the middle of the deck */
+    const cx = x0 + T / 2, cz = z0 + T / 2, top = sf(cx, cz) - lift - DECK_T, g = world.heightAt(cx, cz);
+    if (top - g < 0.35 || overTrack(world, i, cx, cz)) return;
+    const r = 0.28, bot = Math.min(g, C.WATER_LEVEL) - 0.4;
+    mb.box(cx - r, bot, cz - r, cx + r, top + 0.02, cz + r, { mat: conc, col: DECK_SIDE });
+    /* a cap under the deck so it reads as resting on the pillar */
+    mb.box(cx - 0.75, top - 0.22, cz - 0.75, cx + 0.75, top + 0.02, cz + 0.75, { mat: conc, col: DECK_SIDE });
+  }
+  /* is (x, z) on the surface (or the wall) of a circuit on tile i? */
+  function overTrack(world, i, x, z) {
+    if (!world.trackOcc[i]) return false;
+    for (const tr of world.trackList || []) {
+      if (!(world.trackOcc[i] & tr.bit) || !tr.S) continue;
+      for (const c of tr.chute && tr.chute.S ? [tr, tr.chute] : [tr]) {
+        const h = c.nearestS(x, z);
+        if (h && Math.abs(h.lane) < c.S.w[h.i] * 0.5 + 1.2) return true;
+      }
+    }
+    return false;
   }
   function addonMesh(mb, world, tx, tz, ad, mask) {
     const A = MX.World.ADDON;
@@ -11719,7 +12097,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     const off = T / 2 - 0.5;
     const dir = [[0, -1], [1, 0], [0, 1], [-1, 0]][side];
     const x = cx + dir[0] * off, z = cz + dir[1] * off;
-    const y = world.heightAt(x, z) + 0.07;
+    const y = world.walkHeight(x, z);
     const yaw = Math.atan2(dir[1], dir[0]) + Math.PI;
     mb.push(); mb.translate(x, y, z); mb.rotateY(yaw);
     if (ad === A.BENCH) {
@@ -11985,9 +12363,11 @@ out vec3 vWp;
 void main() { vWp = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`;
   const WATER_FS = HEAD + LIGHT + `
 uniform sampler2D uHeights;
+uniform sampler2D uOwn;
 uniform float uMapSize;
 uniform float uVerts;
 uniform float uWater;
+uniform float uLandEdge;
 in vec3 vWp;
 out vec4 o;
 void main() {
@@ -12004,6 +12384,29 @@ void main() {
   c += rip * 0.09;
   float foam = step(depth, 0.22 + 0.08 * sin(uTime * 2.0 + vWp.x * 0.5));
   c = mix(c, vec3(0.9, 0.95, 0.95), foam * 0.75);
+  /* whose lake: greyed outside your land like the ground, and the red and white tape of
+     the edge of your land carries on across the water */
+  float own = texture(uOwn, vWp.xz / uMapSize).r;
+  if (own < 0.75) { float g = dot(c, vec3(0.33)); c = mix(c, vec3(g), own < 0.25 ? 0.3 : 0.18) * (own < 0.25 ? 0.86 : 0.93); }
+  else if (own > 0.95 && uLandEdge > 0.0) {
+    vec2 tq = vWp.xz / 4.0, cell = floor(tq), f = tq - cell;
+    float tilesN = uMapSize / 4.0;
+    vec2 px = fwidth(tq);
+    vec2 wl = max(vec2(0.05 + 0.07 * uLandEdge), px * (1.2 + 1.3 * uLandEdge));
+    float hit = 0.0, dash = 0.0;
+    vec2 ds[4] = vec2[4](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
+    float dist[4] = float[4](f.x, 1.0 - f.x, f.y, 1.0 - f.y);
+    float wide[4] = float[4](wl.x, wl.x, wl.y, wl.y);
+    float along[4] = float[4](tq.y, tq.y, tq.x, tq.x);
+    for (int k = 0; k < 4; k++) {
+      if (dist[k] > wide[k]) continue;
+      float o2 = texture(uOwn, (cell + ds[k] + 0.5) / tilesN).r;
+      if (o2 > 0.85) continue;
+      hit = 1.0;
+      dash = step(0.5, fract(along[k] * 1.5));
+    }
+    if (hit > 0.0) { c = mix(c, mix(vec3(0.97, 0.96, 0.92), vec3(0.86, 0.16, 0.1), dash), 0.6 + 0.35 * uLandEdge); foam = 1.0; }
+  }
   vec3 lit = shade(c, vec3(0.0, 1.0, 0.0), vWp);
   if (bayer4(gl_FragCoord.xy) > 0.82 && foam < 0.5) discard;
   o = vec4(lit, 1.0);
@@ -13427,7 +13830,8 @@ void main() {
       }
       if (force || V.own !== world.ownerVer) { this._uploadOwnership(); V.own = world.ownerVer; }
       if (force || V.ground !== world.groundVer) { this._uploadGround(); V.ground = world.groundVer; }
-      const pkey = world.pathVer + ':' + world.litterVer + ':' + world.addonVer;
+      /* raised paths stand on posts that skip the circuits under them */
+      const pkey = world.pathVer + ':' + world.litterVer + ':' + world.addonVer + ':' + (game.trackGeoVer || 0);
       if (V.paths !== pkey) {
         const g = MX.Geom.paths(world);
         this.pathMesh = GLU.makeMeshVAO(gl, g.data, g.count, this.pathMesh);
@@ -13439,7 +13843,7 @@ void main() {
         live.add(tr.id);
         let tm = this.trackMeshes.get(tr.id);
         /* crossings depend on the other circuits too */
-        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0);
+        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0) + ':' + world.crossVer;
         if (!tm || tm.key !== key || tr._meshVer === -1) {
           if (!tm) { tm = { main: null, gate: null, decor: null, decorKey: null }; this.trackMeshes.set(tr.id, tm); }
           const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false, tracks: game.tracks });
@@ -13743,6 +14147,8 @@ void main() {
       gl.uniformMatrix4fv(p.u.uViewProj, false, cam.viewProj);
       this._setLightUniforms(p, L);
       gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, this.heightTex); gl.uniform1i(p.u.uHeights, 5);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, this.ownTex); gl.uniform1i(p.u.uOwn, 4);
+      gl.uniform1f(p.u.uLandEdge, this.landEdge != null ? this.landEdge : 0.4);
       gl.uniform1f(p.u.uMapSize, world.N * T); gl.uniform1f(p.u.uVerts, world.V); gl.uniform1f(p.u.uWater, C.WATER_LEVEL);
       gl.bindVertexArray(this.waterVao);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -14342,6 +14748,10 @@ void main() {
       set('--top-ui', t);
     },
     onTool(name) {
+      /* the path constructor shows in the paths window only while it is the tool in hand */
+      const was = this._lastTool;
+      this._lastTool = name;
+      if (was !== name && (name === 'pathbuild' || was === 'pathbuild') && this.wins.has('paths')) this.rebuild('paths');
       if (!isPhone()) { for (const w of this.wins.values()) this._toolActs(w); return; }
       for (const w of this.wins.values()) {
         if (MAP_TOOLS.has(name)) w.el.dataset.sheet = 'min';
@@ -14555,6 +14965,9 @@ void main() {
         r.landEdge = tool && tool.name !== 'select' ? 1 : 0.4;
       }
       if (tool && tool.enter) tool.enter();
+      /* leaving the path tools: from now on taking a path up gives back half of it */
+      const g = MX.App && MX.App.game;
+      if (g && g.endPathSession && !(tool && (tool.name === 'pathbuild' || tool.name === 'path' || tool.name === 'addon'))) g.endPathSession();
       MX.Bus.emit('tool', tool ? tool.name : null);
       app().hud && app().hud.setHint(tool && tool.hint ? tool.hint : '');
     },
@@ -14803,8 +15216,8 @@ void main() {
     canNode(p) {
       const t = tileOf(p), w = game().world;
       if (!w.inBounds(t.tx, t.tz)) return 'Fuera del mapa';
+      if (w.isWater(t.tx, t.tz)) return MX.World.WATER_MSG;
       if (!w.owned[w.idx(t.tx, t.tz)]) return 'Terreno no comprado';
-      if (w.isWater(t.tx, t.tz)) return 'Hay agua';
       if (w.bld[w.idx(t.tx, t.tz)] >= 0) return 'Hay un edificio';
       return null;
     },
@@ -15305,90 +15718,166 @@ void main() {
       return [{ x: (t.tx + 0.5) * T, y: game().world.tileCenterH(t.tx, t.tz) + 2, z: (t.tz + 0.5) * T, text: this.erase ? 'Quitar' : this.tiles.length + ' · ' + U.fmtMoney(this.cost) }];
     }
   };
-  /* Paths tile by tile, like the classic footpath construction window: a tap picks the
-     tile to start from, the arrows pick which way to go as seen on screen, «Construir»
-     lays the next tile and «Quitar» takes the current one back. Nothing to drag, so it
-     suits a finger better than PathTool. */
-  const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  /* Paths piece by piece with the same construction window as the circuits: a tap picks
+     the tile to start from (or the end of a path to carry on from); then turn left, carry
+     straight on or turn right, go up, stay level or go down, and «Construir» lays the next
+     tile while «Quitar» takes the last one back. Raised paths cross the lake on footbridges
+     and go over circuits, and circuits go over them. */
+  const PATH_TURNS = [[-1, 'Girar a la izquierda'], [0, 'Recto'], [1, 'Girar a la derecha']];
+  const PATH_SLOPES = [[-1, 'Bajada'], [0, 'Llano'], [1, 'Subida']];
+  const PDIR = () => MX.World.PDIR;
+  /* overlay quad on a path tile's surface: the ground, or a deck at y (ramp s) */
+  function pathQuad(mb, tx, tz, y, s, colr, lift) {
+    const w = game().world, l = lift || 0.12;
+    const raised = y === y && y != null;
+    const hy = (x, z, vx, vz) => (raised ? w.rampY(tx, tz, y, s, x, z) + MX.World.PATH_LIFT : w.vh(vx, vz)) + l;
+    const x0 = tx * T, z0 = tz * T, x1 = x0 + T, z1 = z0 + T;
+    mb.quad4([x0, hy(x0, z0, tx, tz), z0], [x0, hy(x0, z1, tx, tz + 1), z1], [x1, hy(x1, z1, tx + 1, tz + 1), z1], [x1, hy(x1, z0, tx + 1, tz), z0], [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, colr);
+  }
+  /* ghost of a raised tile: its deck and its pillar */
+  function deckGhost(n) {
+    const w = game().world, mb = new MB(256), lift = MX.World.PATH_LIFT, th = 0.4;
+    const x0 = n.tx * T, z0 = n.tz * T, x1 = x0 + T, z1 = z0 + T;
+    const y = (x, z) => w.rampY(n.tx, n.tz, n.y, n.s, x, z) + lift;
+    const A = [x0, y(x0, z0), z0], B = [x1, y(x1, z0), z0], Cc = [x1, y(x1, z1), z1], D = [x0, y(x0, z1), z1];
+    const dn = (p) => [p[0], p[1] - th, p[2]];
+    mb.quad4(A, D, Cc, B, [0, 0], [0, 1], [1, 1], [1, 0], MB.MAT_SOLID, [1, 1, 1, 1]);
+    for (const [a, b] of [[A, B], [B, Cc], [Cc, D], [D, A]]) mb.quad4(a, b, dn(b), dn(a), [0, 0], [1, 0], [1, 1], [0, 1], MB.MAT_SOLID, [1, 1, 1, 1]);
+    const cx = x0 + T / 2, cz = z0 + T / 2, top = y(cx, cz) - lift - th, g = w.heightAt(cx, cz);
+    if (top - g > 0.35) mb.box(cx - 0.28, Math.min(g, C.WATER_LEVEL) - 0.2, cz - 0.28, cx + 0.28, top, cz + 0.28, { col: [1, 1, 1, 1] });
+    return mb.build();
+  }
   const PathBuild = {
-    name: 'pathbuild', type: 1,
-    get hint() { const d = Cat.paths[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas: dirección · Intro: construir · Retroceso: quitar · Esc: salir'; },
-    enter() { this.cur = null; this.dir = 0; this.laid = []; this.hoverT = null; this.refresh(); },
-    exit() { R().setOverlayMesh(null); },
-    /* the tile «Construir» lays next: the start itself until it has a path, then the next one along */
-    next() {
-      const c = this.cur;
+    name: 'pathbuild', type: 1, turn: 0, slope: 0,
+    get hint() { const d = Cat.paths[this.type]; return d.name + ' · desde ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente · Intro: construir · Retroceso: quitar · Esc: salir'; },
+    enter() { this.cur = null; this.dir = 0; this.trail = []; this.hoverT = null; this.turn = 0; this.refresh(); },
+    exit() { R().setOverlayMesh(null); R().setGhostMesh(null); },
+    road() { return this.type === MX.World.P.ROAD; },
+    /* The next tile «Construir» lays: the start itself until it has a path, then the one the
+       chosen turn leads to, at the height the chosen slope gives (see World.PDIR):
+       {tx, tz, dir, y, s, cost, reason, walk: an existing path to carry on along, first} */
+    plan() {
+      const c = this.cur, w = game().world, g = game();
       if (!c) return null;
-      const w = game().world;
-      if (!w.path[w.idx(c.tx, c.tz)]) return { tx: c.tx, tz: c.tz };
-      const d = DIR4[this.dir];
-      return { tx: c.tx + d[0], tz: c.tz + d[1] };
+      const i = w.idx(c.tx, c.tz), LT = MX.World.LINK_TOL, RISE = MX.World.RISE;
+      if (!w.path[i]) {
+        const why = w.canPlacePath(c.tx, c.tz, this.type);
+        return { tx: c.tx, tz: c.tz, dir: this.dir, y: NaN, s: 0, first: true, reason: why, cost: why ? 0 : g.pathCost(c.tx, c.tz, this.type) };
+      }
+      const nd = (this.dir + this.turn + 4) % 4, d = PDIR()[nd];
+      const n = { tx: c.tx + d[0], tz: c.tz + d[1], dir: nd, y: NaN, s: 0, cost: 0, reason: null };
+      const fail = (r) => Object.assign(n, { reason: r });
+      if (!w.inBounds(n.tx, n.tz)) return fail('Fuera del mapa');
+      const cs = w.pathS[i];
+      if (cs && ((cs - 1) & 1) !== (nd & 1)) return fail('En una rampa no se puede girar: sigue recto y gira después');
+      const j = w.idx(n.tx, n.tz);
+      /* along a path that is already there: just carry on */
+      if (w.path[j] && w.pathLink(c.tx, c.tz, nd)) return Object.assign(n, { walk: true, y: w.pathY[j], s: w.pathS[j] });
+      const h = w.pathEdgeH(c.tx, c.tz, nd), slope = this.road() ? 0 : this.slope;
+      const cand = [];
+      if (slope === 0) {
+        /* level: on the ground where it meets it, else a level deck (over a dip or the lake) */
+        if (Math.abs(h - w.groundEdgeH(n.tx, n.tz, (nd + 2) % 4)) <= LT) cand.push([NaN, 0]);
+        if (!this.road()) cand.push([h, 0]);
+      } else if (slope > 0) cand.push([h, nd + 1]);
+      else {
+        /* the ramp would end under the ground: it is already down (or the ground rises) */
+        if (w.groundEdgeH(n.tx, n.tz, nd) > h - RISE + 0.3) return fail(w.isRaisedPath(c.tx, c.tz) ? 'No se puede bajar más: ahí el camino ya llega al suelo, sigue en «Llano»' : 'No se puede bajar más: el camino ya va a ras de suelo');
+        cand.push([h - RISE, (nd + 2) % 4 + 1]);
+      }
+      let why = null;
+      for (const [y, s] of cand) {
+        const r = w.canPlacePath(n.tx, n.tz, this.type, y, s);
+        if (!r) return Object.assign(n, { y, s, cost: g.pathCost(n.tx, n.tz, this.type, y, s) });
+        /* by the lake, what the footbridge needs says more than "it is water" */
+        if (!why || /súbelo con/.test(why)) why = r;
+        Object.assign(n, { y, s });
+      }
+      return fail(why);
     },
-    /* why the next tile can't be laid, or null (along an equal path there is nothing to pay) */
-    why() {
-      const n = this.next();
-      if (!n) return 'Toca el mapa donde empieza el camino';
-      const w = game().world;
-      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type) return null;
-      return w.canPlacePath(n.tx, n.tz, this.type);
-    },
-    cost() {
-      const n = this.next(), w = game().world;
-      if (!n || !w.inBounds(n.tx, n.tz) || w.path[w.idx(n.tx, n.tz)] === this.type) return 0;
-      return Cat.paths[this.type].cost + (w.scen[w.idx(n.tx, n.tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
-    },
+    /* surface height of a tile's path at its middle (or of the ground) */
+    topAt(tx, tz) { const w = game().world; return w.walkHeight((tx + 0.5) * T, (tz + 0.5) * T); },
     refresh() {
       const r = R();
       if (!r) return;
-      const mb = new MB(512), c = this.cur, n = this.next();
-      if (!c && this.hoverT) tileQuad(mb, this.hoverT.tx, this.hoverT.tz, MB.rgba('#fff6d8'), 0.14);
-      if (c) tileQuad(mb, c.tx, c.tz, MB.rgba('#ffd22e'), 0.14);
-      if (n) tileQuad(mb, n.tx, n.tz, MB.rgba(this.why() ? '#ff3b30' : '#5cff6a'), 0.17);
+      const w = game().world, mb = new MB(1024), c = this.cur, n = this.plan();
+      const ht = this.hoverT;
+      if (!c && ht && w.inBounds(ht.tx, ht.tz)) { const i = w.idx(ht.tx, ht.tz); pathQuad(mb, ht.tx, ht.tz, w.path[i] ? w.pathY[i] : NaN, w.pathS[i], MB.rgba('#fff6d8'), 0.14); }
+      if (c) {
+        const i = w.idx(c.tx, c.tz);
+        pathQuad(mb, c.tx, c.tz, w.path[i] ? w.pathY[i] : NaN, w.pathS[i], MB.rgba('#ffd22e'), 0.14);
+        marker(mb, (c.tx + 0.5) * T, this.topAt(c.tx, c.tz) + 0.2, (c.tz + 0.5) * T, 0.22, 1.5, n && n.reason ? MB.rgba('#ff6b5b') : MB.rgba('#ffffff'));
+      }
+      if (n && w.inBounds(n.tx, n.tz)) pathQuad(mb, n.tx, n.tz, n.y, n.s, MB.rgba(n.reason ? '#ff3b30' : n.walk ? '#fff2c4' : '#5cff6a'), 0.17);
       const o = mb.build();
       r.setOverlayMesh(o.data, o.count);
+      /* a raised tile: its deck as a ghost, so the height reads */
+      if (n && !n.walk && n.y === n.y && w.inBounds(n.tx, n.tz)) { const gm = deckGhost(n); r.setGhostMesh(gm.data, gm.count, n.reason ? GHOST_BAD : GHOST_OK, GHOST_DITHER); }
+      else r.setGhostMesh(null);
       this.ver = (this.ver || 0) + 1;
       MX.WM.poke('paths');
     },
-    hover(p) { if (!p || this.cur) return; this.hoverT = tileOf(p); this.refresh(); },
-    click(p) { if (p) this.start(tileOf(p)); },
-    start(t) {
-      if (!game().world.inBounds(t.tx, t.tz)) return;
-      this.cur = t; this.laid = []; this.hoverT = null;
-      /* starting at the end of a path: carry on the way it goes */
+    changed() { sfx('click'); this.refresh(); MX.WM.rebuild('paths'); },
+    /* the tile under a screen point: raised paths stand above the ground the cursor hits */
+    pickTile(p, css) {
       const w = game().world;
-      if (w.path[w.idx(t.tx, t.tz)]) {
-        const open = DIR4.map((d, k) => k).filter(k => { const tx = t.tx + DIR4[k][0], tz = t.tz + DIR4[k][1]; return w.inBounds(tx, tz) && !w.path[w.idx(tx, tz)]; });
-        const back = DIR4.findIndex(d => { const tx = t.tx + d[0], tz = t.tz + d[1]; return w.inBounds(tx, tz) && w.path[w.idx(tx, tz)]; });
-        if (back >= 0 && open.includes((back + 2) % 4)) this.dir = (back + 2) % 4;
-        else if (open.length) this.dir = open[0];
+      let best = p ? tileOf(p) : null, bestY = -Infinity;
+      if (!css) return best;
+      const N = w.N, lift = MX.World.PATH_LIFT;
+      for (let i = 0; i < N * N; i++) {
+        if (!w.path[i] || w.pathY[i] !== w.pathY[i]) continue;
+        const tx = i % N, tz = (i / N) | 0, y = w.pathY[i], s = w.pathS[i];
+        const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([a, b]) => { const x = (tx + a) * T, z = (tz + b) * T; return R().worldToCss(x, w.rampY(tx, tz, y, s, x, z) + lift, z); });
+        let sign = 0, inside = true;
+        for (let k = 0; k < 4; k++) {
+          const A = q[k], B = q[(k + 1) % 4], cr = (B[0] - A[0]) * (css.y - A[1]) - (B[1] - A[1]) * (css.x - A[0]);
+          if (Math.abs(cr) < 1e-6) continue;
+          if (!sign) sign = Math.sign(cr); else if (Math.sign(cr) !== sign) { inside = false; break; }
+        }
+        if (inside && y > bestY) { bestY = y; best = { tx, tz }; }
       }
+      return best;
+    },
+    hover(p, css) { if (!p || this.cur) return; this.hoverT = this.pickTile(p, css); this.refresh(); },
+    click(p, e, css) { const t = p ? this.pickTile(p, css) : null; if (t) this.start(t); },
+    /* the way that points most up the screen */
+    upDir() { let best = 0, bv = Infinity; for (let k = 0; k < 4; k++) { const v = this.screenDir(k); if (v[1] < bv) { bv = v[1]; best = k; } } return best; },
+    start(t) {
+      const w = game().world;
+      if (!w.inBounds(t.tx, t.tz)) return;
+      this.cur = { tx: t.tx, tz: t.tz }; this.trail = []; this.hoverT = null; this.turn = 0;
+      const i = w.idx(t.tx, t.tz), up = this.upDir();
+      if (w.path[i]) {
+        /* at the end of a path: carry on the way it goes */
+        const linked = [0, 1, 2, 3].filter(k => w.pathLink(t.tx, t.tz, k)), s = w.pathS[i];
+        let open = [0, 1, 2, 3].filter(k => !linked.includes(k));
+        if (s) open = open.filter(k => (k & 1) === ((s - 1) & 1));
+        if (linked.length === 1 && open.includes((linked[0] + 2) % 4)) this.dir = (linked[0] + 2) % 4;
+        else if (open.length) this.dir = open.includes(up) ? up : open[0];
+        else this.dir = up;
+      } else this.dir = up;
       this.refresh(); sfx('click');
+      MX.WM.rebuild('paths');
     },
     /* screen direction of each way along the ground (CSS pixels, y down) */
     screenDir(k) {
-      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world;
+      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world, d = PDIR()[k];
       const x = (c.tx + 0.5) * T, z = (c.tz + 0.5) * T, y = w.inBounds(c.tx, c.tz) ? w.tileCenterH(c.tx, c.tz) : 0;
-      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + DIR4[k][0] * T, y, z + DIR4[k][1] * T);
+      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + d[0] * T, y, z + d[1] * T);
       const vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1;
       return [vx / l, vy / l];
     },
-    /* the way that looks most like screen direction (sx, sy) */
-    turn(sx, sy) {
-      let best = 0, bd = -Infinity;
-      for (let k = 0; k < 4; k++) { const v = this.screenDir(k), d = v[0] * sx + v[1] * sy; if (d > bd) { bd = d; best = k; } }
-      this.dir = best; this.refresh(); sfx('click');
-    },
-    /* which of the four screen diagonals (sx, sy) the current way points to */
-    facing() { const v = this.screenDir(this.dir); return [v[0] >= 0 ? 1 : -1, v[1] >= 0 ? 1 : -1]; },
     build() {
-      const n = this.next();
+      const n = this.plan();
       if (!n) { toast('Toca el mapa donde empieza el camino', 'info'); return false; }
-      const w = game().world;
-      /* along a path of the same kind: just walk on */
-      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type && (n.tx !== this.cur.tx || n.tz !== this.cur.tz)) { this.cur = n; this.refresh(); this.keepInView(); return true; }
-      if (!result(game().placePath(n.tx, n.tz, this.type))) return false;
-      this.laid.push(n); this.cur = n;
-      sfx('place'); this.refresh(); this.keepInView();
+      if (n.reason) { toast(n.reason, 'bad'); sfx('error'); return false; }
+      if (!n.walk && !result(game().placePath(n.tx, n.tz, this.type, n.y, n.s))) return false;
+      if (!n.first) { this.trail.push({ tx: this.cur.tx, tz: this.cur.tz, dir: this.dir }); this.cur = { tx: n.tx, tz: n.tz }; this.dir = n.dir; }
+      /* a turn is one tile: straight on again after it */
+      const turned = !!this.turn;
+      this.turn = 0;
+      sfx(n.walk ? 'click' : 'place'); this.refresh(); this.keepInView();
+      if (turned) MX.WM.rebuild('paths');
       return true;
     },
     undo() {
@@ -15397,13 +15886,12 @@ void main() {
       if (!w.path[w.idx(c.tx, c.tz)]) { toast('Aquí no hay camino que quitar', 'info'); return false; }
       if (!result(game().removePath(c.tx, c.tz))) return false;
       sfx('demolish');
-      const k = this.laid.findIndex(t => t.tx === c.tx && t.tz === c.tz);
-      if (k >= 0) this.laid.splice(k, 1);
-      /* back to the tile laid before it, or one step back the way we came */
-      const prev = this.laid.length ? this.laid[this.laid.length - 1] : { tx: c.tx - DIR4[this.dir][0], tz: c.tz - DIR4[this.dir][1] };
-      if (w.inBounds(prev.tx, prev.tz) && w.path[w.idx(prev.tx, prev.tz)]) {
-        this.cur = prev;
-        if (prev.tx !== c.tx - DIR4[this.dir][0] || prev.tz !== c.tz - DIR4[this.dir][1]) { const d = DIR4.findIndex(v => prev.tx + v[0] === c.tx && prev.tz + v[1] === c.tz); if (d >= 0) this.dir = d; }
+      /* back to the tile it came from */
+      const prev = this.trail.pop();
+      if (prev && w.path[w.idx(prev.tx, prev.tz)]) { this.cur = { tx: prev.tx, tz: prev.tz }; this.dir = prev.dir; }
+      else {
+        const d = PDIR()[this.dir], bx = c.tx - d[0], bz = c.tz - d[1];
+        if (w.inBounds(bx, bz) && w.path[w.idx(bx, bz)]) this.cur = { tx: bx, tz: bz };
       }
       this.refresh();
       return true;
@@ -15411,9 +15899,9 @@ void main() {
     /* the camera follows the end of the path when it nears the edge of the part of the
        map that panels leave visible, bringing it back to the middle of that part */
     keepInView() {
-      const c = this.cur, w = game().world;
+      const c = this.cur;
       if (!c || !app().input) return;
-      const p = R().worldToCss((c.tx + 0.5) * T, w.tileCenterH(c.tx, c.tz), (c.tz + 0.5) * T);
+      const p = R().worldToCss((c.tx + 0.5) * T, this.topAt(c.tx, c.tz), (c.tz + 0.5) * T);
       const root = getComputedStyle(document.documentElement);
       const top = parseFloat(root.getPropertyValue('--top-ui')) || 60, bottom = innerHeight - (parseFloat(root.getPropertyValue('--bottom-ui')) || 80);
       let left = 0;
@@ -15423,21 +15911,28 @@ void main() {
       R().cam.follow = null;
       app().input.panBy((left + innerWidth) / 2 - p[0], (top + bottom) / 2 - p[1]);
     },
-    /* arrows pick the way as on the panel: up ↖, right ↗, down ↘, left ↙ */
+    /* as on the circuit constructor: left and right pick the turn, up and down the slope */
     key(e) {
       if (e.key === 'Enter') { this.build(); return true; }
-      if (e.key === 'Backspace') { this.undo(); return true; }
-      const a = { ArrowUp: [-1, -1], ArrowRight: [1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1] }[e.key];
-      if (a && this.cur) { this.turn(a[0], a[1]); return true; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { this.undo(); return true; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { this.turn = U.clamp(this.turn + (e.key === 'ArrowLeft' ? -1 : 1), -1, 1); this.changed(); return true; }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (this.road()) { toast('Las carreteras van siempre a ras de suelo', 'info'); return true; }
+        this.slope = U.clamp(this.slope + (e.key === 'ArrowUp' ? 1 : -1), -1, 1); this.changed(); return true;
+      }
       return false;
     },
     labels() {
-      const n = this.next();
-      if (!n) return this.hoverT ? [{ x: (this.hoverT.tx + 0.5) * T, y: game().world.tileCenterH(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: 'Empezar aquí' }] : [];
-      const why = this.why();
-      return [{ x: (n.tx + 0.5) * T, y: game().world.tileCenterH(n.tx, n.tz) + 2, z: (n.tz + 0.5) * T, text: why || (this.cost() ? U.fmtMoney(this.cost()) : 'Seguir'), bad: !!why }];
+      const n = this.plan(), w = game().world;
+      if (!n) return this.hoverT && w.inBounds(this.hoverT.tx, this.hoverT.tz) ? [{ x: (this.hoverT.tx + 0.5) * T, y: this.topAt(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: w.path[w.idx(this.hoverT.tx, this.hoverT.tz)] ? 'Seguir este camino' : 'Empezar aquí' }] : [];
+      if (!w.inBounds(n.tx, n.tz)) return [];
+      const cx = (n.tx + 0.5) * T, cz = (n.tz + 0.5) * T;
+      const top = n.y === n.y ? w.rampY(n.tx, n.tz, n.y, n.s, cx, cz) : w.heightAt(cx, cz);
+      const up = top - w.heightAt(cx, cz);
+      return [{ x: cx, y: top + 2.2, z: cz, text: n.reason || (n.walk ? 'Seguir' : U.fmtMoney(n.cost) + (up > 0.6 ? ' · ' + U.fmt1(up) + ' m de altura' : '')), bad: !!n.reason }];
     }
   };
+  PathBuild.TURNS = PATH_TURNS; PathBuild.SLOPES = PATH_SLOPES;
   const AddonTool = {
     name: 'addon', kind: 'bench',
     get hint() { return Cat.addons[this.kind].name + ' · ' + U.fmtMoney(Cat.addons[this.kind].cost) + ' · Clic sobre un camino · Esc: salir'; },
@@ -15456,9 +15951,9 @@ void main() {
     const w = game().world;
     if (!w.inBounds(tx, tz)) return 'Fuera del mapa';
     const i = w.idx(tx, tz);
+    if (w.isWater(tx, tz)) return MX.World.WATER_MSG;
     if (!w.owned[i]) return 'Terreno no comprado';
     if (w.bld[i] >= 0 || w.path[i] || w.trackOcc[i]) return 'Ocupado';
-    if (w.isWater(tx, tz)) return 'Hay agua';
     if (w.scen[i] >= 0) return 'Ya hay algo aquí';
     return null;
   }
@@ -17047,26 +17542,25 @@ void main() {
   }
 
   /* ================= Paths ================= */
-  /* Paths go down tile by tile with arrows and «Construir», like the classic construction
-     window (the default on touch screens, where dragging fights the camera), or dragged
-     out in a line (the default with a mouse). */
-  const PATH_DIRS = [[-1, -1, 'Hacia arriba a la izquierda', -90], [1, -1, 'Hacia arriba a la derecha', 0], [-1, 1, 'Hacia abajo a la izquierda', 180], [1, 1, 'Hacia abajo a la derecha', 90]];
+  /* Paths are built piece by piece with the same construction window as the circuits
+     (the default), or dragged out in a line on the ground. */
   function pathsPanel() {
-    const ui = app().pathUI || (app().pathUI = { mode: (app().input && app().input.touchMode) || document.documentElement.classList.contains('phone') ? 'piece' : 'drag' });
+    const ui = app().pathUI || (app().pathUI = { mode: 'piece' });
     WM.open('paths', {
-      title: 'Caminos y carreteras', icon: 'path', width: 360,
+      title: 'Caminos y carreteras', icon: 'path', width: 380,
       build: (body) => {
         const pb = TL().PathBuild, pd = TL().PathTool;
         const tool = () => ui.mode === 'piece' ? pb : pd;
         const active = MX.Tools.current === pb ? pb : MX.Tools.current === pd ? pd : null;
         const pick = (t) => { const tl = tool(); tl.type = t; if (MX.Tools.current !== tl) MX.Tools.set(tl); else if (tl.refresh) tl.refresh(); WM.rebuild('paths'); };
-        const row = h('div', { class: 'row gap wrap' });
+        const phone = document.documentElement.classList.contains('phone');
+        const row = h('div', { class: 'row gap wrap path-types' });
         for (const t of [1, 2, 3]) {
           const d = Cat.paths[t];
-          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
+          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), title: d.name, onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), phone ? ['Grava', 'Adoquinado', 'Carretera'][t - 1] : d.name, h('small', null, U.fmtMoney(d.cost))));
         }
         const mode = h('div', { class: 'row gap wrap path-mode' });
-        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Toca dónde empieza el camino y alárgalo con las flechas y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas']]) {
+        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Como el constructor de circuitos: dirección, pendiente y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas a ras de suelo']]) {
           mode.append(h('button', { class: 'btn small' + (ui.mode === m ? ' on' : ''), title: tip, onclick: () => {
             if (ui.mode === m) return;
             ui.mode = m;
@@ -17074,49 +17568,114 @@ void main() {
             WM.rebuild('paths');
           } }, label));
         }
-        body.append(h('h4', null, 'Trazar'), row, mode);
+        /* the constructor right under the kinds of path, the way of building below it */
+        body.append(h('h4', null, 'Trazar'), row);
         let upd = null;
         if (active === pb) upd = pathBuilder(body, pb);
-        else if (!active) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino, toca en el mapa la casilla donde empieza y alárgalo con las flechas y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa.'));
+        body.append(mode);
+        if (active !== pb) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino y toca en el mapa la casilla donde empieza (o el final de un camino para seguirlo). Luego se construye como un circuito: dirección, pendiente y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa. Arrastrando, los caminos van a ras de suelo; para subir o bajar, pieza a pieza.'));
         const add = h('div', { class: 'row gap wrap' });
         for (const k in Cat.addons) {
           const d = Cat.addons[k];
           add.append(h('button', { class: 'btn' + (MX.Tools.current === TL().AddonTool && TL().AddonTool.kind === k ? ' on' : ''), title: d.desc, onclick: () => { TL().AddonTool.kind = k; MX.Tools.set(TL().AddonTool); WM.rebuild('paths'); } }, icon(k === 'bench' ? 'bench' : k === 'bin' ? 'demolish' : 'info'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
-        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Un camino puede subir en rampa, cruzar el lago por una pasarela, pasar por encima de un circuito (' + U.fmt1(MX.World.PATH_OVER) + ' m sobre la pista) o por debajo de uno que vaya alto (' + U.fmt1(MX.World.PATH_UNDER) + ' m sobre el camino). Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+          h('p', { class: 'muted small' }, 'Mientras construyes, «Quitar» te devuelve todo lo que has pagado. Cuando cierras el modo de construcción, quitar un camino solo devuelve la mitad.'),
           h('h4', null, 'Mobiliario'), add);
         return upd;
       }
     });
   }
-  /* the arrows (as seen on screen), «Construir» and «Quitar» of the tile by tile builder */
+  /* top view of a path tile and the way out of it: straight on, or a turn */
+  function pathTurnGlyph(t) {
+    const c = h('canvas', { width: 44, height: 34, class: 'glyph-dir' });
+    const x = c.getContext('2d');
+    x.lineCap = 'butt'; x.lineJoin = 'miter';
+    const path = () => {
+      x.beginPath(); x.moveTo(22, 33);
+      if (!t) { x.lineTo(22, 8); return; }
+      x.lineTo(22, 17); x.lineTo(22 + t * 14, 17);
+    };
+    x.strokeStyle = '#1a1410'; x.lineWidth = 11; path(); x.stroke();
+    x.strokeStyle = '#c9c2b2'; x.lineWidth = 8; path(); x.stroke();
+    const ex = t ? 22 + t * 15 : 22, ey = t ? 17 : 7, ang = t ? (t > 0 ? 0 : Math.PI) : -Math.PI / 2;
+    x.fillStyle = '#ffd22e'; x.strokeStyle = '#1a1410'; x.lineWidth = 1.5;
+    x.beginPath();
+    x.moveTo(ex + Math.cos(ang) * 6, ey + Math.sin(ang) * 6);
+    x.lineTo(ex + Math.cos(ang + 2.4) * 6, ey + Math.sin(ang + 2.4) * 6);
+    x.lineTo(ex + Math.cos(ang - 2.4) * 6, ey + Math.sin(ang - 2.4) * 6);
+    x.closePath(); x.fill(); x.stroke();
+    return c;
+  }
+  /* side view of a path slope, as the circuit one: the ground under it, the path on top */
+  function pathSlopeGlyph(sl) {
+    const c = h('canvas', { width: 44, height: 24, class: 'glyph-slope' });
+    const x = c.getContext('2d');
+    const y0 = 16 + (sl > 0 ? 3 : sl < 0 ? -5 : 0), y1 = y0 - sl * 5.5;
+    x.fillStyle = '#6b4a2b';
+    x.beginPath(); x.moveTo(3, 23); x.lineTo(3, y0); x.lineTo(41, y1); x.lineTo(41, 23); x.closePath(); x.fill();
+    x.strokeStyle = '#1a1410'; x.lineWidth = 5; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    x.strokeStyle = '#c9c2b2'; x.lineWidth = 3; x.beginPath(); x.moveTo(3, y0); x.lineTo(41, y1); x.stroke();
+    return c;
+  }
+  /* the path constructor: as the circuit one, a status line, the turn, the slope, what the
+     next tile will be and «Construir» / «Quitar» */
   function pathBuilder(body, pb) {
     const noFocus = (e) => e.preventDefault();
-    const status = h('div', { class: 'bld-preview path-status' });
-    const pad = h('div', { class: 'path-pad' });
-    const btns = PATH_DIRS.map(([sx, sy, label, rot]) => {
-      const b = h('button', { class: 'bld-btn path-dir', title: label, 'aria-label': label, onmousedown: noFocus, onclick: () => pb.turn(sx, sy) }, icon('arrow'));
-      b.querySelector('.px-icon').style.transform = 'rotate(' + rot + 'deg)';
-      b._d = [sx, sy];
-      pad.append(b);
-      return b;
-    });
-    const acts = h('div', { class: 'row gap bld-actions' },
-      h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
-      h('button', { id: 'path-undo', class: 'btn', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar'));
-    body.append(h('div', { class: 'path-builder' }, pad, h('div', { class: 'path-side' }, status, acts)));
+    const phone = document.documentElement.classList.contains('phone');
+    const opt = (cls, on, title, onclick, ...kids) => h('button', { class: cls + (on ? ' on' : ''), title, 'aria-label': title, 'aria-pressed': on ? 'true' : 'false', onclick, onmousedown: noFocus }, ...kids);
+    const road = pb.road();
+    const box = h('div', { class: 'builder path-constructor' + (phone ? ' compact' : '') });
+    const status = h('div', { class: 'bld-status' });
+    const preview = h('div', { class: 'bld-preview' });
+    const dirs = h('div', { class: 'bld-dirs path-dirs' });
+    for (const [t, label] of TL().PathBuild.TURNS) dirs.append(opt('bld-btn', pb.turn === t, label, () => { pb.turn = t; pb.changed(); }, pathTurnGlyph(t), phone ? null : h('small', null, t ? label.replace('Girar a la ', 'A la ') : label)));
+    const slopes = h('div', { class: 'bld-slopes path-slopes' });
+    for (const [v, label] of TL().PathBuild.SLOPES) {
+      const lock = road && v !== 0;
+      slopes.append(opt('bld-btn' + (lock ? ' locked' : ''), !lock && pb.slope === v, lock ? 'Las carreteras van siempre a ras de suelo' : label, () => { if (lock) { app().hud.toast('Las carreteras van siempre a ras de suelo', 'info'); return; } pb.slope = v; pb.changed(); }, pathSlopeGlyph(v), phone ? null : h('small', null, label)));
+    }
+    if (phone) box.append(status, h('div', { class: 'path-rows' }, dirs, slopes));
+    else box.append(status, h('h4', null, 'Dirección'), dirs, h('h4', null, 'Pendiente'), slopes);
+    box.append(preview,
+      h('div', { class: 'row gap bld-actions' },
+        h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
+        h('button', { id: 'path-undo', class: 'btn', title: 'Quitar la última casilla', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar')));
+    if (!phone) box.append(h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'));
+    body.append(box);
+    const turnName = { '-1': 'girando a la izquierda', 0: 'recto', 1: 'girando a la derecha' };
+    const slopeName = { '-1': ' en bajada', 0: '', 1: ' en subida' };
     return () => {
-      const f = pb.cur ? pb.facing() : null;
-      const key = (pb.ver || 0) + ':' + (f ? f.join(',') : '-') + ':' + app().renderer.cam.yawIndex + ':' + Math.floor(game().econ.money / 500);
+      const g = game(), w = g.world, c = pb.cur;
+      let spent = 0;
+      for (const v of g.pathSession.values()) spent += v;
+      const key = (pb.ver || 0) + ':' + spent + ':' + Math.floor(g.econ.money / 500) + ':' + pb.turn + pb.slope;
       if (status._k === key) return;
       status._k = key;
-      for (const b of btns) b.classList.toggle('on', !!f && b._d[0] === f[0] && b._d[1] === f[1]);
       clear(status);
-      const n = pb.next(), why = pb.why(), cost = pb.cost();
-      status.className = 'bld-preview path-status' + (n ? (why ? ' bad' : ' ok') : '');
-      status.append(icon(!n ? 'info' : why ? 'cross' : 'check'),
-        h('span', null, !n ? 'Toca en el mapa la casilla donde empieza el camino' : why ? h('em', null, why) : h('b', null, cost ? 'Siguiente casilla · ' + U.fmtMoney(cost) : 'Sigue por el camino que ya hay'),
-          pb.laid.length ? h('small', null, ' · ' + pb.laid.length + (pb.laid.length === 1 ? ' casilla puesta' : ' casillas puestas')) : null));
+      if (c) {
+        const i = w.idx(c.tx, c.tz), up = w.path[i] ? pb.topAt(c.tx, c.tz) - MX.World.PATH_LIFT - w.heightAt((c.tx + 0.5) * T, (c.tz + 0.5) * T) : 0;
+        status.append(h('span', null, h('b', null, g.pathSession.size), g.pathSession.size === 1 ? ' casilla nueva' : ' casillas nuevas'),
+          h('span', null, 'Altura ', h('b', null, (up > 0.05 ? '+' : '') + U.fmt1(Math.max(0, up)) + ' m')),
+          h('span', null, 'Invertido ', h('b', null, U.fmtMoney(spent))));
+        if (w.path[i]) {
+          const fresh = g.pathSession.get(i);
+          status.append(h('span', null, 'Quitar: ', h('b', null, '+' + U.fmtMoney(fresh != null ? fresh : Math.round(g.pathValue(c.tx, c.tz, w.path[i], w.pathY[i], w.pathS[i]) * C.REFUND_RATE))), fresh != null ? ' (todo)' : ' (la mitad)'));
+        }
+      }
+      const n = pb.plan();
+      clear(preview);
+      preview.className = 'bld-preview' + (n ? (n.reason ? ' bad' : ' ok') : '');
+      if (!n) { preview.append(icon('info'), h('span', null, 'Toca en el mapa la casilla donde empieza el camino, o el final de uno para seguirlo')); return; }
+      const name = Cat.paths[pb.type].name + (n.first ? ' · primera casilla' : ' ' + turnName[pb.turn] + slopeName[road ? 0 : pb.slope]);
+      const cx = (n.tx + 0.5) * T, cz = (n.tz + 0.5) * T;
+      const up = n.y === n.y && w.inBounds(n.tx, n.tz) ? w.rampY(n.tx, n.tz, n.y, n.s, cx, cz) - w.heightAt(cx, cz) : 0;
+      const over = !n.reason && !n.walk && w.inBounds(n.tx, n.tz) && w.trackOcc[w.idx(n.tx, n.tz)] && up > 1 ? 'Pasa por encima del circuito' : !n.reason && !n.walk && w.inBounds(n.tx, n.tz) && w.trackOcc[w.idx(n.tx, n.tz)] ? 'Pasa por debajo del circuito' : null;
+      preview.append(icon(n.reason ? 'cross' : 'check'),
+        h('span', null, h('b', null, name),
+          n.walk ? ' · sigue por el camino que ya hay' : !n.reason ? ' · ' + U.fmtMoney(n.cost) + (up > 0.6 ? ' · a ' + U.fmt1(up) + ' m del suelo' : '') : '',
+          over ? h('em', { class: 'fix' }, over) : null,
+          n.reason ? h('em', null, n.reason) : null));
     };
   }
 
@@ -18237,7 +18796,7 @@ void main() {
         { title: 'Hora de volar', text: 'Añade al menos un salto: un tabletop en una recta es perfecto para empezar. Los saltos atraen pilotos y público.', check: () => hasFeat(tr(), f => MX.Catalog.features[f.type].group === 'jump') },
         { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', tp: 'Abre Construir → Pilotos y elige el Paddock. Arrástralo hasta que toque la carretera (la franja gris del borde) y pulsa «Colocar». El botón amarillo lo gira.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
         { title: 'Servicios para el público', text: 'En Construir → Público: pon una Taquilla y acceso, un Aparcamiento tocando la carretera y unos Baños.', target: '[data-id="build"]', check: () => g().count('entrance') && g().count('parking') && g().count('toilets') },
-        { title: 'Caminos', text: 'Abre Caminos y une el aparcamiento con la taquilla, y la taquilla con los baños y con una zona junto a la pista. El público solo anda por caminos.', tp: 'Abre Caminos, elige un camino y toca la casilla donde empieza, junto al aparcamiento. Elige la dirección con las flechas y pulsa «Construir» para alargarlo hasta la taquilla y los baños.', target: '[data-id="paths"]',
+        { title: 'Caminos', text: 'Abre Caminos y une el aparcamiento con la taquilla, y la taquilla con los baños y con una zona junto a la pista. El público solo anda por caminos. Se construyen como un circuito: toca dónde empieza, elige girar o seguir recto, subir o bajar, y pulsa «Construir».', tp: 'Abre Caminos, elige un camino y toca la casilla donde empieza, junto al aparcamiento. Como en el constructor de circuitos, elige girar o seguir recto y pulsa «Construir» para alargarlo hasta la taquilla y los baños.', target: '[data-id="paths"]',
           check: () => { const G = g(); if (G.fieldsDirty) G.rebuildFields(); const lot = G.buildingsOf('parking')[0]; const ent = G.buildingsOf('entrance')[0]; if (!lot || !ent) return false; return G.doorTiles(lot, 'path').some(t => G.fieldReach('entrance', t.tx, t.tz)) && G.doorTiles(ent, 'path').some(t => G.fieldReach('toilet', t.tx, t.tz)); } },
         { title: '¡Abrimos!', text: 'Vuelve a Circuitos, pulsa «Validar» para revisar que todo está bien y luego «Abrir al público». Si algo falla, la lista te dice qué arreglar.', target: '[data-id="tracks"]', check: () => g().tracks.some(t => t.state === 'open') },
         { title: 'Llegan los pilotos', text: 'Las furgonetas ya vienen por la carretera. Cuando veas un piloto en pista, haz clic sobre él para ver sus datos y pulsa «Seguir».', init: () => { this.openedAgent = false; this.t0 = performance.now(); }, check: () => this.openedAgent || performance.now() - this.t0 > 90000 },
@@ -19417,7 +19976,7 @@ void main() {
         if (!m) continue;
         let x = v.x, z = v.z, y, yaw = v.yaw;
         if (v.seat) { y = v.seat.y; yaw = v.seat.yaw - Math.PI / 2 + Math.PI / 2; x = v.seat.x; z = v.seat.z; }
-        else y = w.heightAt(x, z) + (w.isWalkable(v.tx, v.tz) ? 0.07 : 0);
+        else y = w.walkHeight(x, z);
         if (!r.inView(x, y, z, 30)) continue;
         if (v.state === 'watch' && v.cheer) y += Math.abs(Math.sin(g.time * 7 + v.id)) * 0.25;
         r.pushInst(m, x, y, z, yaw, 0, 0, v.kid ? 0.72 : 1, v.cols[0], v.cols[1], v.cols[2], v.cols[3]);
@@ -19457,7 +20016,8 @@ void main() {
       }
       for (const s of g.staff) {
         const m = s.model();
-        const y = s.state === 'groom' ? s.y : w.heightAt(s.x, s.z) + 0.05;
+        /* cleaners walk the paths (raised ones too); the rest go about on the ground */
+        const y = s.state === 'groom' ? s.y : s.role === 'cleaner' ? w.walkHeight(s.x, s.z) : w.heightAt(s.x, s.z) + 0.05;
         if (!r.inView(s.x, y, s.z, 30)) continue;
         if (s.vehicle) {
           const col = s.vehicle === 'quad' ? null : s.vehicle === 'tractor' ? [46, 125, 50] : [240, 240, 240];

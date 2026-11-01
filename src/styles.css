@@ -290,15 +290,18 @@ p { margin: 6px 0; }
 .bld-btn small { font-size: 10.5px; color: var(--muted); line-height: 1.05; text-align: center; }
 .bld-btn.on small { color: var(--yellow); }
 .glyph-dir { width: 44px; max-width: 100%; height: 34px; }
-/* tile by tile path builder: the four ways as seen on screen, then build and remove */
+/* path constructor: the circuit one with three turns and three slopes */
 .path-mode { margin-top: 6px; }
-.path-builder { display: flex; align-items: stretch; gap: 10px; margin-top: 8px; }
-.path-pad { display: grid; grid-template-columns: repeat(2, 52px); grid-auto-rows: 50px; gap: 4px; flex: none; }
-.path-dir .px-icon { width: 30px; height: 30px; }
-.path-side { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; flex: 1; min-width: 0; }
-.path-side .bld-preview { margin-top: 0; }
-.path-side .bld-actions { margin-top: 0; flex-wrap: nowrap; }
-.path-side .bld-actions .btn { flex: 1; justify-content: center; }
+.path-constructor { margin-top: 8px; }
+.bld-dirs.path-dirs, .bld-slopes.path-slopes { grid-template-columns: repeat(3, 1fr); }
+.path-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bld-btn.locked { opacity: .45; }
+.path-constructor .bld-actions { flex-wrap: nowrap; }
+.path-constructor .bld-actions .btn { flex: 1; justify-content: center; }
+.phone .path-types { flex-wrap: nowrap; }
+.phone .path-types .btn { flex: 1 1 0; min-width: 0; padding: 4px 6px; justify-content: center; font-size: 14px; }
+.phone .path-types .btn small { display: none; }
+.phone .path-constructor { margin-top: 6px; }
 .glyph-slope { width: 44px; max-width: 100%; height: 24px; }
 .builder > .row { margin-top: 6px; }
 .bld-specials { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }

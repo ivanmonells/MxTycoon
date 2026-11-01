@@ -368,6 +368,7 @@
       this.nextFeatUid = 1;
       this.state = 'building';
       this.paid = 0;
+      this.opened = false;    // ever opened to the public: from then on edits refund half
       this.featPaid = 0;
       this.S = null;
       this.length = 0;
@@ -1144,18 +1145,63 @@
       tmp.computeFootprint(world);
       let r = null;
       const shared = [];
+      /* the lake first: from above it is hard to tell whose land it lies on */
+      for (const t of tmp.tiles) if (world.isWater(t % world.N, (t / world.N) | 0)) return 'No se puede construir sobre el agua (es el lago)';
       for (const t of tmp.tiles) {
-        const tx = t % world.N, tz = (t / world.N) | 0;
         if (world.owned[t] !== 1) return 'Se sale de tu terreno (la línea roja y blanca)';
         if (r) continue;
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
-        else if (world.path[t]) r = 'Hay un camino o una carretera en medio';
-        else if (world.isWater(tx, tz)) r = 'No se puede construir sobre el agua';
-        else if (world.trackOcc[t] & ~this.bit) shared.push(t);
+        else if (world.path[t] === MX.World.P.ROAD) r = 'Hay una carretera en medio';
+        else if (world.path[t]) { const c = tmp.pathClash(world, t, (x, z) => world.pathSurfAt(t % world.N, (t / world.N) | 0, x, z)); if (c && c.reason) r = c.reason; }
+        if (!r && (world.trackOcc[t] & ~this.bit)) shared.push(t);
       }
       if (r || !shared.length) return r;
       const x = this._crossOthers(world, tmp, shared, CLEAR);
       return x ? x.reason : null;
+    }
+    /* A footpath on tile t (its surface at surf(x, z)) against this circuit: under the
+       deck with headroom, over it on a footbridge high enough with no jump under it, or
+       beside it, where the embankment becomes a wall. {reason} | {over, s0, s1} | {under}
+       | null when it only lies beside it. */
+    pathClash(world, t, surf) {
+      if (!this.S) return null;
+      const N = world.N, tx = t % N, tz = (t / N) | 0, UNDER = MX.World.PATH_UNDER, OVER = MX.World.PATH_OVER;
+      let under = false, over = false;
+      const ss = [];
+      for (const tr of this.chute && this.chute.S ? [this, this.chute] : [this]) {
+        const TS = tr.S;
+        for (const [x, z] of MX.World.pathProbePts(tx, tz)) {
+          const h = tr.nearestS(x, z);
+          if (!h) continue;
+          const hw = TS.w[h.i] * 0.5;
+          if (Math.abs(h.lane) > hw + 0.6) continue;
+          const ty = TS.y[h.i] + tr.bankAt(h.i, U.clamp(h.lane, -hw, hw)), py = surf(x, z);
+          if (ty - py >= UNDER) { under = true; continue; }
+          if (py - ty >= OVER) {
+            over = true;
+            if (tr === this) { ss.push(h.s); if (this.airNear(h.s)) return { reason: 'Debajo de la pasarela no caben saltos ni secciones rítmicas: los pilotos chocarían con ella' }; }
+            continue;
+          }
+          return { reason: py > ty ? 'Pasa demasiado bajo sobre el circuito: una pasarela tiene que ir ' + U.fmt1(OVER) + ' m por encima de la pista' : 'El circuito pasa demasiado bajo: para cruzarlo por debajo tiene que ir ' + U.fmt1(UNDER) + ' m por encima del camino' };
+        }
+      }
+      if (under && over) return { reason: 'Cruza el circuito a dos alturas a la vez' };
+      if (!over) return under ? { under: true } : null;
+      /* where it spans the loop's join, count on from the end of the loop */
+      const L = this.S.L;
+      if (this.S.closed && ss.length && Math.max(...ss) - Math.min(...ss) > L / 2) for (let k = 0; k < ss.length; k++) if (ss[k] < L / 2) ss[k] += L;
+      return { over: true, s0: ss.length ? Math.min(...ss) : 0, s1: ss.length ? Math.max(...ss) : 0 };
+    }
+    /* a jump or rhythm section takes riders into the air at s (or they fly into s)? */
+    airNear(s) {
+      const L = this.S ? this.S.L : this.length;
+      for (const f of this.features) {
+        const d = Cat.features[f.type];
+        if (!d || !AIR_KINDS.has(d.kind)) continue;
+        const fs = f.s, fe = f.s + (f.len || 0);
+        for (const k of this.S && this.S.closed ? [-L, 0, L] : [0]) if (s - 16 < fe + k && fs + k < s + 3) return true;
+      }
+      return false;
     }
     /* Ground shared with other circuits (tiles) is fine only around a crossing over or
        under them; path is this circuit or a piece of it. The first problem {reason, t}. */
@@ -1306,24 +1352,31 @@
       if (chuteHit >= 0) { S.bad[chuteHit] = 1; issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por la recta de salida: cambia la salida de lado o aleja el trazado de ella.' }, at(chuteHit))); }
       /* footprint conflicts */
       this.computeFootprint(world);
-      let notOwned = null, blocked = null, water = null, otherTrack = null;
-      const shared = [];
+      let notOwned = null, blocked = null, water = null, otherTrack = null, pathLow = null;
+      const shared = [], bridges = [];
       for (const t of this.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
         const c = { x: (tx + 0.5) * C.TILE, z: (tz + 0.5) * C.TILE };
-        if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
-        if (world.bld[t] >= 0 || world.path[t]) blocked = blocked || c;
         if (world.isWater(tx, tz)) water = water || c;
+        if (world.owned[t] !== 1) { notOwned = notOwned || c; continue; }
+        if (world.bld[t] >= 0 || world.path[t] === MX.World.P.ROAD) blocked = blocked || c;
+        else if (world.path[t]) {
+          /* footpaths go under the circuit with headroom or over it on a footbridge */
+          const pc = this.pathClash(world, t, (x, z) => world.pathSurfAt(tx, tz, x, z));
+          if (pc && pc.reason) pathLow = pathLow || Object.assign({ msg: pc.reason }, c);
+          else if (pc && pc.over) bridges.push([pc.s0 - 16, pc.s1 + 3]);
+        }
         if (world.trackOcc[t] & ~this.bit) shared.push(t);
       }
       const xo = shared.length ? this._crossOthers(world, this, shared, CLEAR - 0.25) : null;
       if (xo) otherTrack = { x: (xo.t % world.N + 0.5) * C.TILE, z: (((xo.t / world.N) | 0) + 0.5) * C.TILE, msg: xo.reason + '.' };
       for (const o of world.trackList || []) if (o !== this && o.bit !== this.bit && o.S && !o.isChute) for (const c of crossingsOf(this, o, null, CLEAR - 0.25)) if (c.ok) crossings.push(c);
       /* stretches under a bridge (and the run-up into it): no jumps there (see checkFeature) */
-      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]);
+      this.tunnels = crossings.filter(c => c.L === this).map(c => [(c.il + c.l0) * DS - 16, (c.il + c.l1) * DS + 3]).concat(bridges);
       this.crossings = crossings.length;
       if (notOwned) issues.push(Object.assign({ level: 'error', msg: 'Parte del circuito está fuera de tu terreno.' }, notOwned));
-      if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o caminos.' }, blocked));
+      if (blocked) issues.push(Object.assign({ level: 'error', msg: 'El circuito pisa edificios o carreteras.' }, blocked));
+      if (pathLow) issues.push({ level: 'error', msg: 'Un camino cruza el circuito: ' + pathLow.msg.charAt(0).toLowerCase() + pathLow.msg.slice(1) + '.', x: pathLow.x, z: pathLow.z });
       if (water) issues.push(Object.assign({ level: 'error', msg: 'El circuito pasa por el agua.' }, water));
       if (otherTrack) issues.push({ level: 'error', msg: otherTrack.msg.replace(/^Choca con otro circuito/, 'Se solapa con otro circuito'), x: otherTrack.x, z: otherTrack.z });
       /* features */
@@ -1394,7 +1447,7 @@
         pieces: this.pieces ? this.pieces.map(p => [p.t, p.t === 'curve' ? p.k : p.t === 'start' ? (p.sl || 0) : (p.n || 0), p.dir || 0, p.slope || 0, p.bank || 0, p.f || '', p.w, p.surf]) : null,
         origin: this.origin ? [this.origin.x, this.origin.z, this.origin.h] : null,
         features: this.features.map(f => [f.type, +f.s.toFixed(2), +(f.len || 0).toFixed(2), +f.ax.toFixed(2), +f.az.toFixed(2), f.side || 0, f.pin != null ? f.pin : -1, f.off || 0, f.auto || '']),
-        paid: this.paid, featPaid: this.featPaid, records: this.records, totals: this.totals,
+        paid: this.paid, featPaid: this.featPaid, op: this.opened ? 1 : 0, records: this.records, totals: this.totals,
         moisture: this.moisture, statsTested: this.statsTested, cs: this.chuteSide || 0, cf: this.chuteSet ? 1 : 0,
         wear: Array.from(this.wear, v => Math.round(v * 1000) / 1000)
       };
@@ -1420,6 +1473,8 @@
         return f;
       });
       t.paid = d.paid || 0; t.featPaid = d.featPaid || 0;
+      /* older saves: a circuit that is or was open (closed again) counts as opened */
+      t.opened = d.op != null ? !!d.op : d.state === 'open' || d.state === 'closed';
       t.records = d.records || t.records; t.totals = d.totals || t.totals;
       t.moisture = d.moisture || 0; t.statsTested = !!d.statsTested;
       t.chuteSide = d.cs || 0; t.chuteSet = !!d.cf;

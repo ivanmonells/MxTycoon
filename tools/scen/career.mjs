@@ -30,10 +30,12 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await page.mouse.down(); await page.mouse.up(); await wait(600);
   await step('start placed');
   /* build piece by piece with the constructor */
-  const dir = async (label) => { await page.locator('.bld-dirs .bld-btn[aria-label="' + label + '"]').click(); await wait(200); };
+  /* specials have a tab of their own: back to straights and curves before a direction */
+  const normal = async () => { if (await page.locator('.bld-tab.on', { hasText: 'Especiales' }).count()) { await page.locator('.bld-tab', { hasText: 'Rectas y curvas' }).click(); await wait(200); } };
+  const dir = async (label) => { await normal(); await page.locator('.bld-dirs .bld-btn[aria-label="' + label + '"]').click(); await wait(200); };
   const len = async (label) => { await clickText(page, '.builder .btn.small', label); };
   const buildP = async (n) => { for (let i = 0; i < (n || 1); i++) { await page.click("#bld-build"); await wait(350); } };
-  const special = async (name) => { await page.locator('.bld-specials .feat', { hasText: name }).first().click(); await wait(200); };
+  const special = async (name) => { if (!(await page.locator('.bld-tab.on', { hasText: 'Especiales' }).count())) { await page.locator('.bld-tab', { hasText: 'Especiales' }).click(); await wait(200); } await page.locator('.bld-specials .feat', { hasText: name }).first().click(); await wait(200); };
   await dir('Recta'); await len('Media'); await buildP();
   await dir('Curva media a la derecha'); await clickText(page, '.builder .btn.small', 'Peralte', true); await buildP(2);
   await special('Tabletop mediano'); await buildP();
@@ -98,6 +100,8 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(200);
   /* paths: parking door row -> entrance -> toilets -> towards the track */
   await page.click('[data-id="paths"]'); await wait(400);
+  /* piece by piece is the default; long straight lines go faster dragged */
+  await clickText(page, '.win .path-mode .btn', 'Arrastrando');
   await page.locator('.win .btn.tool').first().click(); await wait(200);
   const T = 4, c = (t) => t * T + 2;
   await dragWorld(page, ev, [[c(32), c(75)], [c(32), c(74)]]);

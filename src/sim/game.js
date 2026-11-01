@@ -50,6 +50,7 @@
       this.medicJobs = [];
       this.passHolders = [];
       this.selectedTrack = null;
+      this.pathSession = new Map(); // path tiles laid with the path tools still in hand: tile -> paid
       this.race = null;
       this.paused = false;
       this.gameOver = null;
@@ -188,12 +189,13 @@
       const fr = FRONT[rot || 0];
       void fr;
       const tiles = [];
-      for (let x = r.tx; x < r.tx + r.w; x++) { tiles.push([x, r.tz - 1]); tiles.push([x, r.tz + r.h]); }
-      for (let z = r.tz; z < r.tz + r.h; z++) { tiles.push([r.tx - 1, z]); tiles.push([r.tx + r.w, z]); }
-      for (const [x, z] of tiles) {
+      /* each tile beside the footprint with the side of it that faces the building */
+      for (let x = r.tx; x < r.tx + r.w; x++) { tiles.push([x, r.tz - 1, 2]); tiles.push([x, r.tz + r.h, 0]); }
+      for (let z = r.tz; z < r.tz + r.h; z++) { tiles.push([r.tx - 1, z, 1]); tiles.push([r.tx + r.w, z, 3]); }
+      for (const [x, z, k] of tiles) {
         if (!w.inBounds(x, z)) continue;
         const p = w.path[w.idx(x, z)];
-        if (p === P.GRAVEL || p === P.PAVED) path = true;
+        if ((p === P.GRAVEL || p === P.PAVED) && w.pathAtGround(x, z, k)) path = true;
         if (p === P.ROAD) road = true;
       }
       return { path, road };
@@ -297,22 +299,23 @@
     count(type) { let n = 0; for (const b of this.buildings.values()) if (b.type === type) n++; return n; }
     buildingsOf(type) { const out = []; for (const b of this.buildings.values()) if (b.type === type) out.push(b); return out; }
     doorTiles(b, kind) {
-      /* kind 'path' -> adjacent path tiles; 'road' -> adjacent road tiles; 'open' -> adjacent rider-walkable tiles */
+      /* kind 'path' -> adjacent path tiles (at ground level on the side facing it); 'road'
+         -> adjacent road tiles; 'open' -> adjacent rider-walkable tiles */
       const w = this.world;
       const out = [];
       const fr = FRONT[b.rot];
-      const add = (x, z, front) => {
+      const add = (x, z, front, k) => {
         if (!w.inBounds(x, z)) return;
         const i = w.idx(x, z);
         const p = w.path[i];
         let ok;
-        if (kind === 'path') ok = p === P.GRAVEL || p === P.PAVED;
+        if (kind === 'path') ok = (p === P.GRAVEL || p === P.PAVED) && w.pathAtGround(x, z, k);
         else if (kind === 'road') ok = p === P.ROAD;
         else ok = this.riderPassable(x, z, i);
         if (ok) out.push({ tx: x, tz: z, i, front });
       };
-      for (let x = b.tx; x < b.tx + b.w; x++) { add(x, b.tz - 1, fr[1] === -1); add(x, b.tz + b.h, fr[1] === 1); }
-      for (let z = b.tz; z < b.tz + b.h; z++) { add(b.tx - 1, z, fr[0] === -1); add(b.tx + b.w, z, fr[0] === 1); }
+      for (let x = b.tx; x < b.tx + b.w; x++) { add(x, b.tz - 1, fr[1] === -1, 2); add(x, b.tz + b.h, fr[1] === 1, 0); }
+      for (let z = b.tz; z < b.tz + b.h; z++) { add(b.tx - 1, z, fr[0] === -1, 1); add(b.tx + b.w, z, fr[0] === 1, 3); }
       out.sort((a, c) => (c.front ? 1 : 0) - (a.front ? 1 : 0));
       return out;
     }
@@ -366,17 +369,44 @@
     seatsCovered() { let n = 0; for (const b of this.buildings.values()) if (b.type === 'grandstand_cov') n += b.seats.length; return n; }
 
     /* ---------------- paths, decor, addons, terrain, land ---------------- */
-    placePath(tx, tz, type) {
+    /* What a path tile costs: the paving, plus a deck on posts when it is raised (dearer
+       the higher it stands) and clearing a tree in the way. y, s: see World.PDIR. */
+    pathValue(tx, tz, type, y, s) {
+      const w = this.world, base = Cat.paths[type].cost;
+      if (y == null || y !== y) return base;
+      let rise = 0;
+      for (const [x, z] of MX.World.pathProbePts(tx, tz)) rise += Math.max(0, w.rampY(tx, tz, y, s, x, z) - w.heightAt(x, z));
+      return Math.round(base + 45 + rise / 9 * 14);
+    }
+    pathCost(tx, tz, type, y, s) {
       const w = this.world;
-      const why = w.canPlacePath(tx, tz, type);
+      return this.pathValue(tx, tz, type, y, s) + (w.inBounds(tx, tz) && w.scen[w.idx(tx, tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+    }
+    placePath(tx, tz, type, y, s) {
+      const w = this.world;
+      const why = w.canPlacePath(tx, tz, type, y, s);
       if (why) return { ok: false, reason: why };
-      const cost = Cat.paths[type].cost + (w.scen[w.idx(tx, tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+      const cost = this.pathCost(tx, tz, type, y, s);
       if (!this.canAfford(cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
+      const i = w.idx(tx, tz);
+      /* replacing one kind of path with another: the old one is taken up as on removal */
+      const had = w.path[i];
+      if (had && had !== type) this.refundPath(tx, tz, had);
       w.removeSceneryAt(tx, tz);
-      w.setPath(tx, tz, type);
+      w.setPath(tx, tz, type, y, s);
       this.spend('construccion', cost, (tx + 0.5) * T, (tz + 0.5) * T);
+      /* laid while the path tools are in hand: taking it back returns everything paid */
+      this.pathSession.set(i, cost);
       this.fieldsDirty = true;
       return { ok: true, cost };
+    }
+    refundPath(tx, tz, p) {
+      const w = this.world, i = w.idx(tx, tz);
+      const fresh = this.pathSession.get(i);
+      const back = fresh != null ? fresh : Math.round(this.pathValue(tx, tz, p, w.pathY[i], w.pathS[i]) * C.REFUND_RATE);
+      this.pathSession.delete(i);
+      if (back) this.econ.refund('construccion', back);
+      return back;
     }
     removePath(tx, tz) {
       const w = this.world;
@@ -384,11 +414,13 @@
       const i = w.idx(tx, tz);
       const p = w.path[i];
       if (!p) return { ok: false, reason: 'No hay camino' };
+      const back = this.refundPath(tx, tz, p);
       w.setPath(tx, tz, 0);
-      this.econ.refund('construccion', Math.round(Cat.paths[p].cost * 0.3));
       this.fieldsDirty = true;
-      return { ok: true };
+      return { ok: true, refund: back };
     }
+    /* leaving the path tools: what was laid stays, and from now on comes back at half */
+    endPathSession() { this.pathSession.clear(); }
     placeAddon(tx, tz, kind) {
       const w = this.world;
       if (!w.isWalkable(tx, tz)) return { ok: false, reason: 'Va sobre un camino peatonal' };
@@ -408,9 +440,9 @@
       if (!d) return { ok: false, reason: 'Desconocido' };
       if (!w.inBounds(tx, tz)) return { ok: false, reason: 'Fuera del mapa' };
       const i = w.idx(tx, tz);
+      if (w.isWater(tx, tz)) return { ok: false, reason: MX.World.WATER_MSG };
       if (!w.owned[i]) return { ok: false, reason: 'Terreno no comprado' };
       if (w.bld[i] >= 0 || w.path[i] || w.trackOcc[i]) return { ok: false, reason: 'Ocupado' };
-      if (w.isWater(tx, tz)) return { ok: false, reason: 'Hay agua' };
       if (w.scen[i] >= 0) return { ok: false, reason: 'Ya hay algo aquí' };
       if (!this.canAfford(d.cost)) return { ok: false, reason: 'No tienes suficiente dinero' };
       const sp = d.banner && this.sponsors.length ? this.sponsors[this.rng.int(0, this.sponsors.length - 1)].id : null;
@@ -525,7 +557,7 @@
       this.trackGeometryChanged(tr, true);
       if (delta > 0) this.spend('construccion', delta);
       /* undoing work on a circuit that never opened gives the money back in full */
-      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * (tr.state === 'building' ? 1 : C.REFUND_RATE)));
+      else if (delta < 0) this.econ.refund('construccion', Math.round(-delta * (tr.opened ? C.REFUND_RATE : 1)));
       tr.paid = Math.max(0, tr.paid + delta);
       return { ok: true, cost: delta };
     }
@@ -752,6 +784,7 @@
       if (!tr.stats) MX.TrackAnalyzer.analyze(tr, this.world, this);
       this.endTest(tr);
       tr.state = 'open';
+      tr.opened = true;
       this._openCache = null;
       this.fieldsDirty = true;
       this.notify('¡' + tr.name + ' abre al público! Dificultad ' + U.fmt1(tr.stats.diff) + ', valoración ' + U.fmt1(tr.stats.rating) + '.', 'success');
@@ -801,9 +834,10 @@
       if (this.race && this.race.trackId === tr.id) return { ok: false, reason: 'Hay una carrera en curso' };
       this.closeTrack(tr);
       tr.clearOccupancy(this.world);
-      /* a circuit that never opened is simply dismantled: everything paid comes back */
+      /* a circuit that never opened is simply dismantled: everything paid comes back;
+         once it has opened, half of what it is worth */
       const worth = tr.geometryCost() + tr.featureCost();
-      const back = Math.round(tr.state === 'building' ? Math.min(tr.paid, worth) : worth * 0.35);
+      const back = Math.round(!tr.opened ? Math.min(tr.paid, worth) : worth * C.REFUND_RATE);
       this.econ.refund('construccion', back);
       this.tracks = this.tracks.filter(t => t !== tr);
       this.world.trackList = this.tracks;
@@ -878,6 +912,8 @@
       const w = this.world, N = w.N;
       this.fieldVer = (this.fieldVer || 0) + 1;
       const walk = (x, z, i) => { const p = w.path[i]; return p === P.GRAVEL || p === P.PAVED; };
+      /* raised paths only join where they meet at the same height */
+      const link = (x, z, k) => w.pathLink(x, z, k);
       const rpass = (x, z, i) => this.riderPassable(x, z, i);
       const F = new Map();
       const srcPath = (types, filter) => {
@@ -893,15 +929,15 @@
         }
         return out;
       };
-      F.set('entrance', PF.bfs(N, srcPath(['entrance']), walk));
-      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant', 'restaurant_big']), walk));
-      F.set('toilet', PF.bfs(N, srcPath(['toilets']), walk));
-      F.set('shop', PF.bfs(N, srcPath(['shop', 'megastore']), walk));
-      F.set('camping', PF.bfs(N, srcPath(['camping']), walk));
-      F.set('play', PF.bfs(N, srcPath(['playground']), walk));
+      F.set('entrance', PF.bfs(N, srcPath(['entrance']), walk, 0, link));
+      F.set('food', PF.bfs(N, srcPath(['foodtruck', 'restaurant', 'restaurant_big']), walk, 0, link));
+      F.set('toilet', PF.bfs(N, srcPath(['toilets']), walk, 0, link));
+      F.set('shop', PF.bfs(N, srcPath(['shop', 'megastore']), walk, 0, link));
+      F.set('camping', PF.bfs(N, srcPath(['camping']), walk, 0, link));
+      F.set('play', PF.bfs(N, srcPath(['playground']), walk, 0, link));
       const seatSrc = srcPath(['grandstand', 'grandstand_cov', 'restaurant', 'restaurant_big']);
       for (let i = 0; i < N * N; i++) if (w.addon[i] === MX.World.ADDON.BENCH && w.isWalkable(i % N, (i / N) | 0)) seatSrc.push(i);
-      F.set('seat', PF.bfs(N, seatSrc, walk));
+      F.set('seat', PF.bfs(N, seatSrc, walk, 0, link));
       /* viewing spots: path tiles close to open tracks */
       const view = new Set();
       for (const tr of this.tracks) {
@@ -918,11 +954,11 @@
         }
       }
       this.viewTiles = view;
-      F.set('view', PF.bfs(N, Array.from(view), walk));
+      F.set('view', PF.bfs(N, Array.from(view), walk, 0, link));
       /* exits: path tiles next to parkings, or next to the public road */
       const exits = srcPath(['parking']);
-      for (let x = 0; x < N; x++) { const z = w.roadRow - 1; const i = w.idx(x, z); if (walk(x, z, i)) exits.push(i); }
-      F.set('exit', PF.bfs(N, exits, walk));
+      for (let x = 0; x < N; x++) { const z = w.roadRow - 1; const i = w.idx(x, z); if (walk(x, z, i) && w.pathAtGround(x, z, 2)) exits.push(i); }
+      F.set('exit', PF.bfs(N, exits, walk, 0, link));
       /* riders and service vehicles (off-road) */
       F.set('r_paddock', PF.bfs(N, srcOpen(['paddock']), rpass));
       F.set('r_shower', PF.bfs(N, srcOpen(['showers']), rpass));
@@ -1058,16 +1094,16 @@
         if (w.litter[i] > 0) { found = i; break; }
         if (seen[i] > 30) continue;
         const x = i % N, z = (i / N) | 0;
-        for (const [dx, dz] of PF.DIRS) {
-          const nx = x + dx, nz = z + dz;
-          if (!w.isWalkable(nx, nz)) continue;
+        for (let k = 0; k < 4; k++) {
+          const nx = x + PF.DIRS[k][0], nz = z + PF.DIRS[k][1];
+          if (!w.pathLink(x, z, k)) continue;
           const j = w.idx(nx, nz);
           if (seen[j] >= 0) continue;
           seen[j] = seen[i] + 1; q.push(j);
         }
       }
       if (found < 0) return null;
-      const field = PF.bfs(N, [found], (x, z, i) => w.isWalkable(x, z), 40);
+      const field = PF.bfs(N, [found], (x, z, i) => w.isWalkable(x, z), 40, (x, z, k) => w.pathLink(x, z, k));
       return { kind: 'litter', field };
     }
     requestMedic(rider, tr) {

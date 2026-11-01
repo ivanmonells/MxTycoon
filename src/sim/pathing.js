@@ -10,9 +10,13 @@
     get(tx, tz) { return (tx < 0 || tz < 0 || tx >= this.N || tz >= this.N) ? -1 : this.d[tx + tz * this.N]; }
   }
 
-  /* Multi-source BFS. passable(tx,tz,i) decides traversal; sources are tile indices. */
-  function bfs(N, sources, passable, maxDist) {
+  /* Multi-source BFS. passable(tx,tz,i) decides traversal; sources are tile indices.
+     link(tx, tz, k), if given, says whether a step from a tile across its side k (PDIR
+     order: north, east, south, west, as DIRS) is allowed: raised paths only join where
+     they meet at the same height. */
+  function bfs(N, sources, passable, maxDist, link) {
     const f = new FlowField(N);
+    f.link = link || null;
     const q = new Int32Array(N * N);
     let h = 0, t = 0;
     for (const s of sources) { if (f.d[s] === -1) { f.d[s] = 0; q[t++] = s; } }
@@ -27,6 +31,7 @@
         const j = nx + nz * N;
         if (f.d[j] !== -1) continue;
         if (!passable(nx, nz, j)) continue;
+        if (link && !link(tx, tz, k)) continue;
         f.d[j] = d + 1;
         q[t++] = j;
       }
@@ -47,6 +52,7 @@
       if (d < 0 || d >= cur) continue;
       const j = nx + nz * N;
       if (j === avoid) continue;
+      if (field.link && !field.link(tx, tz, k)) continue;
       if (d < bestD) { bestD = d; best = j; ties = 1; }
       else if (d === bestD) { ties++; if (rng.next() < 1 / ties) best = j; }
     }

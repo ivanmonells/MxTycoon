@@ -327,7 +327,8 @@
       }
       if (force || V.own !== world.ownerVer) { this._uploadOwnership(); V.own = world.ownerVer; }
       if (force || V.ground !== world.groundVer) { this._uploadGround(); V.ground = world.groundVer; }
-      const pkey = world.pathVer + ':' + world.litterVer + ':' + world.addonVer;
+      /* raised paths stand on posts that skip the circuits under them */
+      const pkey = world.pathVer + ':' + world.litterVer + ':' + world.addonVer + ':' + (game.trackGeoVer || 0);
       if (V.paths !== pkey) {
         const g = MX.Geom.paths(world);
         this.pathMesh = GLU.makeMeshVAO(gl, g.data, g.count, this.pathMesh);
@@ -339,7 +340,7 @@
         live.add(tr.id);
         let tm = this.trackMeshes.get(tr.id);
         /* crossings depend on the other circuits too */
-        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0);
+        const key = tr.ver + ':' + (tr.visualVer || 0) + ':' + (tr.gateDown ? 1 : 0) + ':' + (game.trackGeoVer || 0) + ':' + world.crossVer;
         if (!tm || tm.key !== key || tr._meshVer === -1) {
           if (!tm) { tm = { main: null, gate: null, decor: null, decorKey: null }; this.trackMeshes.set(tr.id, tm); }
           const g = MX.Geom.track(tr, world, { highlight: game.selectedTrack === tr, decor: false, tracks: game.tracks });
@@ -643,6 +644,8 @@
       gl.uniformMatrix4fv(p.u.uViewProj, false, cam.viewProj);
       this._setLightUniforms(p, L);
       gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, this.heightTex); gl.uniform1i(p.u.uHeights, 5);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, this.ownTex); gl.uniform1i(p.u.uOwn, 4);
+      gl.uniform1f(p.u.uLandEdge, this.landEdge != null ? this.landEdge : 0.4);
       gl.uniform1f(p.u.uMapSize, world.N * T); gl.uniform1f(p.u.uVerts, world.V); gl.uniform1f(p.u.uWater, C.WATER_LEVEL);
       gl.bindVertexArray(this.waterVao);
       gl.drawArrays(gl.TRIANGLES, 0, 6);

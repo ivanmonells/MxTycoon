@@ -317,12 +317,15 @@
         this.tx = this.ntx; this.tz = this.ntz;
         if (this.timer <= 0) { this.decide(g, rng); return; }
         const opts = [];
-        for (const [dx, dz] of PF.DIRS) {
-          const nx = this.tx + dx, nz = this.tz + dz;
-          if (g.world.isWalkable(nx, nz) && !(nx === this.ptx && nz === this.ptz)) opts.push([nx, nz]);
+        let back = false;
+        for (let k = 0; k < 4; k++) {
+          const nx = this.tx + PF.DIRS[k][0], nz = this.tz + PF.DIRS[k][1];
+          /* raised paths only join where they meet at the same height */
+          if (!g.world.pathStep(this.tx, this.tz, k)) continue;
+          if (nx === this.ptx && nz === this.ptz) back = true; else opts.push([nx, nz]);
         }
         if (!opts.length) {
-          if (g.world.isWalkable(this.ptx, this.ptz)) opts.push([this.ptx, this.ptz]);
+          if (back) opts.push([this.ptx, this.ptz]);
           else { this.stuckT += 1; if (this.stuckT > 8) this.goLeave(g); return; }
         }
         const c = rng.pick(opts);
@@ -781,7 +784,7 @@
       if (moveToward(this, 1.8, dt)) {
         this.tx = this.ntx; this.tz = this.ntz;
         const opts = [];
-        for (const [dx, dz] of PF.DIRS) if (g.world.isWalkable(this.tx + dx, this.tz + dz)) opts.push([this.tx + dx, this.tz + dz]);
+        for (let k = 0; k < 4; k++) if (g.world.pathStep(this.tx, this.tz, k)) opts.push([this.tx + PF.DIRS[k][0], this.tz + PF.DIRS[k][1]]);
         if (opts.length) { const c = rng.pick(opts); setWaypoint(this, c[0], c[1]); }
       }
     }

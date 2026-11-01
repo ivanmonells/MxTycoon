@@ -167,6 +167,10 @@
       set('--top-ui', t);
     },
     onTool(name) {
+      /* the path constructor shows in the paths window only while it is the tool in hand */
+      const was = this._lastTool;
+      this._lastTool = name;
+      if (was !== name && (name === 'pathbuild' || was === 'pathbuild') && this.wins.has('paths')) this.rebuild('paths');
       if (!isPhone()) { for (const w of this.wins.values()) this._toolActs(w); return; }
       for (const w of this.wins.values()) {
         if (MAP_TOOLS.has(name)) w.el.dataset.sheet = 'min';
