@@ -122,6 +122,8 @@
     },
     setTab(id, tab) { const w = this.wins.get(id); if (w) { w.tab = tab; this._build(w, w.o); } },
     rebuild(id) { const w = this.wins.get(id); if (w) this._build(w, w.o); },
+    /* run a window's update now instead of at its next tick (after a button press) */
+    poke(id) { const w = this.wins.get(id); if (w && w.update) { w.t = w.o.every || 0.4; try { w.update(); } catch (e) { console.error('[win ' + id + ']', e); } } },
     setTitle(id, t) { const w = this.wins.get(id); if (w && w.titleEl.textContent !== t) w.titleEl.textContent = t; },
     focus(id) {
       const w = this.wins.get(id);
@@ -154,7 +156,9 @@
       if (isPhone()) {
         const vh = window.innerHeight;
         if (!root.classList.contains('land')) for (const w of this.wins.values()) b = Math.max(b, vh - w.el.getBoundingClientRect().top);
-        if (!this.wins.size) { const tb = document.getElementById('toolbar'); if (tb && tb.offsetHeight) b = vh - tb.getBoundingClientRect().top; }
+        /* the toolbar stays at the bottom, with or without a sheet above it */
+        const tb = document.getElementById('toolbar');
+        if (tb && tb.offsetHeight) b = Math.max(b, vh - tb.getBoundingClientRect().top);
         const tut = document.getElementById('tutorial');
         if (tut && !tut.hidden && tut.offsetHeight) t = tut.getBoundingClientRect().bottom;
       }
@@ -166,7 +170,7 @@
       if (!isPhone()) { for (const w of this.wins.values()) this._toolActs(w); return; }
       for (const w of this.wins.values()) {
         if (MAP_TOOLS.has(name)) w.el.dataset.sheet = 'min';
-        else if (name === 'trackbuild' && w.id === 'tracks' && w.el.dataset.sheet === 'min') w.el.dataset.sheet = 'half';
+        else if (((name === 'trackbuild' && w.id === 'tracks') || (name === 'pathbuild' && w.id === 'paths')) && w.el.dataset.sheet === 'min') w.el.dataset.sheet = 'half';
         this._toolActs(w);
       }
       this.syncSheets();

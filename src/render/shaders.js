@@ -94,6 +94,7 @@ uniform vec4 uBrush;
 uniform vec4 uBrushCol;
 uniform float uGrid;
 uniform float uShowLand;
+uniform float uLandEdge;
 uniform float uMapSize;
 uniform float uWater;
 uniform float uRock;
@@ -121,15 +122,42 @@ void main() {
   /* valleys a touch darker and heights a touch lighter, so the relief reads from above */
   base *= 0.93 + 0.14 * clamp((vWp.y - 4.0) / 36.0, 0.0, 1.0);
   base *= 1.0 - uWet * 0.18;
+  /* ownership per tile: 1 yours, 0.9 the road, 0.5 for sale, 0 not available */
   float own = texture(uOwn, vWp.xz / uMapSize).r;
   if (own < 0.25) {
     float g = dot(base, vec3(0.33));
     base = mix(base, vec3(g), 0.35) * 0.78;
-  } else if (own < 0.75 && uShowLand > 0.5) {
-    float st = step(0.5, fract((vWp.x + vWp.z) * 0.25));
-    base = mix(base, vec3(1.0, 0.85, 0.25), 0.28 + st * 0.22);
+  } else if (own < 0.75) {
+    /* for sale: plainly not yours yet (striped while buying land) */
+    float g = dot(base, vec3(0.33));
+    base = mix(base, vec3(g), 0.22) * 0.86;
+    if (uShowLand > 0.5) {
+      float st = step(0.5, fract((vWp.x + vWp.z) * 0.25));
+      base = mix(base, vec3(1.0, 0.85, 0.25), 0.28 + st * 0.22);
+    }
   }
   if (uShowLand > 0.5 && own < 0.25) base *= 0.85;
+  /* the edge of your land: red and white tape on your side of it, wider while building
+     and never thinner than a couple of pixels */
+  if (own > 0.95 && uLandEdge > 0.0) {
+    vec2 tq = vWp.xz / 4.0, cell = floor(tq), f = tq - cell;
+    float tilesN = uMapSize / 4.0;
+    vec2 px = fwidth(tq);
+    vec2 wl = max(vec2(0.05 + 0.07 * uLandEdge), px * (1.2 + 1.3 * uLandEdge));
+    float hit = 0.0, dash = 0.0;
+    vec2 ds[4] = vec2[4](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
+    float dist[4] = float[4](f.x, 1.0 - f.x, f.y, 1.0 - f.y);
+    float wide[4] = float[4](wl.x, wl.x, wl.y, wl.y);
+    float along[4] = float[4](tq.y, tq.y, tq.x, tq.x);
+    for (int k = 0; k < 4; k++) {
+      if (dist[k] > wide[k]) continue;
+      float o2 = texture(uOwn, (cell + ds[k] + 0.5) / tilesN).r;
+      if (o2 > 0.85) continue;
+      hit = 1.0;
+      dash = step(0.5, fract(along[k] * 1.5));
+    }
+    if (hit > 0.0) base = mix(base, mix(vec3(0.97, 0.96, 0.92), vec3(0.86, 0.16, 0.1), dash), 0.6 + 0.35 * uLandEdge);
+  }
   if (uGrid > 0.5) {
     vec2 f = fract(vWp.xz / 4.0);
     vec2 d = min(f, 1.0 - f) * 4.0;

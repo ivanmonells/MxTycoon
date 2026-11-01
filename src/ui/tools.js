@@ -108,7 +108,11 @@
       if (this.current && this.current.exit) this.current.exit();
       this.current = tool;
       const r = R();
-      if (r) { r.setGhostMesh(null); r.setOverlayMesh(null); r.brush = [0, 0, 0, 0]; r.showLand = false; r.grid = app().settings.grid; }
+      if (r) {
+        r.setGhostMesh(null); r.setOverlayMesh(null); r.brush = [0, 0, 0, 0]; r.showLand = false; r.grid = app().settings.grid;
+        /* the edge of your land stands out while you build */
+        r.landEdge = tool && tool.name !== 'select' ? 1 : 0.4;
+      }
       if (tool && tool.enter) tool.enter();
       MX.Bus.emit('tool', tool ? tool.name : null);
       app().hud && app().hud.setHint(tool && tool.hint ? tool.hint : '');
@@ -857,6 +861,139 @@
       return [{ x: (t.tx + 0.5) * T, y: game().world.tileCenterH(t.tx, t.tz) + 2, z: (t.tz + 0.5) * T, text: this.erase ? 'Quitar' : this.tiles.length + ' · ' + U.fmtMoney(this.cost) }];
     }
   };
+  /* Paths tile by tile, like the classic footpath construction window: a tap picks the
+     tile to start from, the arrows pick which way to go as seen on screen, «Construir»
+     lays the next tile and «Quitar» takes the current one back. Nothing to drag, so it
+     suits a finger better than PathTool. */
+  const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const PathBuild = {
+    name: 'pathbuild', type: 1,
+    get hint() { const d = Cat.paths[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas: dirección · Intro: construir · Retroceso: quitar · Esc: salir'; },
+    enter() { this.cur = null; this.dir = 0; this.laid = []; this.hoverT = null; this.refresh(); },
+    exit() { R().setOverlayMesh(null); },
+    /* the tile «Construir» lays next: the start itself until it has a path, then the next one along */
+    next() {
+      const c = this.cur;
+      if (!c) return null;
+      const w = game().world;
+      if (!w.path[w.idx(c.tx, c.tz)]) return { tx: c.tx, tz: c.tz };
+      const d = DIR4[this.dir];
+      return { tx: c.tx + d[0], tz: c.tz + d[1] };
+    },
+    /* why the next tile can't be laid, or null (along an equal path there is nothing to pay) */
+    why() {
+      const n = this.next();
+      if (!n) return 'Toca el mapa donde empieza el camino';
+      const w = game().world;
+      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type) return null;
+      return w.canPlacePath(n.tx, n.tz, this.type);
+    },
+    cost() {
+      const n = this.next(), w = game().world;
+      if (!n || !w.inBounds(n.tx, n.tz) || w.path[w.idx(n.tx, n.tz)] === this.type) return 0;
+      return Cat.paths[this.type].cost + (w.scen[w.idx(n.tx, n.tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+    },
+    refresh() {
+      const r = R();
+      if (!r) return;
+      const mb = new MB(512), c = this.cur, n = this.next();
+      if (!c && this.hoverT) tileQuad(mb, this.hoverT.tx, this.hoverT.tz, MB.rgba('#fff6d8'), 0.14);
+      if (c) tileQuad(mb, c.tx, c.tz, MB.rgba('#ffd22e'), 0.14);
+      if (n) tileQuad(mb, n.tx, n.tz, MB.rgba(this.why() ? '#ff3b30' : '#5cff6a'), 0.17);
+      const o = mb.build();
+      r.setOverlayMesh(o.data, o.count);
+      this.ver = (this.ver || 0) + 1;
+      MX.WM.poke('paths');
+    },
+    hover(p) { if (!p || this.cur) return; this.hoverT = tileOf(p); this.refresh(); },
+    click(p) { if (p) this.start(tileOf(p)); },
+    start(t) {
+      if (!game().world.inBounds(t.tx, t.tz)) return;
+      this.cur = t; this.laid = []; this.hoverT = null;
+      /* starting at the end of a path: carry on the way it goes */
+      const w = game().world;
+      if (w.path[w.idx(t.tx, t.tz)]) {
+        const open = DIR4.map((d, k) => k).filter(k => { const tx = t.tx + DIR4[k][0], tz = t.tz + DIR4[k][1]; return w.inBounds(tx, tz) && !w.path[w.idx(tx, tz)]; });
+        const back = DIR4.findIndex(d => { const tx = t.tx + d[0], tz = t.tz + d[1]; return w.inBounds(tx, tz) && w.path[w.idx(tx, tz)]; });
+        if (back >= 0 && open.includes((back + 2) % 4)) this.dir = (back + 2) % 4;
+        else if (open.length) this.dir = open[0];
+      }
+      this.refresh(); sfx('click');
+    },
+    /* screen direction of each way along the ground (CSS pixels, y down) */
+    screenDir(k) {
+      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world;
+      const x = (c.tx + 0.5) * T, z = (c.tz + 0.5) * T, y = w.inBounds(c.tx, c.tz) ? w.tileCenterH(c.tx, c.tz) : 0;
+      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + DIR4[k][0] * T, y, z + DIR4[k][1] * T);
+      const vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1;
+      return [vx / l, vy / l];
+    },
+    /* the way that looks most like screen direction (sx, sy) */
+    turn(sx, sy) {
+      let best = 0, bd = -Infinity;
+      for (let k = 0; k < 4; k++) { const v = this.screenDir(k), d = v[0] * sx + v[1] * sy; if (d > bd) { bd = d; best = k; } }
+      this.dir = best; this.refresh(); sfx('click');
+    },
+    /* which of the four screen diagonals (sx, sy) the current way points to */
+    facing() { const v = this.screenDir(this.dir); return [v[0] >= 0 ? 1 : -1, v[1] >= 0 ? 1 : -1]; },
+    build() {
+      const n = this.next();
+      if (!n) { toast('Toca el mapa donde empieza el camino', 'info'); return false; }
+      const w = game().world;
+      /* along a path of the same kind: just walk on */
+      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type && (n.tx !== this.cur.tx || n.tz !== this.cur.tz)) { this.cur = n; this.refresh(); this.keepInView(); return true; }
+      if (!result(game().placePath(n.tx, n.tz, this.type))) return false;
+      this.laid.push(n); this.cur = n;
+      sfx('place'); this.refresh(); this.keepInView();
+      return true;
+    },
+    undo() {
+      const c = this.cur, w = game().world;
+      if (!c) return false;
+      if (!w.path[w.idx(c.tx, c.tz)]) { toast('Aquí no hay camino que quitar', 'info'); return false; }
+      if (!result(game().removePath(c.tx, c.tz))) return false;
+      sfx('demolish');
+      const k = this.laid.findIndex(t => t.tx === c.tx && t.tz === c.tz);
+      if (k >= 0) this.laid.splice(k, 1);
+      /* back to the tile laid before it, or one step back the way we came */
+      const prev = this.laid.length ? this.laid[this.laid.length - 1] : { tx: c.tx - DIR4[this.dir][0], tz: c.tz - DIR4[this.dir][1] };
+      if (w.inBounds(prev.tx, prev.tz) && w.path[w.idx(prev.tx, prev.tz)]) {
+        this.cur = prev;
+        if (prev.tx !== c.tx - DIR4[this.dir][0] || prev.tz !== c.tz - DIR4[this.dir][1]) { const d = DIR4.findIndex(v => prev.tx + v[0] === c.tx && prev.tz + v[1] === c.tz); if (d >= 0) this.dir = d; }
+      }
+      this.refresh();
+      return true;
+    },
+    /* the camera follows the end of the path when it nears the edge of the part of the
+       map that panels leave visible, bringing it back to the middle of that part */
+    keepInView() {
+      const c = this.cur, w = game().world;
+      if (!c || !app().input) return;
+      const p = R().worldToCss((c.tx + 0.5) * T, w.tileCenterH(c.tx, c.tz), (c.tz + 0.5) * T);
+      const root = getComputedStyle(document.documentElement);
+      const top = parseFloat(root.getPropertyValue('--top-ui')) || 60, bottom = innerHeight - (parseFloat(root.getPropertyValue('--bottom-ui')) || 80);
+      let left = 0;
+      for (const el of document.querySelectorAll('.phone.land .win.sheet')) left = Math.max(left, el.getBoundingClientRect().right);
+      const m = 50;
+      if (p[0] > left + m && p[0] < innerWidth - m && p[1] > top + m && p[1] < bottom - m) return;
+      R().cam.follow = null;
+      app().input.panBy((left + innerWidth) / 2 - p[0], (top + bottom) / 2 - p[1]);
+    },
+    /* arrows pick the way as on the panel: up ↖, right ↗, down ↘, left ↙ */
+    key(e) {
+      if (e.key === 'Enter') { this.build(); return true; }
+      if (e.key === 'Backspace') { this.undo(); return true; }
+      const a = { ArrowUp: [-1, -1], ArrowRight: [1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1] }[e.key];
+      if (a && this.cur) { this.turn(a[0], a[1]); return true; }
+      return false;
+    },
+    labels() {
+      const n = this.next();
+      if (!n) return this.hoverT ? [{ x: (this.hoverT.tx + 0.5) * T, y: game().world.tileCenterH(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: 'Empezar aquí' }] : [];
+      const why = this.why();
+      return [{ x: (n.tx + 0.5) * T, y: game().world.tileCenterH(n.tx, n.tz) + 2, z: (n.tz + 0.5) * T, text: why || (this.cost() ? U.fmtMoney(this.cost()) : 'Seguir'), bad: !!why }];
+    }
+  };
   const AddonTool = {
     name: 'addon', kind: 'bench',
     get hint() { return Cat.addons[this.kind].name + ' · ' + U.fmtMoney(Cat.addons[this.kind].cost) + ' · Clic sobre un camino · Esc: salir'; },
@@ -1076,7 +1213,7 @@
     }
   };
 
-  Tools.list = { SelectTool, TrackStart, TrackBuild, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
+  Tools.list = { SelectTool, TrackStart, TrackBuild, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, PathBuild, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
   Tools.helpers = { tileQuad, marker, ringMesh, trackRegionMesh, translated };
   MX.Tools = Tools;
 })(window.MX);

@@ -290,6 +290,15 @@ p { margin: 6px 0; }
 .bld-btn small { font-size: 10.5px; color: var(--muted); line-height: 1.05; text-align: center; }
 .bld-btn.on small { color: var(--yellow); }
 .glyph-dir { width: 44px; max-width: 100%; height: 34px; }
+/* tile by tile path builder: the four ways as seen on screen, then build and remove */
+.path-mode { margin-top: 6px; }
+.path-builder { display: flex; align-items: stretch; gap: 10px; margin-top: 8px; }
+.path-pad { display: grid; grid-template-columns: repeat(2, 52px); grid-auto-rows: 50px; gap: 4px; flex: none; }
+.path-dir .px-icon { width: 30px; height: 30px; }
+.path-side { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; flex: 1; min-width: 0; }
+.path-side .bld-preview { margin-top: 0; }
+.path-side .bld-actions { margin-top: 0; flex-wrap: nowrap; }
+.path-side .bld-actions .btn { flex: 1; justify-content: center; }
 .glyph-slope { width: 44px; max-width: 100%; height: 24px; }
 .builder > .row { margin-top: 6px; }
 .bld-specials { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
@@ -742,9 +751,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone .tb-speed .sp-cycle { display: flex; width: auto; padding: 0 7px; }
 .phone .tb-right .tb-btn:not([title^='Menú']) { display: none; }
 .phone .tb-btn { width: 36px; height: 32px; }
-/* toolbar: one row with either the building or the management buttons */
+/* toolbar: one row with either the building or the management buttons, always at the
+   bottom of the screen (sheets open above it, so the main menu is never out of reach) */
 .tg-switch { display: none; }
-.phone #toolbar { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(6px + var(--sab)); padding: 3px; gap: 2px; overflow: visible; }
+.phone #toolbar {
+  left: 0; right: 0; transform: none; bottom: 0; justify-content: center; gap: 2px; overflow: visible;
+  padding: 3px calc(3px + var(--sar)) calc(3px + var(--sab)) calc(3px + var(--sal));
+  border-width: 2px 0 0; border-radius: 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, .35);
+}
 .phone .tsep, .phone #toolbar .tg-mgmt, .phone #toolbar.mgmt .tg-build { display: none; }
 .phone #toolbar.mgmt .tg-mgmt { display: flex; }
 .phone .tg-switch { display: flex; border-color: var(--yellow); }
@@ -752,7 +766,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone .tbtn { width: 48px; height: 52px; padding: 2px 1px; gap: 2px; }
 .phone .tbtn > span:not(.px-icon) { display: block; max-width: 46px; overflow: hidden; font-size: 10px; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }
 .phone .tbtn .px-icon { width: 22px; height: 22px; }
-.phone #ui.sheet-open #toolbar { display: none; }
+/* landscape: beside the side sheet, and out of the way of a wide one */
+.phone.land #ui.sheet-open #toolbar { left: min(380px, 50vw); }
+.phone.land #ui.sheet-full #toolbar { display: none; }
 /* HUD bits that don't fit */
 .phone #minimap-wrap, .phone #objtracker, .phone #toolhint { display: none !important; }
 #camctl { display: none; }
@@ -789,6 +805,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   animation: sheet-in .18s ease-out;
 }
 .phone .win.sheet[data-sheet='full'] { max-height: calc(100% - var(--tbh) - var(--sat) - 4px); }
+/* portrait: the sheet sits on top of the toolbar */
+.phone:not(.land) .win.sheet { bottom: calc(60px + var(--sab)); padding-bottom: 0; }
+.phone:not(.land) .win.sheet[data-sheet='full'] { max-height: calc(100% - var(--tbh) - var(--sat) - 64px - var(--sab)); }
 .phone .win.sheet[data-sheet='min'] > .win-tabs, .phone .win.sheet[data-sheet='min'] > .win-body { display: none; }
 .phone .win.sheet .win-title { position: relative; height: 42px; padding-top: 4px; border-radius: 12px 12px 0 0; cursor: pointer; }
 .phone .win.sheet .win-title::before { content: ''; position: absolute; top: 4px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(26, 20, 16, .5); }
@@ -807,13 +826,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone.land .win.sheet { top: calc(var(--tbh) + var(--sat)) !important; bottom: 0; right: auto; width: min(380px, 50vw) !important; max-height: none; border-width: 0 2px 0 0; border-radius: 0 12px 0 0; animation: none; }
 .phone.land .win.sheet[data-sheet='min'] { bottom: auto; }
 .phone.land .win.sheet[data-sheet='full'] { width: min(560px, 75vw) !important; }
-.phone.land #camctl { bottom: calc(6px + var(--sab)); flex-direction: row; }
+.phone.land #camctl { bottom: calc(66px + var(--sab)); flex-direction: row; }
 .phone.land #notes { right: calc(6px + var(--sar)); }
 .phone.land #ui.sheet-open #notes { left: calc(min(380px, 50vw) + 6px); }
 .phone #placebar { bottom: calc(var(--bottom-ui, var(--tbb)) + 10px); max-width: calc(100% - 112px); }
 .phone #ui.placing #notes { bottom: calc(var(--bottom-ui, var(--tbb)) + 66px); }
-.phone.land #placebar { bottom: calc(56px + var(--sab)); max-width: calc(100% - 24px); }
-.phone.land #ui.sheet-open #placebar { left: calc((100% + min(380px, 50vw)) / 2); max-width: calc(100% - min(380px, 50vw) - 24px); }
+/* landscape: above the toolbar and clear of the camera buttons on the right */
+.phone.land #placebar { bottom: calc(70px + var(--sab)); left: calc((100% - 150px) / 2); max-width: calc(100% - 174px); }
+.phone.land #ui.sheet-open #placebar { left: calc((100% + min(380px, 50vw) - 150px) / 2); max-width: calc(100% - min(380px, 50vw) - 174px); }
 .phone.land #tutorial { left: auto; width: min(360px, 46vw); }
 /* compact track constructor */
 .phone .win-body.constructing > .row:first-child, .phone .win-body.constructing > .track-list, .phone .win-body.constructing .name-row { display: none; }

@@ -1146,7 +1146,7 @@
       const shared = [];
       for (const t of tmp.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
-        if (world.owned[t] !== 1) return 'Fuera de tu terreno';
+        if (world.owned[t] !== 1) return 'Se sale de tu terreno (la línea roja y blanca)';
         if (r) continue;
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
         else if (world.path[t]) r = 'Hay un camino o una carretera en medio';

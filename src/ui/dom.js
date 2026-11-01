@@ -97,6 +97,7 @@
     level: ['............', '............', '............', '.kkkkkkkkkk.', '.kyyyyyyyyk.', '.kyykkkkyyk.', '.kyyyyyyyyk.', '.kkkkkkkkkk.', '............', 'kkkkkkkkkkkk', 'knnnnnnnnnnk', 'kkkkkkkkkkkk'],
     smooth: ['............', '............', '..kkk.......', '.knnnkk.....', 'knnnnnnkkkk.', 'knnnnnnnnnnk', 'knnnnnnnnnnk', 'kkkkkkkkkkkk', '............', '..w.....w...', '.www...www..', '............'],
     paint: ['............', '........kkk.', '.......kook.', '......kook..', '.....kook...', '....kook....', '...knnk.....', '..knnk......', '.kgggk......', 'kgggk.......', 'kkkk........', '............'],
+    arrow: ['............', '....kkkkkkk.', '........kkk.', '.......kkkk.', '......kkk.k.', '.....kkk..k.', '....kkk...k.', '...kkk......', '..kkk.......', '.kkk........', '.kk.........', '............'],
     land: ['............', '.k.k.k.k.k..', '............', '.k.kkkkkk.k.', '...kggggk...', '.k.kgyygk.k.', '...kgyygk...', '.k.kggggk.k.', '...kkkkkk...', '.k.k.k.k.k..', '............', '............'],
     bench: ['............', '............', '............', '.kkkkkkkkkk.', '.knnnnnnnnk.', '.kkkkkkkkkk.', '.knnnnnnnnk.', '.kkkkkkkkkk.', '.kk......kk.', '.kk......kk.', '............', '............'],
     road: ['............', 'kkkkkkkkkkkk', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SyySSyySSyyS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'kkkkkkkkkkkk', '............', '............'],
@@ -111,7 +112,7 @@
     globe: ['............', '....kkkk....', '..kkbbggkk..', '.kbbgggbbbk.', '.kbgggbbbbk.', 'kbbbggbbggbk', 'kbbbbbbgggbk', '.kbbbbbgggk.', '.kbbggbbgbk.', '..kkbbbbkk..', '....kkkk....', '............']
   };
   /* line-art icons drawn light with a hard drop shadow so they read on dark buttons */
-  const LIGHT = new Set(['pause', 'play', 'fast', 'faster', 'menu', 'close', 'rotate', 'grid', 'chart', 'follow', 'music', 'sound', 'mute', 'camera']);
+  const LIGHT = new Set(['pause', 'play', 'fast', 'faster', 'menu', 'close', 'rotate', 'grid', 'chart', 'follow', 'music', 'sound', 'mute', 'camera', 'arrow']);
   const cache = {};
   function iconURL(name, scale) {
     const key = name + ':' + (scale || 2);

@@ -302,6 +302,15 @@ p { margin: 6px 0; }
 .bld-btn small { font-size: 10.5px; color: var(--muted); line-height: 1.05; text-align: center; }
 .bld-btn.on small { color: var(--yellow); }
 .glyph-dir { width: 44px; max-width: 100%; height: 34px; }
+/* tile by tile path builder: the four ways as seen on screen, then build and remove */
+.path-mode { margin-top: 6px; }
+.path-builder { display: flex; align-items: stretch; gap: 10px; margin-top: 8px; }
+.path-pad { display: grid; grid-template-columns: repeat(2, 52px); grid-auto-rows: 50px; gap: 4px; flex: none; }
+.path-dir .px-icon { width: 30px; height: 30px; }
+.path-side { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; flex: 1; min-width: 0; }
+.path-side .bld-preview { margin-top: 0; }
+.path-side .bld-actions { margin-top: 0; flex-wrap: nowrap; }
+.path-side .bld-actions .btn { flex: 1; justify-content: center; }
 .glyph-slope { width: 44px; max-width: 100%; height: 24px; }
 .builder > .row { margin-top: 6px; }
 .bld-specials { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
@@ -754,9 +763,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone .tb-speed .sp-cycle { display: flex; width: auto; padding: 0 7px; }
 .phone .tb-right .tb-btn:not([title^='Menú']) { display: none; }
 .phone .tb-btn { width: 36px; height: 32px; }
-/* toolbar: one row with either the building or the management buttons */
+/* toolbar: one row with either the building or the management buttons, always at the
+   bottom of the screen (sheets open above it, so the main menu is never out of reach) */
 .tg-switch { display: none; }
-.phone #toolbar { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(6px + var(--sab)); padding: 3px; gap: 2px; overflow: visible; }
+.phone #toolbar {
+  left: 0; right: 0; transform: none; bottom: 0; justify-content: center; gap: 2px; overflow: visible;
+  padding: 3px calc(3px + var(--sar)) calc(3px + var(--sab)) calc(3px + var(--sal));
+  border-width: 2px 0 0; border-radius: 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, .35);
+}
 .phone .tsep, .phone #toolbar .tg-mgmt, .phone #toolbar.mgmt .tg-build { display: none; }
 .phone #toolbar.mgmt .tg-mgmt { display: flex; }
 .phone .tg-switch { display: flex; border-color: var(--yellow); }
@@ -764,7 +778,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone .tbtn { width: 48px; height: 52px; padding: 2px 1px; gap: 2px; }
 .phone .tbtn > span:not(.px-icon) { display: block; max-width: 46px; overflow: hidden; font-size: 10px; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }
 .phone .tbtn .px-icon { width: 22px; height: 22px; }
-.phone #ui.sheet-open #toolbar { display: none; }
+/* landscape: beside the side sheet, and out of the way of a wide one */
+.phone.land #ui.sheet-open #toolbar { left: min(380px, 50vw); }
+.phone.land #ui.sheet-full #toolbar { display: none; }
 /* HUD bits that don't fit */
 .phone #minimap-wrap, .phone #objtracker, .phone #toolhint { display: none !important; }
 #camctl { display: none; }
@@ -801,6 +817,9 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   animation: sheet-in .18s ease-out;
 }
 .phone .win.sheet[data-sheet='full'] { max-height: calc(100% - var(--tbh) - var(--sat) - 4px); }
+/* portrait: the sheet sits on top of the toolbar */
+.phone:not(.land) .win.sheet { bottom: calc(60px + var(--sab)); padding-bottom: 0; }
+.phone:not(.land) .win.sheet[data-sheet='full'] { max-height: calc(100% - var(--tbh) - var(--sat) - 64px - var(--sab)); }
 .phone .win.sheet[data-sheet='min'] > .win-tabs, .phone .win.sheet[data-sheet='min'] > .win-body { display: none; }
 .phone .win.sheet .win-title { position: relative; height: 42px; padding-top: 4px; border-radius: 12px 12px 0 0; cursor: pointer; }
 .phone .win.sheet .win-title::before { content: ''; position: absolute; top: 4px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(26, 20, 16, .5); }
@@ -819,13 +838,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .phone.land .win.sheet { top: calc(var(--tbh) + var(--sat)) !important; bottom: 0; right: auto; width: min(380px, 50vw) !important; max-height: none; border-width: 0 2px 0 0; border-radius: 0 12px 0 0; animation: none; }
 .phone.land .win.sheet[data-sheet='min'] { bottom: auto; }
 .phone.land .win.sheet[data-sheet='full'] { width: min(560px, 75vw) !important; }
-.phone.land #camctl { bottom: calc(6px + var(--sab)); flex-direction: row; }
+.phone.land #camctl { bottom: calc(66px + var(--sab)); flex-direction: row; }
 .phone.land #notes { right: calc(6px + var(--sar)); }
 .phone.land #ui.sheet-open #notes { left: calc(min(380px, 50vw) + 6px); }
 .phone #placebar { bottom: calc(var(--bottom-ui, var(--tbb)) + 10px); max-width: calc(100% - 112px); }
 .phone #ui.placing #notes { bottom: calc(var(--bottom-ui, var(--tbb)) + 66px); }
-.phone.land #placebar { bottom: calc(56px + var(--sab)); max-width: calc(100% - 24px); }
-.phone.land #ui.sheet-open #placebar { left: calc((100% + min(380px, 50vw)) / 2); max-width: calc(100% - min(380px, 50vw) - 24px); }
+/* landscape: above the toolbar and clear of the camera buttons on the right */
+.phone.land #placebar { bottom: calc(70px + var(--sab)); left: calc((100% - 150px) / 2); max-width: calc(100% - 174px); }
+.phone.land #ui.sheet-open #placebar { left: calc((100% + min(380px, 50vw) - 150px) / 2); max-width: calc(100% - min(380px, 50vw) - 174px); }
 .phone.land #tutorial { left: auto; width: min(360px, 46vw); }
 /* compact track constructor */
 .phone .win-body.constructing > .row:first-child, .phone .win-body.constructing > .track-list, .phone .win-body.constructing .name-row { display: none; }
@@ -3897,7 +3917,7 @@ html.phone { --tbh: 44px; --tbb: 66px; }
       const shared = [];
       for (const t of tmp.tiles) {
         const tx = t % world.N, tz = (t / world.N) | 0;
-        if (world.owned[t] !== 1) return 'Fuera de tu terreno';
+        if (world.owned[t] !== 1) return 'Se sale de tu terreno (la línea roja y blanca)';
         if (r) continue;
         if (world.bld[t] >= 0) r = 'Hay un edificio en medio';
         else if (world.path[t]) r = 'Hay un camino o una carretera en medio';
@@ -11806,6 +11826,7 @@ uniform vec4 uBrush;
 uniform vec4 uBrushCol;
 uniform float uGrid;
 uniform float uShowLand;
+uniform float uLandEdge;
 uniform float uMapSize;
 uniform float uWater;
 uniform float uRock;
@@ -11833,15 +11854,42 @@ void main() {
   /* valleys a touch darker and heights a touch lighter, so the relief reads from above */
   base *= 0.93 + 0.14 * clamp((vWp.y - 4.0) / 36.0, 0.0, 1.0);
   base *= 1.0 - uWet * 0.18;
+  /* ownership per tile: 1 yours, 0.9 the road, 0.5 for sale, 0 not available */
   float own = texture(uOwn, vWp.xz / uMapSize).r;
   if (own < 0.25) {
     float g = dot(base, vec3(0.33));
     base = mix(base, vec3(g), 0.35) * 0.78;
-  } else if (own < 0.75 && uShowLand > 0.5) {
-    float st = step(0.5, fract((vWp.x + vWp.z) * 0.25));
-    base = mix(base, vec3(1.0, 0.85, 0.25), 0.28 + st * 0.22);
+  } else if (own < 0.75) {
+    /* for sale: plainly not yours yet (striped while buying land) */
+    float g = dot(base, vec3(0.33));
+    base = mix(base, vec3(g), 0.22) * 0.86;
+    if (uShowLand > 0.5) {
+      float st = step(0.5, fract((vWp.x + vWp.z) * 0.25));
+      base = mix(base, vec3(1.0, 0.85, 0.25), 0.28 + st * 0.22);
+    }
   }
   if (uShowLand > 0.5 && own < 0.25) base *= 0.85;
+  /* the edge of your land: red and white tape on your side of it, wider while building
+     and never thinner than a couple of pixels */
+  if (own > 0.95 && uLandEdge > 0.0) {
+    vec2 tq = vWp.xz / 4.0, cell = floor(tq), f = tq - cell;
+    float tilesN = uMapSize / 4.0;
+    vec2 px = fwidth(tq);
+    vec2 wl = max(vec2(0.05 + 0.07 * uLandEdge), px * (1.2 + 1.3 * uLandEdge));
+    float hit = 0.0, dash = 0.0;
+    vec2 ds[4] = vec2[4](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
+    float dist[4] = float[4](f.x, 1.0 - f.x, f.y, 1.0 - f.y);
+    float wide[4] = float[4](wl.x, wl.x, wl.y, wl.y);
+    float along[4] = float[4](tq.y, tq.y, tq.x, tq.x);
+    for (int k = 0; k < 4; k++) {
+      if (dist[k] > wide[k]) continue;
+      float o2 = texture(uOwn, (cell + ds[k] + 0.5) / tilesN).r;
+      if (o2 > 0.85) continue;
+      hit = 1.0;
+      dash = step(0.5, fract(along[k] * 1.5));
+    }
+    if (hit > 0.0) base = mix(base, mix(vec3(0.97, 0.96, 0.92), vec3(0.86, 0.16, 0.1), dash), 0.6 + 0.35 * uLandEdge);
+  }
   if (uGrid > 0.5) {
     vec2 f = fract(vWp.xz / 4.0);
     vec2 d = min(f, 1.0 - f) * 4.0;
@@ -13319,7 +13367,7 @@ void main() {
           const p = w.parcelAt(tx, tz);
           data[i] = w.parcelState(p.px, p.pz) === 1 ? 128 : 0;
         }
-        if (tz === w.roadRow) data[i] = 255;
+        if (tz === w.roadRow && !w.owned[i]) data[i] = 230;
       }
       gl.bindTexture(gl.TEXTURE_2D, this.ownTex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -13657,6 +13705,7 @@ void main() {
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, this.groundTex); gl.uniform1i(p.u.uGroundTex, 6); gl.uniform1i(p.u.uTiles, world.N);
       gl.uniform4fv(p.u.uBrush, this.brush); gl.uniform4fv(p.u.uBrushCol, this.brushCol);
       gl.uniform1f(p.u.uGrid, this.grid ? 1 : 0); gl.uniform1f(p.u.uShowLand, this.showLand ? 1 : 0);
+      gl.uniform1f(p.u.uLandEdge, this.landEdge != null ? this.landEdge : 0.4);
       gl.uniform1f(p.u.uMapSize, world.N * T); gl.uniform1f(p.u.uWater, C.WATER_LEVEL);
       gl.uniform1f(p.u.uRock, MX.Tex.L.rock); gl.uniform1f(p.u.uSand, MX.Tex.L.sand); gl.uniform1f(p.u.uWet, L.wet);
       for (const m of this.chunks) this._drawMesh(m);
@@ -14032,6 +14081,7 @@ void main() {
     level: ['............', '............', '............', '.kkkkkkkkkk.', '.kyyyyyyyyk.', '.kyykkkkyyk.', '.kyyyyyyyyk.', '.kkkkkkkkkk.', '............', 'kkkkkkkkkkkk', 'knnnnnnnnnnk', 'kkkkkkkkkkkk'],
     smooth: ['............', '............', '..kkk.......', '.knnnkk.....', 'knnnnnnkkkk.', 'knnnnnnnnnnk', 'knnnnnnnnnnk', 'kkkkkkkkkkkk', '............', '..w.....w...', '.www...www..', '............'],
     paint: ['............', '........kkk.', '.......kook.', '......kook..', '.....kook...', '....kook....', '...knnk.....', '..knnk......', '.kgggk......', 'kgggk.......', 'kkkk........', '............'],
+    arrow: ['............', '....kkkkkkk.', '........kkk.', '.......kkkk.', '......kkk.k.', '.....kkk..k.', '....kkk...k.', '...kkk......', '..kkk.......', '.kkk........', '.kk.........', '............'],
     land: ['............', '.k.k.k.k.k..', '............', '.k.kkkkkk.k.', '...kggggk...', '.k.kgyygk.k.', '...kgyygk...', '.k.kggggk.k.', '...kkkkkk...', '.k.k.k.k.k..', '............', '............'],
     bench: ['............', '............', '............', '.kkkkkkkkkk.', '.knnnnnnnnk.', '.kkkkkkkkkk.', '.knnnnnnnnk.', '.kkkkkkkkkk.', '.kk......kk.', '.kk......kk.', '............', '............'],
     road: ['............', 'kkkkkkkkkkkk', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SyySSyySSyyS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'SSSSSSSSSSSS', 'kkkkkkkkkkkk', '............', '............'],
@@ -14046,7 +14096,7 @@ void main() {
     globe: ['............', '....kkkk....', '..kkbbggkk..', '.kbbgggbbbk.', '.kbgggbbbbk.', 'kbbbggbbggbk', 'kbbbbbbgggbk', '.kbbbbbgggk.', '.kbbggbbgbk.', '..kkbbbbkk..', '....kkkk....', '............']
   };
   /* line-art icons drawn light with a hard drop shadow so they read on dark buttons */
-  const LIGHT = new Set(['pause', 'play', 'fast', 'faster', 'menu', 'close', 'rotate', 'grid', 'chart', 'follow', 'music', 'sound', 'mute', 'camera']);
+  const LIGHT = new Set(['pause', 'play', 'fast', 'faster', 'menu', 'close', 'rotate', 'grid', 'chart', 'follow', 'music', 'sound', 'mute', 'camera', 'arrow']);
   const cache = {};
   function iconURL(name, scale) {
     const key = name + ':' + (scale || 2);
@@ -14234,6 +14284,8 @@ void main() {
     },
     setTab(id, tab) { const w = this.wins.get(id); if (w) { w.tab = tab; this._build(w, w.o); } },
     rebuild(id) { const w = this.wins.get(id); if (w) this._build(w, w.o); },
+    /* run a window's update now instead of at its next tick (after a button press) */
+    poke(id) { const w = this.wins.get(id); if (w && w.update) { w.t = w.o.every || 0.4; try { w.update(); } catch (e) { console.error('[win ' + id + ']', e); } } },
     setTitle(id, t) { const w = this.wins.get(id); if (w && w.titleEl.textContent !== t) w.titleEl.textContent = t; },
     focus(id) {
       const w = this.wins.get(id);
@@ -14266,7 +14318,9 @@ void main() {
       if (isPhone()) {
         const vh = window.innerHeight;
         if (!root.classList.contains('land')) for (const w of this.wins.values()) b = Math.max(b, vh - w.el.getBoundingClientRect().top);
-        if (!this.wins.size) { const tb = document.getElementById('toolbar'); if (tb && tb.offsetHeight) b = vh - tb.getBoundingClientRect().top; }
+        /* the toolbar stays at the bottom, with or without a sheet above it */
+        const tb = document.getElementById('toolbar');
+        if (tb && tb.offsetHeight) b = Math.max(b, vh - tb.getBoundingClientRect().top);
         const tut = document.getElementById('tutorial');
         if (tut && !tut.hidden && tut.offsetHeight) t = tut.getBoundingClientRect().bottom;
       }
@@ -14278,7 +14332,7 @@ void main() {
       if (!isPhone()) { for (const w of this.wins.values()) this._toolActs(w); return; }
       for (const w of this.wins.values()) {
         if (MAP_TOOLS.has(name)) w.el.dataset.sheet = 'min';
-        else if (name === 'trackbuild' && w.id === 'tracks' && w.el.dataset.sheet === 'min') w.el.dataset.sheet = 'half';
+        else if (((name === 'trackbuild' && w.id === 'tracks') || (name === 'pathbuild' && w.id === 'paths')) && w.el.dataset.sheet === 'min') w.el.dataset.sheet = 'half';
         this._toolActs(w);
       }
       this.syncSheets();
@@ -14482,7 +14536,11 @@ void main() {
       if (this.current && this.current.exit) this.current.exit();
       this.current = tool;
       const r = R();
-      if (r) { r.setGhostMesh(null); r.setOverlayMesh(null); r.brush = [0, 0, 0, 0]; r.showLand = false; r.grid = app().settings.grid; }
+      if (r) {
+        r.setGhostMesh(null); r.setOverlayMesh(null); r.brush = [0, 0, 0, 0]; r.showLand = false; r.grid = app().settings.grid;
+        /* the edge of your land stands out while you build */
+        r.landEdge = tool && tool.name !== 'select' ? 1 : 0.4;
+      }
       if (tool && tool.enter) tool.enter();
       MX.Bus.emit('tool', tool ? tool.name : null);
       app().hud && app().hud.setHint(tool && tool.hint ? tool.hint : '');
@@ -15231,6 +15289,139 @@ void main() {
       return [{ x: (t.tx + 0.5) * T, y: game().world.tileCenterH(t.tx, t.tz) + 2, z: (t.tz + 0.5) * T, text: this.erase ? 'Quitar' : this.tiles.length + ' · ' + U.fmtMoney(this.cost) }];
     }
   };
+  /* Paths tile by tile, like the classic footpath construction window: a tap picks the
+     tile to start from, the arrows pick which way to go as seen on screen, «Construir»
+     lays the next tile and «Quitar» takes the current one back. Nothing to drag, so it
+     suits a finger better than PathTool. */
+  const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const PathBuild = {
+    name: 'pathbuild', type: 1,
+    get hint() { const d = Cat.paths[this.type]; return d.name + ' · ' + U.fmtMoney(d.cost) + '/casilla · Clic: empezar ahí · Flechas: dirección · Intro: construir · Retroceso: quitar · Esc: salir'; },
+    enter() { this.cur = null; this.dir = 0; this.laid = []; this.hoverT = null; this.refresh(); },
+    exit() { R().setOverlayMesh(null); },
+    /* the tile «Construir» lays next: the start itself until it has a path, then the next one along */
+    next() {
+      const c = this.cur;
+      if (!c) return null;
+      const w = game().world;
+      if (!w.path[w.idx(c.tx, c.tz)]) return { tx: c.tx, tz: c.tz };
+      const d = DIR4[this.dir];
+      return { tx: c.tx + d[0], tz: c.tz + d[1] };
+    },
+    /* why the next tile can't be laid, or null (along an equal path there is nothing to pay) */
+    why() {
+      const n = this.next();
+      if (!n) return 'Toca el mapa donde empieza el camino';
+      const w = game().world;
+      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type) return null;
+      return w.canPlacePath(n.tx, n.tz, this.type);
+    },
+    cost() {
+      const n = this.next(), w = game().world;
+      if (!n || !w.inBounds(n.tx, n.tz) || w.path[w.idx(n.tx, n.tz)] === this.type) return 0;
+      return Cat.paths[this.type].cost + (w.scen[w.idx(n.tx, n.tz)] >= 0 ? C.TREE_CLEAR_COST : 0);
+    },
+    refresh() {
+      const r = R();
+      if (!r) return;
+      const mb = new MB(512), c = this.cur, n = this.next();
+      if (!c && this.hoverT) tileQuad(mb, this.hoverT.tx, this.hoverT.tz, MB.rgba('#fff6d8'), 0.14);
+      if (c) tileQuad(mb, c.tx, c.tz, MB.rgba('#ffd22e'), 0.14);
+      if (n) tileQuad(mb, n.tx, n.tz, MB.rgba(this.why() ? '#ff3b30' : '#5cff6a'), 0.17);
+      const o = mb.build();
+      r.setOverlayMesh(o.data, o.count);
+      this.ver = (this.ver || 0) + 1;
+      MX.WM.poke('paths');
+    },
+    hover(p) { if (!p || this.cur) return; this.hoverT = tileOf(p); this.refresh(); },
+    click(p) { if (p) this.start(tileOf(p)); },
+    start(t) {
+      if (!game().world.inBounds(t.tx, t.tz)) return;
+      this.cur = t; this.laid = []; this.hoverT = null;
+      /* starting at the end of a path: carry on the way it goes */
+      const w = game().world;
+      if (w.path[w.idx(t.tx, t.tz)]) {
+        const open = DIR4.map((d, k) => k).filter(k => { const tx = t.tx + DIR4[k][0], tz = t.tz + DIR4[k][1]; return w.inBounds(tx, tz) && !w.path[w.idx(tx, tz)]; });
+        const back = DIR4.findIndex(d => { const tx = t.tx + d[0], tz = t.tz + d[1]; return w.inBounds(tx, tz) && w.path[w.idx(tx, tz)]; });
+        if (back >= 0 && open.includes((back + 2) % 4)) this.dir = (back + 2) % 4;
+        else if (open.length) this.dir = open[0];
+      }
+      this.refresh(); sfx('click');
+    },
+    /* screen direction of each way along the ground (CSS pixels, y down) */
+    screenDir(k) {
+      const c = this.cur || this.hoverT || { tx: 0, tz: 0 }, w = game().world;
+      const x = (c.tx + 0.5) * T, z = (c.tz + 0.5) * T, y = w.inBounds(c.tx, c.tz) ? w.tileCenterH(c.tx, c.tz) : 0;
+      const a = R().worldToCss(x, y, z), b = R().worldToCss(x + DIR4[k][0] * T, y, z + DIR4[k][1] * T);
+      const vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1;
+      return [vx / l, vy / l];
+    },
+    /* the way that looks most like screen direction (sx, sy) */
+    turn(sx, sy) {
+      let best = 0, bd = -Infinity;
+      for (let k = 0; k < 4; k++) { const v = this.screenDir(k), d = v[0] * sx + v[1] * sy; if (d > bd) { bd = d; best = k; } }
+      this.dir = best; this.refresh(); sfx('click');
+    },
+    /* which of the four screen diagonals (sx, sy) the current way points to */
+    facing() { const v = this.screenDir(this.dir); return [v[0] >= 0 ? 1 : -1, v[1] >= 0 ? 1 : -1]; },
+    build() {
+      const n = this.next();
+      if (!n) { toast('Toca el mapa donde empieza el camino', 'info'); return false; }
+      const w = game().world;
+      /* along a path of the same kind: just walk on */
+      if (w.inBounds(n.tx, n.tz) && w.path[w.idx(n.tx, n.tz)] === this.type && (n.tx !== this.cur.tx || n.tz !== this.cur.tz)) { this.cur = n; this.refresh(); this.keepInView(); return true; }
+      if (!result(game().placePath(n.tx, n.tz, this.type))) return false;
+      this.laid.push(n); this.cur = n;
+      sfx('place'); this.refresh(); this.keepInView();
+      return true;
+    },
+    undo() {
+      const c = this.cur, w = game().world;
+      if (!c) return false;
+      if (!w.path[w.idx(c.tx, c.tz)]) { toast('Aquí no hay camino que quitar', 'info'); return false; }
+      if (!result(game().removePath(c.tx, c.tz))) return false;
+      sfx('demolish');
+      const k = this.laid.findIndex(t => t.tx === c.tx && t.tz === c.tz);
+      if (k >= 0) this.laid.splice(k, 1);
+      /* back to the tile laid before it, or one step back the way we came */
+      const prev = this.laid.length ? this.laid[this.laid.length - 1] : { tx: c.tx - DIR4[this.dir][0], tz: c.tz - DIR4[this.dir][1] };
+      if (w.inBounds(prev.tx, prev.tz) && w.path[w.idx(prev.tx, prev.tz)]) {
+        this.cur = prev;
+        if (prev.tx !== c.tx - DIR4[this.dir][0] || prev.tz !== c.tz - DIR4[this.dir][1]) { const d = DIR4.findIndex(v => prev.tx + v[0] === c.tx && prev.tz + v[1] === c.tz); if (d >= 0) this.dir = d; }
+      }
+      this.refresh();
+      return true;
+    },
+    /* the camera follows the end of the path when it nears the edge of the part of the
+       map that panels leave visible, bringing it back to the middle of that part */
+    keepInView() {
+      const c = this.cur, w = game().world;
+      if (!c || !app().input) return;
+      const p = R().worldToCss((c.tx + 0.5) * T, w.tileCenterH(c.tx, c.tz), (c.tz + 0.5) * T);
+      const root = getComputedStyle(document.documentElement);
+      const top = parseFloat(root.getPropertyValue('--top-ui')) || 60, bottom = innerHeight - (parseFloat(root.getPropertyValue('--bottom-ui')) || 80);
+      let left = 0;
+      for (const el of document.querySelectorAll('.phone.land .win.sheet')) left = Math.max(left, el.getBoundingClientRect().right);
+      const m = 50;
+      if (p[0] > left + m && p[0] < innerWidth - m && p[1] > top + m && p[1] < bottom - m) return;
+      R().cam.follow = null;
+      app().input.panBy((left + innerWidth) / 2 - p[0], (top + bottom) / 2 - p[1]);
+    },
+    /* arrows pick the way as on the panel: up ↖, right ↗, down ↘, left ↙ */
+    key(e) {
+      if (e.key === 'Enter') { this.build(); return true; }
+      if (e.key === 'Backspace') { this.undo(); return true; }
+      const a = { ArrowUp: [-1, -1], ArrowRight: [1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1] }[e.key];
+      if (a && this.cur) { this.turn(a[0], a[1]); return true; }
+      return false;
+    },
+    labels() {
+      const n = this.next();
+      if (!n) return this.hoverT ? [{ x: (this.hoverT.tx + 0.5) * T, y: game().world.tileCenterH(this.hoverT.tx, this.hoverT.tz) + 2, z: (this.hoverT.tz + 0.5) * T, text: 'Empezar aquí' }] : [];
+      const why = this.why();
+      return [{ x: (n.tx + 0.5) * T, y: game().world.tileCenterH(n.tx, n.tz) + 2, z: (n.tz + 0.5) * T, text: why || (this.cost() ? U.fmtMoney(this.cost()) : 'Seguir'), bad: !!why }];
+    }
+  };
   const AddonTool = {
     name: 'addon', kind: 'bench',
     get hint() { return Cat.addons[this.kind].name + ' · ' + U.fmtMoney(Cat.addons[this.kind].cost) + ' · Clic sobre un camino · Esc: salir'; },
@@ -15450,7 +15641,7 @@ void main() {
     }
   };
 
-  Tools.list = { SelectTool, TrackStart, TrackBuild, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
+  Tools.list = { SelectTool, TrackStart, TrackBuild, TrackDraw, TrackEdit, TrackFeature, TrackSurface, TrackWidth, TrackElev, Build, PathTool, PathBuild, AddonTool, DecorTool, Demolish, Terrain, Paint, Land };
   Tools.helpers = { tileQuad, marker, ringMesh, trackRegionMesh, translated };
   MX.Tools = Tools;
 })(window.MX);
@@ -15859,7 +16050,7 @@ void main() {
       if (this._snd !== sn) { this._snd = sn; sic.style.backgroundImage = 'url(' + MX.DOM.iconURL(sn, 3) + ')'; }
       /* toolbar highlight */
       const tname = MX.Tools.current ? MX.Tools.current.name : '';
-      const map = { trackstart: 'tracks', trackbuild: 'tracks', trackdraw: 'tracks', trackedit: 'tracks', trackfeature: 'tracks', tracksurface: 'tracks', trackwidth: 'tracks', trackelev: 'tracks', build: 'build', path: 'paths', addon: 'paths', decor: 'decor', demolish: 'demolish', terrain: 'terrain', paint: 'terrain', land: 'terrain' };
+      const map = { trackstart: 'tracks', trackbuild: 'tracks', trackdraw: 'tracks', trackedit: 'tracks', trackfeature: 'tracks', tracksurface: 'tracks', trackwidth: 'tracks', trackelev: 'tracks', build: 'build', path: 'paths', pathbuild: 'paths', addon: 'paths', decor: 'decor', demolish: 'demolish', terrain: 'terrain', paint: 'terrain', land: 'terrain' };
       for (const id in this.toolBtns) this.toolBtns[id].classList.toggle('on', map[tname] === id || MX.WM.isOpen(id));
       this.updatePlaceBar();
       this.updateObjective();
@@ -16820,25 +17011,77 @@ void main() {
   }
 
   /* ================= Paths ================= */
+  /* Paths go down tile by tile with arrows and «Construir», like the classic construction
+     window (the default on touch screens, where dragging fights the camera), or dragged
+     out in a line (the default with a mouse). */
+  const PATH_DIRS = [[-1, -1, 'Hacia arriba a la izquierda', -90], [1, -1, 'Hacia arriba a la derecha', 0], [-1, 1, 'Hacia abajo a la izquierda', 180], [1, 1, 'Hacia abajo a la derecha', 90]];
   function pathsPanel() {
+    const ui = app().pathUI || (app().pathUI = { mode: (app().input && app().input.touchMode) || document.documentElement.classList.contains('phone') ? 'piece' : 'drag' });
     WM.open('paths', {
       title: 'Caminos y carreteras', icon: 'path', width: 360,
       build: (body) => {
+        const pb = TL().PathBuild, pd = TL().PathTool;
+        const tool = () => ui.mode === 'piece' ? pb : pd;
+        const active = MX.Tools.current === pb ? pb : MX.Tools.current === pd ? pd : null;
+        const pick = (t) => { const tl = tool(); tl.type = t; if (MX.Tools.current !== tl) MX.Tools.set(tl); else if (tl.refresh) tl.refresh(); WM.rebuild('paths'); };
         const row = h('div', { class: 'row gap wrap' });
         for (const t of [1, 2, 3]) {
           const d = Cat.paths[t];
-          row.append(h('button', { class: 'btn tool' + (MX.Tools.current === TL().PathTool && TL().PathTool.type === t ? ' on' : ''), onclick: () => { TL().PathTool.type = t; MX.Tools.set(TL().PathTool); WM.rebuild('paths'); } }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
+          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
+        const mode = h('div', { class: 'row gap wrap path-mode' });
+        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Toca dónde empieza el camino y alárgalo con las flechas y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas']]) {
+          mode.append(h('button', { class: 'btn small' + (ui.mode === m ? ' on' : ''), title: tip, onclick: () => {
+            if (ui.mode === m) return;
+            ui.mode = m;
+            if (active) { const tl = tool(); tl.type = active.type; MX.Tools.set(tl); }
+            WM.rebuild('paths');
+          } }, label));
+        }
+        body.append(h('h4', null, 'Trazar'), row, mode);
+        let upd = null;
+        if (active === pb) upd = pathBuilder(body, pb);
+        else if (!active) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino, toca en el mapa la casilla donde empieza y alárgalo con las flechas y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa.'));
         const add = h('div', { class: 'row gap wrap' });
         for (const k in Cat.addons) {
           const d = Cat.addons[k];
           add.append(h('button', { class: 'btn' + (MX.Tools.current === TL().AddonTool && TL().AddonTool.kind === k ? ' on' : ''), title: d.desc, onclick: () => { TL().AddonTool.kind = k; MX.Tools.set(TL().AddonTool); WM.rebuild('paths'); } }, icon(k === 'bench' ? 'bench' : k === 'bin' ? 'demolish' : 'info'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
-        body.append(h('h4', null, 'Trazar'), row,
-          h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
           h('h4', null, 'Mobiliario'), add);
+        return upd;
       }
     });
+  }
+  /* the arrows (as seen on screen), «Construir» and «Quitar» of the tile by tile builder */
+  function pathBuilder(body, pb) {
+    const noFocus = (e) => e.preventDefault();
+    const status = h('div', { class: 'bld-preview path-status' });
+    const pad = h('div', { class: 'path-pad' });
+    const btns = PATH_DIRS.map(([sx, sy, label, rot]) => {
+      const b = h('button', { class: 'bld-btn path-dir', title: label, 'aria-label': label, onmousedown: noFocus, onclick: () => pb.turn(sx, sy) }, icon('arrow'));
+      b.querySelector('.px-icon').style.transform = 'rotate(' + rot + 'deg)';
+      b._d = [sx, sy];
+      pad.append(b);
+      return b;
+    });
+    const acts = h('div', { class: 'row gap bld-actions' },
+      h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
+      h('button', { id: 'path-undo', class: 'btn', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar'));
+    body.append(h('div', { class: 'path-builder' }, pad, h('div', { class: 'path-side' }, status, acts)));
+    return () => {
+      const f = pb.cur ? pb.facing() : null;
+      const key = (pb.ver || 0) + ':' + (f ? f.join(',') : '-') + ':' + app().renderer.cam.yawIndex + ':' + Math.floor(game().econ.money / 500);
+      if (status._k === key) return;
+      status._k = key;
+      for (const b of btns) b.classList.toggle('on', !!f && b._d[0] === f[0] && b._d[1] === f[1]);
+      clear(status);
+      const n = pb.next(), why = pb.why(), cost = pb.cost();
+      status.className = 'bld-preview path-status' + (n ? (why ? ' bad' : ' ok') : '');
+      status.append(icon(!n ? 'info' : why ? 'cross' : 'check'),
+        h('span', null, !n ? 'Toca en el mapa la casilla donde empieza el camino' : why ? h('em', null, why) : h('b', null, cost ? 'Siguiente casilla · ' + U.fmtMoney(cost) : 'Sigue por el camino que ya hay'),
+          pb.laid.length ? h('small', null, ' · ' + pb.laid.length + (pb.laid.length === 1 ? ' casilla puesta' : ' casillas puestas')) : null));
+    };
   }
 
   /* ================= Decoration ================= */
@@ -17958,7 +18201,7 @@ void main() {
         { title: 'Hora de volar', text: 'Añade al menos un salto: un tabletop en una recta es perfecto para empezar. Los saltos atraen pilotos y público.', check: () => hasFeat(tr(), f => MX.Catalog.features[f.type].group === 'jump') },
         { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', tp: 'Abre Construir → Pilotos y elige el Paddock. Arrástralo hasta que toque la carretera (la franja gris del borde) y pulsa «Colocar». El botón amarillo lo gira.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
         { title: 'Servicios para el público', text: 'En Construir → Público: pon una Taquilla y acceso, un Aparcamiento tocando la carretera y unos Baños.', target: '[data-id="build"]', check: () => g().count('entrance') && g().count('parking') && g().count('toilets') },
-        { title: 'Caminos', text: 'Abre Caminos y une el aparcamiento con la taquilla, y la taquilla con los baños y con una zona junto a la pista. El público solo anda por caminos.', target: '[data-id="paths"]',
+        { title: 'Caminos', text: 'Abre Caminos y une el aparcamiento con la taquilla, y la taquilla con los baños y con una zona junto a la pista. El público solo anda por caminos.', tp: 'Abre Caminos, elige un camino y toca la casilla donde empieza, junto al aparcamiento. Elige la dirección con las flechas y pulsa «Construir» para alargarlo hasta la taquilla y los baños.', target: '[data-id="paths"]',
           check: () => { const G = g(); if (G.fieldsDirty) G.rebuildFields(); const lot = G.buildingsOf('parking')[0]; const ent = G.buildingsOf('entrance')[0]; if (!lot || !ent) return false; return G.doorTiles(lot, 'path').some(t => G.fieldReach('entrance', t.tx, t.tz)) && G.doorTiles(ent, 'path').some(t => G.fieldReach('toilet', t.tx, t.tz)); } },
         { title: '¡Abrimos!', text: 'Vuelve a Circuitos, pulsa «Validar» para revisar que todo está bien y luego «Abrir al público». Si algo falla, la lista te dice qué arreglar.', target: '[data-id="tracks"]', check: () => g().tracks.some(t => t.state === 'open') },
         { title: 'Llegan los pilotos', text: 'Las furgonetas ya vienen por la carretera. Cuando veas un piloto en pista, haz clic sobre él para ver sus datos y pulsa «Seguir».', init: () => { this.openedAgent = false; this.t0 = performance.now(); }, check: () => this.openedAgent || performance.now() - this.t0 > 90000 },

@@ -280,7 +280,7 @@
           const p = w.parcelAt(tx, tz);
           data[i] = w.parcelState(p.px, p.pz) === 1 ? 128 : 0;
         }
-        if (tz === w.roadRow) data[i] = 255;
+        if (tz === w.roadRow && !w.owned[i]) data[i] = 230;
       }
       gl.bindTexture(gl.TEXTURE_2D, this.ownTex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -618,6 +618,7 @@
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, this.groundTex); gl.uniform1i(p.u.uGroundTex, 6); gl.uniform1i(p.u.uTiles, world.N);
       gl.uniform4fv(p.u.uBrush, this.brush); gl.uniform4fv(p.u.uBrushCol, this.brushCol);
       gl.uniform1f(p.u.uGrid, this.grid ? 1 : 0); gl.uniform1f(p.u.uShowLand, this.showLand ? 1 : 0);
+      gl.uniform1f(p.u.uLandEdge, this.landEdge != null ? this.landEdge : 0.4);
       gl.uniform1f(p.u.uMapSize, world.N * T); gl.uniform1f(p.u.uWater, C.WATER_LEVEL);
       gl.uniform1f(p.u.uRock, MX.Tex.L.rock); gl.uniform1f(p.u.uSand, MX.Tex.L.sand); gl.uniform1f(p.u.uWet, L.wet);
       for (const m of this.chunks) this._drawMesh(m);

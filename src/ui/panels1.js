@@ -717,25 +717,77 @@
   }
 
   /* ================= Paths ================= */
+  /* Paths go down tile by tile with arrows and «Construir», like the classic construction
+     window (the default on touch screens, where dragging fights the camera), or dragged
+     out in a line (the default with a mouse). */
+  const PATH_DIRS = [[-1, -1, 'Hacia arriba a la izquierda', -90], [1, -1, 'Hacia arriba a la derecha', 0], [-1, 1, 'Hacia abajo a la izquierda', 180], [1, 1, 'Hacia abajo a la derecha', 90]];
   function pathsPanel() {
+    const ui = app().pathUI || (app().pathUI = { mode: (app().input && app().input.touchMode) || document.documentElement.classList.contains('phone') ? 'piece' : 'drag' });
     WM.open('paths', {
       title: 'Caminos y carreteras', icon: 'path', width: 360,
       build: (body) => {
+        const pb = TL().PathBuild, pd = TL().PathTool;
+        const tool = () => ui.mode === 'piece' ? pb : pd;
+        const active = MX.Tools.current === pb ? pb : MX.Tools.current === pd ? pd : null;
+        const pick = (t) => { const tl = tool(); tl.type = t; if (MX.Tools.current !== tl) MX.Tools.set(tl); else if (tl.refresh) tl.refresh(); WM.rebuild('paths'); };
         const row = h('div', { class: 'row gap wrap' });
         for (const t of [1, 2, 3]) {
           const d = Cat.paths[t];
-          row.append(h('button', { class: 'btn tool' + (MX.Tools.current === TL().PathTool && TL().PathTool.type === t ? ' on' : ''), onclick: () => { TL().PathTool.type = t; MX.Tools.set(TL().PathTool); WM.rebuild('paths'); } }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
+          row.append(h('button', { class: 'btn tool' + (active && active.type === t ? ' on' : ''), onclick: () => pick(t) }, icon(t === 3 ? 'road' : 'path'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
+        const mode = h('div', { class: 'row gap wrap path-mode' });
+        for (const [m, label, tip] of [['piece', 'Pieza a pieza', 'Toca dónde empieza el camino y alárgalo con las flechas y «Construir»'], ['drag', 'Arrastrando', 'Arrastra sobre el mapa para trazar una línea de casillas']]) {
+          mode.append(h('button', { class: 'btn small' + (ui.mode === m ? ' on' : ''), title: tip, onclick: () => {
+            if (ui.mode === m) return;
+            ui.mode = m;
+            if (active) { const tl = tool(); tl.type = active.type; MX.Tools.set(tl); }
+            WM.rebuild('paths');
+          } }, label));
+        }
+        body.append(h('h4', null, 'Trazar'), row, mode);
+        let upd = null;
+        if (active === pb) upd = pathBuilder(body, pb);
+        else if (!active) body.append(h('p', { class: 'muted small' }, ui.mode === 'piece' ? 'Elige el tipo de camino, toca en el mapa la casilla donde empieza y alárgalo con las flechas y «Construir».' : 'Elige el tipo de camino y arrástralo sobre el mapa.'));
         const add = h('div', { class: 'row gap wrap' });
         for (const k in Cat.addons) {
           const d = Cat.addons[k];
           add.append(h('button', { class: 'btn' + (MX.Tools.current === TL().AddonTool && TL().AddonTool.kind === k ? ' on' : ''), title: d.desc, onclick: () => { TL().AddonTool.kind = k; MX.Tools.set(TL().AddonTool); WM.rebuild('paths'); } }, icon(k === 'bench' ? 'bench' : k === 'bin' ? 'demolish' : 'info'), d.name, h('small', null, U.fmtMoney(d.cost))));
         }
-        body.append(h('h4', null, 'Trazar'), row,
-          h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
+        body.append(h('p', { class: 'muted small' }, 'Los espectadores solo caminan por caminos. Conecta el aparcamiento con la taquilla y la taquilla con gradas, comida, baños y zonas junto a la pista. Las furgonetas de los pilotos y los coches usan carreteras: el aparcamiento y el paddock deben tocar una carretera conectada con la vía pública.'),
           h('h4', null, 'Mobiliario'), add);
+        return upd;
       }
     });
+  }
+  /* the arrows (as seen on screen), «Construir» and «Quitar» of the tile by tile builder */
+  function pathBuilder(body, pb) {
+    const noFocus = (e) => e.preventDefault();
+    const status = h('div', { class: 'bld-preview path-status' });
+    const pad = h('div', { class: 'path-pad' });
+    const btns = PATH_DIRS.map(([sx, sy, label, rot]) => {
+      const b = h('button', { class: 'bld-btn path-dir', title: label, 'aria-label': label, onmousedown: noFocus, onclick: () => pb.turn(sx, sy) }, icon('arrow'));
+      b.querySelector('.px-icon').style.transform = 'rotate(' + rot + 'deg)';
+      b._d = [sx, sy];
+      pad.append(b);
+      return b;
+    });
+    const acts = h('div', { class: 'row gap bld-actions' },
+      h('button', { id: 'path-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => pb.build() }, icon('build'), 'Construir'),
+      h('button', { id: 'path-undo', class: 'btn', onmousedown: noFocus, onclick: () => pb.undo() }, icon('demolish'), 'Quitar'));
+    body.append(h('div', { class: 'path-builder' }, pad, h('div', { class: 'path-side' }, status, acts)));
+    return () => {
+      const f = pb.cur ? pb.facing() : null;
+      const key = (pb.ver || 0) + ':' + (f ? f.join(',') : '-') + ':' + app().renderer.cam.yawIndex + ':' + Math.floor(game().econ.money / 500);
+      if (status._k === key) return;
+      status._k = key;
+      for (const b of btns) b.classList.toggle('on', !!f && b._d[0] === f[0] && b._d[1] === f[1]);
+      clear(status);
+      const n = pb.next(), why = pb.why(), cost = pb.cost();
+      status.className = 'bld-preview path-status' + (n ? (why ? ' bad' : ' ok') : '');
+      status.append(icon(!n ? 'info' : why ? 'cross' : 'check'),
+        h('span', null, !n ? 'Toca en el mapa la casilla donde empieza el camino' : why ? h('em', null, why) : h('b', null, cost ? 'Siguiente casilla · ' + U.fmtMoney(cost) : 'Sigue por el camino que ya hay'),
+          pb.laid.length ? h('small', null, ' · ' + pb.laid.length + (pb.laid.length === 1 ? ' casilla puesta' : ' casillas puestas')) : null));
+    };
   }
 
   /* ================= Decoration ================= */

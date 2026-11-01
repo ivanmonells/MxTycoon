@@ -35,7 +35,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
     return null;
   });
   logs.push('spot ' + JSON.stringify(spot));
-  await ev(([tx, tz]) => { const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 4; __q.focus((tx + 1) * 4, (tz + 1) * 4, innerWidth / 2, innerHeight * 0.42); }, [spot.tx, spot.tz]);
+  await ev(([tx, tz]) => { const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 4; __q.focus((tx + 1) * 4, (tz + 1) * 4, innerWidth / 2, innerHeight * 0.28); }, [spot.tx, spot.tz]);
   await wait(300);
 
   /* buildings: the school, from the riders tab */
@@ -103,13 +103,21 @@ export default async ({ page, shot, wait, ev, logs }) => {
   logs.push('terrain raised at the tapped tile ' + (h1 > h0) + ' (' + h0.toFixed(2) + ' -> ' + h1.toFixed(2) + ')');
   await tap('.win .win-x');
 
-  /* paths: a tap lays one tile where the finger is */
+  /* paths, tile by tile (the default on touch screens): a tap picks the start, «Construir»
+     lays it and the next tile along */
   await tap('[data-id="paths"]');
   await tap('.win .btn.tool');
   const pt = { tx: spot.tx + 8, tz: spot.tz + 2 };
   const t5 = await scr((pt.tx + 0.5) * 4, (pt.tz + 0.5) * 4);
   await tapXY(t5.x, t5.y);
-  logs.push('path at the tapped tile ' + await ev(([tx, tz]) => MX.App.game.world.path[MX.App.game.world.idx(tx, tz)], [pt.tx, pt.tz]));
+  await tap('#path-build'); await tap('#path-build');
+  logs.push('path at the tapped tile ' + await ev(([tx, tz]) => MX.App.game.world.path[MX.App.game.world.idx(tx, tz)], [pt.tx, pt.tz]) + ', tiles laid ' + await ev(() => MX.Tools.list.PathBuild.laid.length));
+  /* the drag mode is one tap away: a tap there lays one tile where the finger is */
+  await tap('.win .btn.small:has-text("Arrastrando")');
+  const pt2 = { tx: spot.tx + 8, tz: spot.tz + 5 };
+  const t6 = await scr((pt2.tx + 0.5) * 4, (pt2.tz + 0.5) * 4);
+  await tapXY(t6.x, t6.y);
+  logs.push('drag mode: path at the tapped tile ' + await ev(([tx, tz]) => MX.App.game.world.path[MX.App.game.world.idx(tx, tz)], [pt2.tx, pt2.tz]));
   await tap('.win .win-x');
 
   /* track features: a suggested loop, then a tabletop on it */
