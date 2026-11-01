@@ -856,8 +856,21 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .builder.compact .bld-actions .bld-dots { flex: none; width: 42px; padding: 0; }
 .bld-dots .dots { font: 800 14px/1 var(--f-num); letter-spacing: 1px; }
 .builder.compact .bld-more .btn { flex: 1; }
-.builder.compact .bld-more .btn.danger { flex: none; width: 42px; }
+.builder.compact .bld-more .btn.danger { flex: none; width: auto; padding: 0 10px; }
 .bld-strip { display: flex; gap: 4px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: thin; }
+/* phone constructor tabs: normal pieces or specials */
+.bld-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.bld-tab {
+  display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 2px 8px;
+  background: #3a2f26; border: 2px solid var(--ink); border-radius: 6px; font: 700 15px/1 var(--f-num); color: var(--text);
+}
+.bld-tab .glyph-dir { width: 26px; height: 22px; }
+.bld-tab .px-icon { width: 22px; height: 22px; }
+.bld-tab.on { background: linear-gradient(#5a4632, #4a3a2a); border-color: var(--yellow); color: var(--yellow); box-shadow: inset 0 0 0 1px rgba(255, 210, 46, .35); }
+.bld-tab-n { padding: 1px 6px; border-radius: 9px; background: var(--yellow); color: #2b231d; font: 800 12px/1.2 var(--f-num); }
+.bld-strip-tall { padding: 2px 0 6px; }
+.bld-strip-tall .feat { flex: 0 0 96px; min-height: 92px; }
+.builder.compact .bld-more { align-items: center; }
 .bld-strip .feat { flex: 0 0 92px; padding: 4px 3px; }
 /* denser content */
 .phone .race-row { grid-template-columns: 28px 34px 1fr 36px 50px; }

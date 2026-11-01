@@ -285,9 +285,12 @@
     build() {
       const tr = this.tr;
       if (!tr) return;
-      const r = game().buildPiece(tr, this.piece());
+      const p = this.piece();
+      const r = game().buildPiece(tr, p);
       if (result(r)) {
         sfx('build');
+        /* there is only one finish line: back to straights and curves after it */
+        if (p.t === 'special' && p.f === 'finish') { const b = MX.Panels1.buildState(); b.special = null; b.lastSpecial = null; MX.WM.rebuild('tracks'); }
         if (r.closes) this.closed(tr, r.adjusted ? 'He ajustado la pendiente del último tramo para llegar a la salida a su altura.' : null);
       }
       this.refresh();

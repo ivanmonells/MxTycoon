@@ -38,11 +38,17 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await wait(600);
   await shot('p-built');
   logs.push('end on screen ' + await ev(() => { const t = MX.App.game.selectedTrack, e = t.endPose; const q = MX.App.renderer.worldToCss(e.x * 4, t.S.y[t.S.n - 1], e.z * 4); const win = document.querySelector('.win').getBoundingClientRect(); return JSON.stringify({ x: Math.round(q[0]), y: Math.round(q[1]), sheetTop: Math.round(win.top) }); }));
+  /* the specials are a tab of their own, in sight from the start */
+  await tap('.bld-tab:has-text("Especiales")');
+  await layout('specials');
+  logs.push('specials ' + await ev(() => { const cards = [...document.querySelectorAll('.bld-strip .feat')]; return cards.length + ' cards, ' + cards.filter(c => !c.classList.contains('locked')).length + ' usable, chosen ' + MX.App.trackUI.build.special; }));
+  await shot('p-specials');
+  await tap('.bld-strip .feat:has-text("Línea de meta")');
+  await tap('#bld-build');
+  logs.push('finish built ' + await ev(() => MX.App.game.selectedTrack.pieces.some(p => p.f === 'finish') + ', back to normal pieces ' + !MX.App.trackUI.build.special));
   await tap('.bld-dots');
   await layout('more menu');
-  await tap('.bld-more .btn:has-text("Especiales")');
-  await layout('specials');
-  await shot('p-specials');
+  await shot('p-more');
   await tap('.bld-dots');
   await tap('#bld-auto');
   await wait(1500);

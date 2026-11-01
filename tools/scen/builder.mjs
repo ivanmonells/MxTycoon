@@ -22,7 +22,12 @@ export default async ({ page, shot, wait, ev, logs }) => {
   const pressDir = async (label) => { await page.locator('.bld-dirs .bld-btn[aria-label="' + label + '"]').click(); await wait(250); };
   const build = async () => { await page.click('#bld-build'); await wait(450); };
   await pressDir('Recta'); await clickText(page, '.builder .btn.small', 'Media'); await build();
-  await page.locator('.bld-specials .feat', { hasText: 'Tabletop mediano' }).click(); await wait(250); await build();
+  /* the specials are a tab: open it, pick the jump, build it, back to straights and curves */
+  const specials = async (name) => { await page.locator('.bld-tab', { hasText: 'Especiales' }).click(); await wait(250); await page.locator('.bld-specials .feat', { hasText: name }).click(); await wait(250); };
+  const normal = async () => { await page.locator('.bld-tab', { hasText: 'Rectas y curvas' }).click(); await wait(250); };
+  await specials('Tabletop mediano');
+  await shot('specials-tab');
+  await build(); await normal();
   await pressDir('Curva media a la derecha'); await clickText(page, '.builder .btn.small', 'Peralte', true); await build(); await build();
   await shot('after-curve');
   /* keyboard: straight, slope up then down */
@@ -33,9 +38,9 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await page.keyboard.press('ArrowDown'); await wait(150); await page.keyboard.press('ArrowDown'); await wait(150);
   await page.keyboard.press('Enter'); await wait(400);
   await page.keyboard.press('ArrowUp'); await wait(150);
-  await page.locator('.bld-specials .feat', { hasText: 'Rollers' }).click(); await wait(250); await build();
+  await specials('Rollers'); await build(); await normal();
   await pressDir('Curva abierta a la derecha'); await build(); await build();
-  await page.locator('.bld-specials .feat', { hasText: 'Línea de meta' }).click(); await wait(250); await build();
+  await specials('Línea de meta'); await build();
   logs.push('built: ' + await ev(() => { const t = MX.App.game.selectedTrack; return t.pieces.map(p => p.t[0] + (p.k || p.n || p.f || '') + (p.slope ? (p.slope > 0 ? '+' : '-') : '')).join(' ') + ' len ' + Math.round(t.length) + ' end ' + JSON.stringify(t.endPose); }));
   await pressDir('Curva cerrada a la izquierda'); await wait(300);
   await ev(() => { const t = MX.App.game.selectedTrack, e = t.endPose; const c = MX.App.renderer.cam; c.zoom = c.targetZoom = 9; __q.focus(e.x * 4, e.z * 4, 820, 380); });
@@ -46,7 +51,7 @@ export default async ({ page, shot, wait, ev, logs }) => {
   await page.keyboard.press('Backspace'); await wait(400);
   const n1 = await ev(() => MX.App.game.selectedTrack.pieces.length);
   logs.push('backspace pieces ' + n0 + ' -> ' + n1);
-  await page.locator('.bld-specials .feat', { hasText: 'Línea de meta' }).click(); await wait(250); await build();
+  await specials('Línea de meta'); await build();
   /* auto close */
   await page.click('#bld-auto'); await wait(1500);
   logs.push('auto: ' + await ev(() => { const t = MX.App.game.selectedTrack; return JSON.stringify({ closed: t.closed, pieces: t.pieces.length, len: Math.round(t.length), tool: MX.Tools.current.name, money: Math.round(MX.App.game.econ.money) }); }));

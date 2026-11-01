@@ -868,8 +868,21 @@ html.phone { --tbh: 44px; --tbb: 66px; }
 .builder.compact .bld-actions .bld-dots { flex: none; width: 42px; padding: 0; }
 .bld-dots .dots { font: 800 14px/1 var(--f-num); letter-spacing: 1px; }
 .builder.compact .bld-more .btn { flex: 1; }
-.builder.compact .bld-more .btn.danger { flex: none; width: 42px; }
+.builder.compact .bld-more .btn.danger { flex: none; width: auto; padding: 0 10px; }
 .bld-strip { display: flex; gap: 4px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: thin; }
+/* phone constructor tabs: normal pieces or specials */
+.bld-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.bld-tab {
+  display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 2px 8px;
+  background: #3a2f26; border: 2px solid var(--ink); border-radius: 6px; font: 700 15px/1 var(--f-num); color: var(--text);
+}
+.bld-tab .glyph-dir { width: 26px; height: 22px; }
+.bld-tab .px-icon { width: 22px; height: 22px; }
+.bld-tab.on { background: linear-gradient(#5a4632, #4a3a2a); border-color: var(--yellow); color: var(--yellow); box-shadow: inset 0 0 0 1px rgba(255, 210, 46, .35); }
+.bld-tab-n { padding: 1px 6px; border-radius: 9px; background: var(--yellow); color: #2b231d; font: 800 12px/1.2 var(--f-num); }
+.bld-strip-tall { padding: 2px 0 6px; }
+.bld-strip-tall .feat { flex: 0 0 96px; min-height: 92px; }
+.builder.compact .bld-more { align-items: center; }
 .bld-strip .feat { flex: 0 0 92px; padding: 4px 3px; }
 /* denser content */
 .phone .race-row { grid-template-columns: 28px 34px 1fr 36px 50px; }
@@ -1475,14 +1488,14 @@ html.phone { --tbh: 44px; --tbb: 66px; }
     tabletop_s: { name: 'Tabletop pequeño', group: 'jump', kind: 'table', H: 1.3, face: 4.0, top: 5.0, land: 5.5, cost: 2500, desc: 'Salto con meseta: si te quedas corto aterrizas arriba. Ideal para principiantes.' },
     tabletop_m: { name: 'Tabletop mediano', group: 'jump', kind: 'table', H: 2.1, face: 5.0, top: 8.0, land: 7.0, cost: 4200, desc: 'El salto clásico de cualquier circuito.' },
     tabletop_l: { name: 'Tabletop grande', group: 'jump', kind: 'table', H: 3.1, face: 6.5, top: 12.0, land: 8.5, cost: 7000, desc: 'Mucho vuelo. Exige velocidad.' },
-    double_s: { name: 'Doble pequeño', group: 'jump', kind: 'double', H: 1.7, face: 4.2, back: 2.6, gap: 4.5, landUp: 1.6, land: 6.0, cost: 4500, unlock: 'research:doubles', desc: 'Dos lomas con hueco. Los principiantes lo pasan rodando.' },
+    double_s: { name: 'Doble pequeño', group: 'jump', kind: 'double', H: 1.7, face: 4.2, back: 2.6, gap: 4.5, landUp: 1.6, land: 6.0, cost: 4500, desc: 'Dos lomas con hueco. Los principiantes lo pasan rodando.' },
     double_l: { name: 'Doble grande', group: 'jump', kind: 'double', H: 2.5, face: 5.2, back: 3.0, gap: 8.0, landUp: 2.0, land: 7.5, cost: 7500, unlock: 'research:doubles', desc: 'Si caes corto, castigo seguro. Espectacular.' },
     triple: { name: 'Triple', group: 'jump', kind: 'triple', H: 2.6, face: 5.5, back: 2.6, gap: 6.0, mid: 4.0, gap2: 6.0, landUp: 2.0, land: 8.0, cost: 13000, unlock: 'research:triples', desc: 'Tres lomas en línea. Solo para expertos.' },
-    stepup: { name: 'Escalón (step-up)', group: 'jump', kind: 'stepup', H: 2.2, face: 3.8, top: 9.0, down: 11.0, cost: 5000, unlock: 'research:plateaus', desc: 'Salto hacia arriba a una plataforma.' },
+    stepup: { name: 'Escalón (step-up)', group: 'jump', kind: 'stepup', H: 2.2, face: 3.8, top: 9.0, down: 11.0, cost: 5000, desc: 'Salto hacia arriba a una plataforma.' },
     plateau: { name: 'Meseta', group: 'jump', kind: 'table', H: 2.3, face: 5.5, top: 20.0, land: 7.5, cost: 8000, unlock: 'research:plateaus', desc: 'Tabletop extralargo: cambia el ritmo de la vuelta.' },
     whoops: { name: 'Whoops', group: 'rhythm', kind: 'bumps', n: 8, H: 0.65, pitch: 2.2, vb: 4.5, vs: 10.5, cost: 3200, desc: 'Baches rítmicos: los buenos los pasan rozando, los demás sufren.' },
     rollers: { name: 'Rollers', group: 'rhythm', kind: 'bumps', n: 5, H: 1.15, pitch: 6.0, vb: 8.0, vs: 8.5, cost: 2800, desc: 'Lomas suaves y redondeadas.' },
-    dubbies: { name: 'Dubbies', group: 'rhythm', kind: 'bumps', n: 4, H: 1.05, pitch: 4.4, vb: 6.5, vs: 8.5, cost: 2600, unlock: 'research:rhythm', desc: 'Lomitas cortas que se pueden doblar.' },
+    dubbies: { name: 'Dubbies', group: 'rhythm', kind: 'bumps', n: 4, H: 1.05, pitch: 4.4, vb: 6.5, vs: 8.5, cost: 2600, desc: 'Lomitas cortas que se pueden doblar.' },
     rhythm: { name: 'Sección rítmica', group: 'rhythm', kind: 'rhythm', heights: [1.6, 1.5, 1.7, 1.4, 1.6, 1.5], spacing: [6.2, 6.8, 6.0, 7.2, 6.4], cost: 7500, unlock: 'research:rhythm', desc: 'Combinación de lomas para dobles y triples encadenados.' },
     berm: { name: 'Peralte', group: 'corner', kind: 'berm', H: 1.1, cost: 1600, desc: 'Curva peraltada: se toma mucho más rápido. Haz clic en una curva.' },
     berm_big: { name: 'Peralte grande', group: 'corner', kind: 'berm', H: 1.8, cost: 2600, unlock: 'research:berms', desc: 'Peralte alto para curvas muy rápidas.' },
@@ -1648,12 +1661,12 @@ html.phone { --tbh: 44px; --tbb: 66px; }
   const eventOrder = ['training', 'kids_cup', 'amateur', 'flat_race', 'enduro_crono', 'regional', 'carcross_race', 'national', 'sx_night', 'international', 'gp'];
 
   const research = [
-    { id: 'doubles', name: 'Saltos dobles', cost: 6000, days: 10, desc: 'Desbloquea dobles pequeños y grandes.' },
+    { id: 'doubles', name: 'Dobles grandes', cost: 6000, days: 10, desc: 'Desbloquea el doble grande: si caes corto, castigo seguro.' },
     { id: 'sand', name: 'Superficie de arena', cost: 4000, days: 7, desc: 'Arena blanda: lenta, técnica y agotadora.' },
     { id: 'mud', name: 'Zonas de barro', cost: 3000, days: 7, desc: 'Barro: poco agarre y mucho espectáculo.' },
     { id: 'hardpack', name: 'Hardpack compactado', cost: 6000, days: 10, desc: 'Superficie dura y rápida que se desgasta poco.' },
-    { id: 'plateaus', name: 'Mesetas y escalones', cost: 5000, days: 9, desc: 'Desbloquea la meseta y el step-up.' },
-    { id: 'rhythm', name: 'Secciones rítmicas', cost: 8000, days: 12, req: ['doubles'], desc: 'Dubbies y secciones rítmicas encadenadas.' },
+    { id: 'plateaus', name: 'Mesetas', cost: 5000, days: 9, desc: 'Desbloquea la meseta, un tabletop extralargo.' },
+    { id: 'rhythm', name: 'Secciones rítmicas', cost: 8000, days: 12, req: ['doubles'], desc: 'Combinaciones de lomas para dobles y triples encadenados.' },
     { id: 'triples', name: 'Saltos triples', cost: 12000, days: 16, req: ['doubles'], desc: 'El salto definitivo para profesionales.' },
     { id: 'berms', name: 'Peraltes reforzados', cost: 4500, days: 7, desc: 'Peraltes más altos para curvas rapidísimas.' },
     { id: 'timing', name: 'Cronometraje electrónico', cost: 7000, days: 10, desc: 'Desbloquea la torre de control, imprescindible en campeonatos.' },
@@ -14713,9 +14726,12 @@ void main() {
     build() {
       const tr = this.tr;
       if (!tr) return;
-      const r = game().buildPiece(tr, this.piece());
+      const p = this.piece();
+      const r = game().buildPiece(tr, p);
       if (result(r)) {
         sfx('build');
+        /* there is only one finish line: back to straights and curves after it */
+        if (p.t === 'special' && p.f === 'finish') { const b = MX.Panels1.buildState(); b.special = null; b.lastSpecial = null; MX.WM.rebuild('tracks'); }
         if (r.closes) this.closed(tr, r.adjusted ? 'He ajustado la pendiente del último tramo para llegar a la salida a su altura.' : null);
       }
       this.refresh();
@@ -16630,11 +16646,13 @@ void main() {
     const d = BUILD_DIRS.find(x => x.id === b.dir) || BUILD_DIRS[3];
     const td = tr.typeDef;
     if (document.documentElement.classList.contains('phone')) { compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el); return; }
-    box.append(status);
+    box.append(status, pieceTabs(tr, b, opt, changed));
+    /* special pieces, in place of direction and slope */
+    if (b.special) box.append(specialCards(tr, b, opt, changed, 'bld-specials'));
     /* direction */
     const dirs = h('div', { class: 'bld-dirs' });
-    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', !b.special && b.dir === dd.id, dd.name, () => { b.dir = dd.id; b.special = null; changed(); }, dirGlyph(dd)));
-    box.append(h('h4', null, 'Dirección'), dirs);
+    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', b.dir === dd.id, dd.name, () => { b.dir = dd.id; changed(); }, dirGlyph(dd)));
+    if (!b.special) box.append(h('h4', null, 'Dirección'), dirs);
     if (!b.special && d.kind === 'straight') {
       const lens = h('div', { class: 'row gap wrap' });
       for (const [n, label] of BUILD_LENS) lens.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label + ' · ' + n * C.TILE + ' m'));
@@ -16655,26 +16673,43 @@ void main() {
       for (const [v, label] of BUILD_SLOPES) if (td.slopes.includes(v)) slopes.append(opt('bld-btn', (b.slope || 0) === v, label, () => { b.slope = v; changed(); }, slopeGlyph(v), h('small', null, label)));
       box.append(h('h4', null, 'Pendiente'), slopes);
     }
-    /* special pieces */
-    const sp = h('div', { class: 'bld-specials' });
-    sp.append(opt('feat', !b.special, 'Pieza normal', () => { b.special = null; changed(); }, h('span', { class: 'feat-ic' }, dirGlyph(BUILD_DIRS[3])), h('b', null, 'Normal'), h('small', null, 'Tramo de pista')));
-    for (const k of td.specials) {
-      const fd = Cat.features[k];
-      const locked = !g.isUnlocked(fd);
-      sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.desc, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
-        h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
-    }
-    box.append(h('h4', null, td.specials.length > 1 ? 'Pieza especial' : 'Línea de meta'), sp);
-    chuteRow(box, tr);
-    widthSurface(box, tr, true);
+    /* what it builds and the buttons, then the settings that apply to every piece */
     box.append(preview,
       h('div', { class: 'row gap wrap bld-actions' },
         h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir pieza'),
         h('button', { id: 'bld-undo', class: 'btn', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar la última'),
         h('button', { id: 'bld-auto', class: 'btn', onmousedown: noFocus, title: 'Busca el camino de vuelta a la salida salvando la altura y lo construye; si el final está encajonado, rehace las últimas piezas', onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar automáticamente')),
-      h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'),
-      h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
+      h('p', { class: 'muted small' }, 'Intro: construir · Retroceso: quitar la última · Flechas izquierda y derecha: dirección · arriba y abajo: pendiente'));
+    chuteRow(box, tr);
+    widthSurface(box, tr, true);
+    box.append(h('div', { class: 'row gap' }, h('button', { class: 'btn small danger', onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar circuito')));
     el._upd = constructorStatus(tr, status, preview);
+  }
+  /* the two kinds of piece: «Rectas y curvas» and «Especiales» (jumps, rhythm sections and
+     the finish line), with how many specials can be built */
+  function pieceTabs(tr, b, opt, changed) {
+    const g = game(), td = tr.typeDef;
+    const usable = td.specials.filter(k => g.isUnlocked(Cat.features[k]));
+    return h('div', { class: 'bld-tabs' },
+      opt('bld-tab', !b.special, 'Rectas y curvas: dirección, longitud, peralte y pendiente', () => { if (b.special) b.lastSpecial = b.special; b.special = null; changed(); }, dirGlyph(BUILD_DIRS[4]), h('span', null, 'Rectas y curvas')),
+      opt('bld-tab', !!b.special, 'Especiales: saltos, rítmicos y la línea de meta', () => {
+        if (b.special) return;
+        /* the last one used, the finish line while the circuit still needs one, or the first jump */
+        const hasFinish = tr.pieces.some(p => p.t === 'special' && p.f === 'finish') || tr.features.some(f => f.type === 'finish');
+        b.special = (b.lastSpecial && usable.includes(b.lastSpecial) && b.lastSpecial) || (!hasFinish && tr.pieces.length > 4 && usable.includes('finish') ? 'finish' : usable.find(k => k !== 'finish') || usable[0] || null);
+        changed();
+      }, icon('jump'), h('span', null, 'Especiales'), h('small', { class: 'bld-tab-n' }, String(usable.length))));
+  }
+  /* every special piece of the discipline, locked ones greyed out */
+  function specialCards(tr, b, opt, changed, cls) {
+    const g = game(), sp = h('div', { class: cls });
+    for (const k of tr.typeDef.specials) {
+      const fd = Cat.features[k];
+      const locked = !g.isUnlocked(fd);
+      sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.name + ' · ' + fd.desc, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; b.lastSpecial = k; changed(); },
+        h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
+    }
+    return sp;
   }
   function constructorStatus(tr, status, preview) {
     return () => {
@@ -16705,17 +16740,26 @@ void main() {
           near && pr.ok ? h('em', { class: 'fix' }, 'Estás cerca de la salida: pulsa «Cerrar» y lo uno yo') : null));
     };
   }
-  /* Phones: directions, slopes and the build buttons first; the rest folds away. */
+  /* Phones: two tabs, «Rectas y curvas» (directions, lengths, banking and slopes) and
+     «Especiales» (jumps, rhythm sections and the finish line), then the build buttons;
+     width, surface and the start straight fold away under •••. */
   function compactConstructor(box, tr, b, d, status, preview, opt, changed, noFocus, el) {
     const g = game();
     box.classList.add('compact');
-    box.append(status);
-    const dirs = h('div', { class: 'bld-dirs' });
-    for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', !b.special && b.dir === dd.id, dd.name, () => { b.dir = dd.id; b.special = null; changed(); }, dirGlyph(dd)));
-    box.append(dirs);
+    box.append(status, pieceTabs(tr, b, opt, changed));
+    if (b.special) {
+      const sp = specialCards(tr, b, opt, changed, 'bld-strip bld-strip-tall');
+      box.append(sp);
+      /* the chosen card in view */
+      requestAnimationFrame(() => { const on = sp.querySelector('.feat.on'); if (on) sp.scrollLeft = Math.max(0, on.offsetLeft - (sp.clientWidth - on.offsetWidth) / 2); });
+    } else {
+      const dirs = h('div', { class: 'bld-dirs' });
+      for (const dd of BUILD_DIRS) dirs.append(opt('bld-btn', b.dir === dd.id, dd.name, () => { b.dir = dd.id; changed(); }, dirGlyph(dd)));
+      box.append(dirs);
+    }
     const ctx = h('div', { class: 'row gap bld-ctx' });
     if (b.special) {
-      ctx.append(h('span', { class: 'chip chip-info' }, Cat.features[b.special].name), opt('btn small', false, 'Volver a una pieza normal', () => { b.special = null; changed(); }, 'Pieza normal'));
+      /* specials have their own length and lie flat: no lengths, banking or slopes */
     } else if (d.kind === 'straight') {
       for (const [n, label] of BUILD_LENS) ctx.append(opt('btn small', b.n === n, 'Recta ' + label.toLowerCase(), () => { b.n = n; changed(); }, label));
     } else if (tr.typeDef.banks.length > 1) {
@@ -16736,21 +16780,13 @@ void main() {
         h('button', { id: 'bld-build', class: 'btn primary big-ish', onmousedown: noFocus, onclick: () => TL().TrackBuild.build() }, icon('build'), 'Construir'),
         h('button', { id: 'bld-undo', class: 'btn', title: 'Quitar la última pieza', onmousedown: noFocus, onclick: () => TL().TrackBuild.undo() }, icon('demolish'), 'Quitar'),
         h('button', { id: 'bld-auto', class: 'btn', title: 'Cerrar automáticamente: busca el camino de vuelta a la salida salvando la altura', onmousedown: noFocus, onclick: () => TL().TrackBuild.auto() }, icon('check'), 'Cerrar'),
-        opt('btn bld-dots', !!b.more, 'Más opciones: piezas especiales, anchura, superficie', () => { b.more = b.more ? null : 'menu'; changed(); }, h('span', { class: 'dots' }, '•••'))));
-    if (b.more) box.append(h('div', { class: 'row gap bld-more' },
-      opt('btn small', b.more === 'sp', 'Piezas especiales: meta y obstáculos', () => { b.more = b.more === 'sp' ? 'menu' : 'sp'; changed(); }, icon('jump'), 'Especiales'),
-      opt('btn small', b.more === 'ws', 'Anchura y superficie', () => { b.more = b.more === 'ws' ? 'menu' : 'ws'; changed(); }, icon('paint'), 'Ancho y suelo'),
-      h('button', { class: 'btn small danger', title: 'Borrar circuito', 'aria-label': 'Borrar circuito', onmousedown: noFocus, onclick: () => delTrack(tr) }, icon('demolish'))));
-    if (b.more === 'sp') {
-      const sp = h('div', { class: 'bld-strip' });
-      for (const k of tr.typeDef.specials) {
-        const fd = Cat.features[k];
-        const locked = !g.isUnlocked(fd);
-        sp.append(opt('feat' + (locked ? ' locked' : ''), b.special === k, (locked ? lockReason(fd) + ' · ' : '') + fd.name, () => { if (locked) { app().hud.toast(lockReason(fd), 'bad'); return; } b.special = k; changed(); },
-          h('span', { class: 'feat-ic' }, featureGlyph(fd)), h('b', null, fd.name), h('small', null, locked ? 'Bloqueado' : U.fmtMoney(fd.cost))));
-      }
-      box.append(sp);
-    } else if (b.more === 'ws') { chuteRow(box, tr); widthSurface(box, tr, true); }
+        opt('btn bld-dots', !!b.more, 'Más opciones: anchura, superficie y recta de salida', () => { b.more = b.more ? null : 'ws'; changed(); }, h('span', { class: 'dots' }, '•••'))));
+    if (b.more) {
+      box.append(h('div', { class: 'row gap bld-more' },
+        h('span', { class: 'muted small grow' }, 'Anchura, superficie y recta de salida'),
+        h('button', { class: 'btn small danger', title: 'Borrar circuito', 'aria-label': 'Borrar circuito', onmousedown: noFocus, onclick: () => delTrack(tr) }, icon('demolish'), 'Borrar')));
+      chuteRow(box, tr); widthSurface(box, tr, true);
+    }
     el._upd = constructorStatus(tr, status, preview);
   }
 
@@ -17817,7 +17853,7 @@ void main() {
         for (const [a, b] of rows) body.append(statRow(a, b));
         body.append(h('h4', null, 'Cómo empezar'), h('ol', { class: 'steps' },
           h('li', null, 'Pulsa Circuitos → Nuevo circuito y coloca la parrilla de salida en tu terreno.'),
-          h('li', null, 'Construye pieza a pieza eligiendo dirección y pendiente, mete saltos y la meta desde «Pieza especial» y vuelve hasta la salida para cerrar el circuito.'),
+          h('li', null, 'Construye pieza a pieza eligiendo dirección y pendiente, mete saltos y la meta desde la pestaña «Especiales» y vuelve hasta la salida para cerrar el circuito.'),
           h('li', null, 'En motocross, supercross y minicross la salida tiene una recta ancha con la valla: elige en el constructor si va a la izquierda, a la derecha o si prefieres no ponerla.'),
           h('li', null, 'Puedes subir el trazado hasta 12 m sobre el terreno. Un tramo a 4,5 m o más por encima de otro pasa sobre él en un puente, y el de abajo cruza por un túnel (del mismo circuito o de otro). Bajo un puente no caben saltos.'),
           h('li', null, 'Construye un paddock y un aparcamiento tocando la carretera, una taquilla, baños y caminos.'),
@@ -18196,7 +18232,7 @@ void main() {
           check: () => { const c = app.renderer.cam; return Math.hypot(c.tx - this.c0[0], c.tz - this.c0[1]) > 12 || Math.abs(c.targetZoom - this.c0[2]) > 1.5; } },
         { title: 'Tu primer circuito', text: 'Abre el menú Circuitos en la barra inferior.', target: '[data-id="tracks"]', check: () => MX.WM.isOpen('tracks') },
         { title: 'Coloca la salida', text: 'Pulsa «Nuevo circuito» y haz clic en tu terreno, la zona clara, para colocar la parrilla de salida. En pantallas táctiles, toca para verla y vuelve a tocar encima. La tecla R o el botón «Girar» la orientan.', tp: 'Pulsa «Nuevo circuito»: aparece la parrilla. Arrástrala o toca tu terreno (la zona clara) para moverla y pulsa «Colocar». El botón amarillo la gira.', target: '#win-tracks-new', check: () => g().tracks.some(t => t.pieces && t.pieces.length) || g().tracks.some(t => t.closed) },
-        { title: 'Construye pieza a pieza', text: 'Como en los clásicos: elige la dirección (recta o curva cerrada, media o abierta) y la pendiente, y pulsa «Construir pieza». La pieza fantasma te enseña dónde irá. Mete un salto desde «Pieza especial» y la «Meta». Vuelve hasta la salida para cerrar el circuito, o pulsa «Cerrar automáticamente».', tp: 'Elige dirección y pendiente y pulsa «Construir»: la pieza fantasma enseña dónde irá. En ••• tienes saltos y la meta. Vuelve a la salida o pulsa «Cerrar» para completar la vuelta.', target: '#bld-build', check: () => g().tracks.some(t => t.closed) },
+        { title: 'Construye pieza a pieza', text: 'Como en los clásicos: elige la dirección (recta o curva cerrada, media o abierta) y la pendiente, y pulsa «Construir pieza». La pieza fantasma te enseña dónde irá. Mete un salto y la «Línea de meta» desde la pestaña «Especiales». Vuelve hasta la salida para cerrar el circuito, o pulsa «Cerrar automáticamente».', tp: 'Elige dirección y pendiente y pulsa «Construir»: la pieza fantasma enseña dónde irá. En «Especiales» tienes saltos y la meta. Vuelve a la salida o pulsa «Cerrar» para completar la vuelta.', target: '#bld-build', check: () => g().tracks.some(t => t.closed) },
         { title: 'Salida y meta', text: 'Tu circuito necesita la línea de meta. Si no la pusiste al construir, colócala en la pestaña Elementos haciendo clic o tocando sobre una recta.', tp: 'Falta la línea de meta: en la pestaña Elementos elígela, toca una recta del circuito y pulsa «Colocar».', check: () => hasFeat(tr(), f => f.type === 'start') && hasFeat(tr(), f => f.type === 'finish') },
         { title: 'Hora de volar', text: 'Añade al menos un salto: un tabletop en una recta es perfecto para empezar. Los saltos atraen pilotos y público.', check: () => hasFeat(tr(), f => MX.Catalog.features[f.type].group === 'jump') },
         { title: 'El paddock', text: 'Abre Construir → Pilotos y coloca un Paddock tocando la carretera (la franja gris del borde inferior). Ahí aparcan las furgonetas de los pilotos. Pulsa R para girarlo.', tp: 'Abre Construir → Pilotos y elige el Paddock. Arrástralo hasta que toque la carretera (la franja gris del borde) y pulsa «Colocar». El botón amarillo lo gira.', target: '[data-id="build"]', check: () => g().buildingsOf('paddock').some(b => g().doorTiles(b, 'road').length) },
